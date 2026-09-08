@@ -1,5 +1,5 @@
 import AdmZip from 'adm-zip';import {createHash} from 'node:crypto';import {readFileSync,writeFileSync,renameSync,mkdirSync,existsSync,statSync,unlinkSync} from 'node:fs';import {join,resolve,relative,isAbsolute,basename} from 'node:path';import {z} from 'zod';
-import {LearningStore} from './store';import {safeMaterialFilename} from './file-safety';import {activitySchema,assessmentSchema,startingPointSchema,learningScopeSchema,nearStepSchema,teachingStateSchema,supportScopeSchema} from './schemas';import {settingsInputSchema} from './settings-schema';import type {Collection,WorkspaceSnapshot} from '../shared/types';
+import {LearningStore} from './store';import {safeMaterialFilename} from './file-safety';import {activitySchema,assessmentSchema,startingPointSchema,learningScopeSchema,nearStepSchema,teachingStateSchema,teachingStepSchema,supportScopeSchema} from './schemas';import {settingsInputSchema} from './settings-schema';import type {Collection,WorkspaceSnapshot} from '../shared/types';
 import {teachingVersionSchema,taskReviewSchema,disputeSchema,correctionSchema,answerExposureSchema} from './reliability-record-schemas';
 import {teachingContentHash} from './verification-service';
 import {derivesFromDispute} from '../shared/reliability-state';
@@ -11,7 +11,13 @@ const page=z.object({pageNumber:z.number().int().positive(),printedPageLabel:txt
 const pdfMetadata=z.object({pageCount:z.number().int().positive(),pages:z.array(page).max(20000),outline:z.array(z.object({title:txt,pageNumber:z.number().int().positive(),level:z.number().int().nonnegative()})).max(20000),analyzedAt:date});
 const material=z.object({id,projectId:id,title:txt,kind:txt,originalName:txt,storedPath:txt,importedAt:date,warnings:z.array(txt),fragmentCount:z.number().int().nonnegative(),summary:txt,sourceUrl:txt.optional(),pdfMetadata:pdfMetadata.optional()});
 const fragment=z.object({id,materialId:id,projectId:id,locator:txt,text:txt,ordinal:z.number().int().nonnegative(),pageNumber:z.number().int().positive().optional(),printedPageLabel:txt.optional(),quality:quality.optional(),searchableText:txt.optional()});
-const session=z.object({id,projectId:id,capabilityId:id,activity:activitySchema,mode:z.enum(['practice','delayed','transfer','diagnosis','selection']),status:z.enum(['active','paused','completed']),createdAt:date,updatedAt:date,draft:txt,helpLevel:z.number().int().min(0).max(4),helpEvents:z.array(z.object({id,kind:z.enum(['hint','confused','example','answer','explore']),level:z.number().int().min(0).max(4),createdAt:date,taskId:id.optional(),scope:supportScopeSchema.optional()})),messages:z.array(z.object({id,role:z.enum(['user','assistant','system']),text:txt,createdAt:date,kind:txt.optional(),sourceIds:refs.optional(),taskId:id.optional(),stepId:id.optional(),scope:supportScopeSchema.optional()})),checkpoint:txt,nextStep:txt,dueReviewId:id.optional(),teaching:teachingStateSchema.optional(),taskDrafts:z.record(id,txt).optional()});
+const sessionMessage=z.object({
+ id,role:z.enum(['user','assistant','system']),text:txt,createdAt:date,kind:txt.optional(),sourceIds:refs.optional(),taskId:id.optional(),stepId:id.optional(),scope:supportScopeSchema.optional(),
+ inputId:id.optional(),requestId:id.optional(),attemptId:id.optional(),teachingVersionId:id.optional(),
+ responseState:z.enum(['pending','running','completed','failed']).optional(),responseMode:z.enum(['assessment','discussion']).optional(),responseError:txt.optional(),responseUpdatedAt:date.optional(),
+ activitySnapshot:activitySchema.optional(),stepSnapshot:teachingStepSchema.optional(),helpLevel:z.number().int().min(0).max(4).optional(),
+});
+const session=z.object({id,projectId:id,capabilityId:id,activity:activitySchema,mode:z.enum(['practice','delayed','transfer','diagnosis','selection']),status:z.enum(['active','paused','completed']),createdAt:date,updatedAt:date,draft:txt,helpLevel:z.number().int().min(0).max(4),helpEvents:z.array(z.object({id,kind:z.enum(['hint','confused','example','answer','explore']),level:z.number().int().min(0).max(4),createdAt:date,taskId:id.optional(),scope:supportScopeSchema.optional()})),messages:z.array(sessionMessage),checkpoint:txt,nextStep:txt,dueReviewId:id.optional(),teaching:teachingStateSchema.optional(),taskDrafts:z.record(id,txt).optional()});
 const attempt=z.object({id,projectId:id,sessionId:id,text:txt,submittedAt:date,helpLevel:z.number().int().min(0).max(4),requestId:id,assessment:assessmentSchema.optional(),activitySnapshot:activitySchema.optional(),taskId:id.optional(),stepId:id.optional(),mode:z.enum(['practice','delayed','transfer','diagnosis','selection']).optional(),reviewId:id.optional()});
 const evidence=z.object({id,projectId:id,capabilityId:id,sessionId:id,attemptId:id,status:z.enum(['assisted','independent','delayed','transfer','needs_review']),helpLevel:z.number().int().min(0).max(4),assessment:assessmentSchema,createdAt:date,activitySnapshot:activitySchema.optional(),taskId:id.optional(),stepId:id.optional(),reviewId:id.optional()});
 const review=z.object({id,projectId:id,capabilityId:id,fromSessionId:id,kind:z.enum(['delayed','transfer']),dueAt:date,status:z.enum(['pending','done','snoozed']),completedSessionId:id.optional(),fromTaskId:id.optional(),fromActivity:activitySchema.optional(),completedEvidenceId:id.optional(),completedTaskId:id.optional()});
@@ -27,7 +33,7 @@ export function writeBackup(store:LearningStore,target:string):void{
  if(safeSettings.vision){const {hasApiKey:visionKey,...safeVision}=safeSettings.vision;safeSettings.vision=safeVision;}
  const files:{materialId:string;entry:string;sha256:string}[]=[];const zip=new AdmZip();
  for(const m of records.materials){if(!within(dataDirectory,m.storedPath)||!existsSync(m.storedPath))throw new Error('原始材料缺失或路径异常，无法生成完整备份：'+m.title);const bytes=readFileSync(m.storedPath);const entry='materials/'+m.id+'/'+basename(m.originalName).replace(/[^\p{L}\p{N}._ -]/gu,'_');zip.addFile(entry,bytes);files.push({materialId:m.id,entry,sha256:sha(bytes)});m.storedPath=entry;}
- zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:3,createdAt:new Date().toISOString(),records:{...records,settings:safeSettings},files},null,2),'utf8'));
+ zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:4,createdAt:new Date().toISOString(),records:{...records,settings:safeSettings},files},null,2),'utf8'));
  const tmp=target+'.partial';
  try{
   writeFileSync(tmp,zip.toBuffer());
@@ -46,7 +52,7 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  for(const e of entries){if(e.entryName.includes('\\')||e.entryName.startsWith('/')||e.entryName.split('/').includes('..')||names.has(e.entryName))throw new Error('备份包含不安全或重复路径');names.add(e.entryName);size+=e.header.size;if(size>500*1024*1024)throw new Error('备份展开后过大');}
  const manifest=zip.getEntry('manifest.json');if(!manifest||manifest.header.size>30*1024*1024)throw new Error('备份清单缺失或过大');
  let raw:any;try{raw=JSON.parse(zip.readAsText(manifest));}catch{throw new Error('备份清单无法解析');}
- if(raw?.format!=='reclimb.backup'||![1,2,3].includes(raw.version)||!raw.records)throw new Error('这不是受支持的重登备份文件');
+ if(raw?.format!=='reclimb.backup'||![1,2,3,4].includes(raw.version)||!raw.records)throw new Error('这不是受支持的重登备份文件');
  const records:any={};
  const introduced:Record<string,number>={sourceTranscriptions:2,teachingVersions:3,taskReviews:3,disputes:3,corrections:3,answerExposures:3};
  for(const [key,schema] of Object.entries(entities)){records[key]=z.array(schema).max(100000).parse(raw.version<(introduced[key]??1)?raw.records[key]??[]:raw.records[key]);const ids=new Set<string>();for(const r of records[key]){if(ids.has(r.id))throw new Error('备份包含重复记录');ids.add(r.id);}}
@@ -57,6 +63,8 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  const maps:any={};for(const key of Object.keys(entities))maps[key]=new Map(records[key].map((r:any)=>[r.id,r]));
  const match=(table:string,key:string,projectId:string)=>{const r=maps[table].get(key);if(!r||r.projectId!==projectId)throw new Error('备份包含断开的或跨项目的关联');return r;};
  const activitySources=(activity:any,projectId:string)=>{if(!activity)return;for(const sourceId of activity.sourceIds)match('fragments',sourceId,projectId);for(const version of activity.sourceVersions??[]){match('fragments',version.fragmentId,projectId);if(!activity.sourceIds.includes(version.fragmentId))throw new Error('来源版本不是当前任务引用的原文');for(const key of version.transcriptionIds){const t=match('sourceTranscriptions',key,projectId);if(t.fragmentId!==version.fragmentId||t.status!=='confirmed')throw new Error('任务来源版本没有关联已核对的原文转写');}}};
+ const comparableActivity=(activity:any)=>{if(!activity)return activity;const {teachingVersionId,rubricIds,...content}=activity;return content;};
+ const recordedRequests=new Set<string>(),recordedInputs=new Set<string>();
  for(const f of records.fragments)match('materials',f.materialId,f.projectId);
  for(const t of records.sourceTranscriptions){const f=match('fragments',t.fragmentId,t.projectId);match('materials',t.materialId,t.projectId);if(f.materialId!==t.materialId||(f.pageNumber!==undefined&&f.pageNumber!==t.pageNumber))throw new Error('转写与原页关联不一致');if(t.status==='confirmed'&&!t.confirmedAt)throw new Error('已核对转写缺少核对时间');}
  for(const p of records.projects)for(const step of p.nearSteps??[]){match('capabilities',step.capabilityId,p.id);for(const key of step.sourceIds)match('fragments',key,p.id);}
@@ -64,7 +72,26 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  for(const s of records.sessions){
   match('capabilities',s.capabilityId,s.projectId);
   activitySources(s.activity,s.projectId);
-  for(const message of s.messages)for(const key of message.sourceIds??[])match('fragments',key,s.projectId);
+  const inputs=new Map<string,any>();
+  for(const message of s.messages){
+   for(const key of message.sourceIds??[])match('fragments',key,s.projectId);
+   activitySources(message.activitySnapshot,s.projectId);
+   if(message.stepSnapshot){for(const key of message.stepSnapshot.sourceIds)match('fragments',key,s.projectId);activitySources(message.stepSnapshot.activity,s.projectId);if((message.stepId&&message.stepId!==message.stepSnapshot.id)||(message.taskId&&message.taskId!==message.stepSnapshot.taskId))throw new Error('已保存输入与当时教学步骤不一致');}
+   if(message.activitySnapshot?.id&&message.taskId!==message.activitySnapshot.id)throw new Error('已保存输入与冻结任务不一致');
+   if(message.teachingVersionId){
+    const v=match('teachingVersions',message.teachingVersionId,s.projectId),legacy=v.origin==='legacy';
+    if(v.capabilityId!==s.capabilityId||message.taskId!==v.taskId||(message.activitySnapshot&&JSON.stringify(legacy?comparableActivity(message.activitySnapshot):message.activitySnapshot)!==JSON.stringify(legacy?comparableActivity(v.activity):v.activity)))throw new Error('已保存输入的教学版本关联不一致');
+    const frozenStep=v.steps.find((step:any)=>step.id===message.stepId);
+    if(frozenStep&&message.stepSnapshot&&JSON.stringify(frozenStep)!==JSON.stringify(message.stepSnapshot))throw new Error('已保存输入的步骤内容与冻结版本不一致');
+   }
+   if(message.attemptId){
+    const a=match('attempts',message.attemptId,s.projectId),legacy=!a.teachingVersionId&&message.teachingVersionId&&match('teachingVersions',message.teachingVersionId,s.projectId).origin==='legacy';
+    if(a.sessionId!==s.id||(message.role==='user'&&(a.text!==message.text||(a.taskId??a.activitySnapshot?.id)!==message.taskId||(!legacy&&a.teachingVersionId!==message.teachingVersionId)||a.helpLevel!==message.helpLevel||a.requestId!==message.requestId||a.stepId!==message.stepId||a.submittedAt!==message.createdAt||(a.activitySnapshot&&JSON.stringify(a.activitySnapshot)!==JSON.stringify(message.activitySnapshot)))))throw new Error('已保存输入与对应作答不一致');
+    if(message.role==='user'&&message.responseMode==='discussion'&&(a.assessment||records.evidence.some((e:any)=>e.attemptId===a.id)))throw new Error('讨论输入不能关联能力评价');
+   }
+   if(message.inputId&&message.role==='user'){if(recordedInputs.has(message.inputId)||!message.requestId||recordedRequests.has(message.requestId)||!message.responseMode||!message.responseState)throw new Error('本地输入缺少回应状态或包含重复编号');if(message.responseMode==='assessment'&&(!message.attemptId||message.kind!=='attempt'))throw new Error('非作答输入不能声明能力评价');inputs.set(message.inputId,message);recordedInputs.add(message.inputId);recordedRequests.add(message.requestId);}
+  }
+  for(const message of s.messages)if(message.inputId&&message.role!=='user'){const input=inputs.get(message.inputId);if(!input||message.taskId!==input.taskId||(message.attemptId&&message.attemptId!==input.attemptId)||(message.teachingVersionId&&message.teachingVersionId!==input.teachingVersionId))throw new Error('回应未关联同一会话中保存的原输入');}
   if(s.teaching)for(const step of [s.teaching.current,...s.teaching.upcoming,...s.teaching.history,...(s.teaching.returnStep?[s.teaching.returnStep]:[]),...(s.teaching.returnUpcoming??[])]){for(const key of step.sourceIds)match('fragments',key,s.projectId);activitySources(step.activity,s.projectId);if(step.activity?.id&&step.activity.id!==step.taskId)throw new Error('教学步骤与题目关联不一致');}
   if(s.dueReviewId){const review=match('reviews',s.dueReviewId,s.projectId);if(review.capabilityId!==s.capabilityId||review.kind!==s.mode)throw new Error('备份会话与回访的能力或模式关联不一致');}
  }
@@ -125,6 +152,8 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  }
  for(const r of records.taskReviews){
   const v=match('teachingVersions',r.teachingVersionId,r.projectId);if(r.contentHash!==v.contentHash)throw new Error('核验结论未绑定正确的教学版本');
+  if(r.effectiveStatus!==undefined&&r.effectiveStatus!==r.status)throw new Error('核验的程序有效状态不一致');
+  for(const reason of r.blockingReasons??[]){if(reason.sourceId&&!v.sources.some((source:any)=>source.id===reason.sourceId))throw new Error('核验阻断原因关联了其他材料');if(reason.stepId&&!v.steps.some((step:any)=>step.id===reason.stepId))throw new Error('核验阻断原因关联了其他步骤');}
   if(r.branches.some((b:any)=>b.criterionIndexes.some((i:number)=>i>=v.activity.rubric.length)))throw new Error('核验条件引用了不存在的标准');
   for(const relation of r.exposureRelations)match('answerExposures',relation.exposureId,r.projectId);
   for(const checked of r.sourceChecks??[])if(!v.sources.some((source:any)=>source.id===checked.sourceId))throw new Error('来源核对引用了教学片段之外的材料');

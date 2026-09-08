@@ -1,4 +1,5 @@
 import type { WorkspaceSnapshot } from '../shared/types';
+import {publicVerificationBlocker} from '../shared/reliability';
 /** Hidden model reference answers never cross the isolated renderer boundary. */
 export function publicSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
   const copy=structuredClone(snapshot);
@@ -9,7 +10,7 @@ export function publicSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
     for(const child of Object.values(object))visit(child);
   }
   visit(copy);
-  copy.taskReviews=copy.taskReviews.map(review=>({...review,summary:review.status==='ready'?'已完成独立核验；这不是正确性认证。':review.status==='needs_correction'?'核验发现需要修正的内容，暂不评价能力。':'核验尚不能确定，可以共同探究。',privateSolution:'',issues:[],branches:[],exposureRelations:[],assessmentFindings:[],sourceChecks:[],localChecks:review.localChecks.map(check=>({status:check.status,details:''}))}));
+  copy.taskReviews=copy.taskReviews.map(review=>({...review,...(review.blockingReasons?{blockingReasons:review.blockingReasons.map(publicVerificationBlocker)}:{}),summary:review.status==='ready'?'已完成独立核验；这不是正确性认证。':review.status==='needs_correction'?'核验发现需要修正的内容，暂不评价能力。':'核验尚不能确定，可以共同探究。',privateSolution:'',issues:[],branches:[],exposureRelations:[],assessmentFindings:[],sourceChecks:[],localChecks:review.localChecks.map(check=>({status:check.status,details:''}))}));
   copy.answerExposures=copy.answerExposures.map(exposure=>({...exposure,text:''}));
   return copy;
 }

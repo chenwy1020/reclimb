@@ -68,12 +68,15 @@ async function handle(action:DesktopAction,p:any={}):Promise<unknown>{
  case 'material.confirmTranscription':confirmSourceTranscription(store,getId(p,'transcriptionId'),z.string().min(1).max(100000).optional().parse(p.text));break;
  case 'material.manualTranscription':createManualTranscription(store,z.object({fragmentId:z.string().min(1).max(120),pageNumber:z.number().int().positive(),text:z.string().min(1).max(100000),region:z.object({x:z.number(),y:z.number(),width:z.number(),height:z.number()}).optional(),confirmed:z.literal(true)}).parse(p));break;
  case 'session.verification':return service.getVerification(getId(p,'sessionId'));
- case 'session.verify':await service.verify(getId(p,'sessionId'));break;
+ case 'session.verify':await service.verify(getId(p,'sessionId'),{force:z.boolean().optional().parse(p.force)});break;
+ case 'session.adoptConfirmedSources':await service.adoptConfirmedSources(getId(p,'sessionId'));break;
  case 'session.reviewSolution':return {text:await service.viewReviewSolution(getId(p,'sessionId'))};
  case 'session.dispute':await service.dispute(getId(p,'sessionId'),z.string().max(10000).optional().parse(p.issue)??'这里可能有错，请核对题目、讲解及评价。');break;
  case 'dispute.review':await service.reviewDispute(getId(p,'disputeId'),{allowSendingPrivateContext:z.boolean().default(false).parse(p.allowSendingPrivateContext)});break;
  case 'lesson.start':{const mode=z.enum(['practice','delayed','transfer','diagnosis','selection']).optional().parse(p.mode);await prepareSources(getId(p,'projectId'));await service.start(getId(p,'projectId'),p.capabilityId,mode as SessionMode|undefined,p.reviewId,p.nearStepId);break;}
  case 'session.saveDraft':service.saveDraft(getId(p),z.string().max(100000).parse(p.draft),z.string().max(120).optional().parse(p.taskId),z.string().max(120).optional().parse(p.stepId));break;
+ case 'session.recordInput':return service.recordInput(getId(p,'sessionId'),z.object({requestId:z.string().min(1).max(120),text:z.string().min(1).max(100000),kind:z.enum(['attempt','explore','note']),taskId:z.string().min(1).max(120).optional(),stepId:z.string().min(1).max(120).optional(),teachingVersionId:z.string().min(1).max(120).optional()}).parse(p));
+ case 'session.respondInput':{const sessionId=getId(p,'sessionId'),inputId=getId(p,'inputId');requireSession(sessionId);if(!visionRunner.isBusy)await service.respondInput(sessionId,inputId);break;}
  case 'session.submit':await service.submit(getId(p,'sessionId'),z.string().max(100000).parse(p.text),getId(p,'requestId'));break;
  case 'session.help':await service.help(getId(p,'sessionId'),z.enum(['hint','confused','example','answer','explore']).parse(p.kind) as HelpEvent['kind'],p.text??'',z.enum(['term','reason','step','overload']).optional().parse(p.confusionKind));break;
  case 'session.nextStep':await service.nextStep(getId(p,'sessionId'),z.enum(['continue','smaller','independent','return']).parse(p.intent));break;
