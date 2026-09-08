@@ -1,0 +1,48 @@
+import ManualTranscription from './ManualTranscription';
+import {useEffect,useState} from 'react';
+import {ArrowLeft,ArrowRight,BookOpen,Check,ChevronDown,ExternalLink,FileText,Search,ShieldCheck} from 'lucide-react';
+import type {Fragment,WorkspaceSnapshot} from '../shared/types';
+import {Badge,Button,timeLabel,type Run} from './ui';
+import {RichText} from './RichText';
+import PdfPageViewer from './PdfPageViewer';
+const qualityLabels={ 'native-text':'原生文本','ocr-text':'识别文本','image-only':'图像页面',mixed:'混合内容',unknown:'尚未判断'};
+export function SourceQualityBadge({fragment}:{fragment?:Fragment}){return fragment?.quality?<Badge tone={fragment.quality.needsVerification?'amber':'green'}>{qualityLabels[fragment.quality.kind]}{fragment.quality.needsVerification?' · 需核对':''}</Badge>:null}
+
+export function SourceReader({snapshot:s,projectId,focusId,run,full=false}:{snapshot:WorkspaceSnapshot;projectId:string;focusId?:string;run:Run;full?:boolean}){
+  const materials=s.materials.filter(m=>m.projectId===projectId);const[materialId,setMaterialId]=useState('');const[query,setQuery]=useState('');const[selected,setSelected]=useState(focusId||'');const[tab,setTab]=useState<'page'|'text'|'compare'>('page');
+  const focus=s.fragments.find(f=>f.id===focusId);const actualMaterialId=materialId||focus?.materialId||materials[0]?.id;const material=materials.find(m=>m.id===actualMaterialId);
+  const fragments=s.fragments.filter(f=>f.materialId===actualMaterialId).sort((a,b)=>a.ordinal-b.ordinal);const filtered=fragments.filter(f=>!query||(f.locator+' '+f.text+' '+(f.searchableText||'')).toLowerCase().includes(query.toLowerCase()));const activeFragment=filtered.find(f=>f.id===selected)||filtered[0];
+  useEffect(()=>{if(focusId){setSelected(focusId);setMaterialId(focus?.materialId||'');setQuery('');setTab('page')}},[focusId]);useEffect(()=>{setMaterialId('');setQuery('');setSelected(focusId||'');setTab('page')},[projectId]);
+  const isPdf=material?.kind==='pdf';
+  if(!materials.length)return <div className="reader-empty"><FileText size={30}/><h3>原文在这里陪你</h3><p>在学习路线中加入材料后，可以边读原文，边尝试和核对。</p></div>;
+  return <div className={'source-reader '+(full?'full':'')}>
+    <div className="reader-toolbar"><label><BookOpen size={16}/><select aria-label="阅读材料" value={actualMaterialId} onChange={e=>{setMaterialId(e.target.value);setSelected('');setQuery('');setTab('page')}}>{materials.map(m=><option key={m.id} value={m.id}>{m.title}</option>)}</select></label>{material&&<button className="icon-button" title="打开原始文件" onClick={()=>void run('material.openOriginal',{materialId:material.id})}><ExternalLink size={15}/></button>}</div>
+    <label className="search-field"><Search size={15}/><input placeholder="搜索原文或页码、段落…" value={query} onChange={e=>setQuery(e.target.value)}/></label>
+    {material?.warnings.length?<details className="reader-warning"><summary>{material.warnings.length} 条解析提示 · 点击查看</summary>{material.warnings.map((w,i)=><RichText key={i} text={w}/>)}</details>:null}
+    <div className="reader-body"><div className="fragment-tabs">{filtered.map(f=><button key={f.id} className={activeFragment?.id===f.id?'selected':''} onClick={()=>setSelected(f.id)} title={f.text.slice(0,90)}>{f.pageNumber?'PDF '+f.pageNumber+(f.printedPageLabel?' · 印刷 '+f.printedPageLabel:''):f.locator}</button>)}</div>
+    {!filtered.length?<p className="reader-no-results">没有找到匹配的片段，请换个关键词。</p>:activeFragment&&material?<><div className="source-quality-line"><SourceQualityBadge fragment={activeFragment}/>{activeFragment.quality?.needsVerification&&<span>重要公式与论证请和原页对照</span>}</div>
+      {isPdf&&!material.pdfMetadata&&<div className="legacy-pdf-note"><p>这份 PDF 来自早期版本。先在本机建立页码与质量信息，再定位公式和生成转录。</p><Button onClick={()=>void run('material.analyzePdf',{materialId:material.id},'已重新分析本机 PDF，页码与质量提示已更新。')}>分析本机 PDF 页码与质量</Button></div>}{isPdf&&<div className="source-view-tabs" role="tablist" aria-label="资料查看方式">{([['page','原始页面'],['text','可读文字'],['compare','原页与转录对照']] as const).map(([value,label])=><button key={value} role="tab" aria-selected={tab===value} className={tab===value?'selected':''} onClick={()=>setTab(value)}>{label}</button>)}</div>}
+      {isPdf&&(tab==='page'||tab==='compare')&&<PdfPageViewer material={material} fragment={activeFragment} snapshot={s} run={run} onPageChange={page=>{const next=fragments.find(f=>f.pageNumber===page);if(next)setSelected(next.id)}}/>}
+      {(!isPdf||tab==='text'||tab==='compare')&&<article className="fragment-content"><span className="source-locator">{activeFragment.locator}</span><h3>{material.title}</h3>{isPdf&&<p className="extracted-label">原始文本提取 · 保留导入时的内容，可能遗漏公式或排版</p>}<RichText className="source-text" text={activeFragment.text}/><div className="fragment-pagination"><Button variant="ghost" disabled={filtered.indexOf(activeFragment)<=0} onClick={()=>setSelected(filtered[filtered.indexOf(activeFragment)-1].id)}><ArrowLeft size={14}/>上一段</Button><small>{filtered.indexOf(activeFragment)+1} / {filtered.length}</small><Button variant="ghost" disabled={filtered.indexOf(activeFragment)>=filtered.length-1} onClick={()=>setSelected(filtered[filtered.indexOf(activeFragment)+1].id)}>下一段<ArrowRight size={14}/></Button></div></article>}
+      {isPdf&&tab==='text'&&<ManualTranscription fragment={activeFragment} run={run}/>}
+      {isPdf&&<TranscriptionPanel snapshot={s} fragment={activeFragment} run={run}/>}
+    </>:null}</div>
+  </div>
+}
+function TranscriptionPanel({snapshot:s,fragment,run}:{snapshot:WorkspaceSnapshot;fragment:Fragment;run:Run}){
+  const versions=(s.sourceTranscriptions||[]).filter(t=>t.fragmentId===fragment.id||(t.materialId===fragment.materialId&&t.pageNumber===fragment.pageNumber)).sort((a,b)=>b.version-a.version||b.createdAt.localeCompare(a.createdAt));
+  const[selectedVersion,setSelectedVersion]=useState('');const[editing,setEditing]=useState(false);const[text,setText]=useState('');const[confirmed,setConfirmed]=useState(false);const[saving,setSaving]=useState(false);const[error,setError]=useState('');
+  const current=versions.find(v=>v.id===selectedVersion)||versions[0];
+  useEffect(()=>{setSelectedVersion('');setEditing(false);setError('')},[fragment.id]);
+  useEffect(()=>{setText(current?.text||'');setConfirmed(false);setEditing(false)},[current?.id,current?.text]);
+  return <section className="transcription-panel"><div className="section-heading"><h3><FileText size={15}/>可核对的转录版本</h3>{versions.length>0&&<span className="muted tiny">{versions.length} 个版本</span>}</div>
+    {!current?<p className="muted">需要时可以从原页生成转录。机器识别只是候选文本，你核对后才能标为已确认。</p>:<><div className="transcription-version"><select aria-label="选择转录版本" value={current.id} onChange={e=>setSelectedVersion(e.target.value)}>{versions.map(v=><option key={v.id} value={v.id}>版本 {v.version} · {v.origin==='manual'?'手工录入已确认':v.status==='confirmed'?'人工已确认':'机器转录待核对'} · {timeLabel(v.createdAt)}</option>)}</select><Badge tone={current.status==='confirmed'?'green':'amber'}>{current.status==='confirmed'?'人工已确认':'待核对'}</Badge></div>
+      <div className="transcription-context">PDF 实际页 {current.pageNumber}{current.region?' · 仅所选区域':' · 页面'}{current.origin==='manual'?' · 手工录入':current.model?' · '+current.model:''}</div>
+      {current.uncertainties.length>0&&<details className="reader-warning" open><summary>识别中仍有不确定之处</summary>{current.uncertainties.map((u,i)=><RichText key={i} text={u}/>)}</details>}
+      {editing?<><label className="form-label">对照原页修订文字与公式<textarea aria-label="修订转录文字" rows={10} value={text} onChange={e=>{setText(e.target.value);setConfirmed(false)}}/></label><details className="transcription-render-preview"><summary>预览修订后的文字与公式<ChevronDown size={14}/></summary><RichText text={text}/></details><label className="checkbox-label"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>我已逐项对照原页，确认这份文字及公式。</label><div className="transcription-actions"><Button disabled={saving} onClick={()=>setEditing(false)}>取消修订</Button><Button variant="primary" disabled={saving||!confirmed||!text.trim()} onClick={async()=>{setSaving(true);setError('');const next=await run('material.confirmTranscription',{transcriptionId:current.id,text},'已保存新的人工确认版本，原始提取与历史版本均保留。');setSaving(false);if(next){setSelectedVersion('');setEditing(false)}else setError('确认版本没有保存，请查看错误原因后重试。')}}><ShieldCheck size={14}/>保存人工确认版本</Button></div></>:<><RichText className="transcription-text" text={current.text}/><Button onClick={()=>{setText(current.text);setEditing(true);setConfirmed(false)}}><Check size={14}/>{current.status==='confirmed'?'修订并保留新版本':'对照原页，修订并确认'}</Button></>}
+      {error&&<p className="inline-error">{error}</p>}
+    </>}
+  </section>
+}
+
+

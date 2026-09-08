@@ -1,0 +1,20 @@
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { BookOpen } from 'lucide-react';
+import type { DesktopAction, EvidenceStatus, WorkspaceSnapshot, SessionMode, ActivityKind } from '../shared/types';
+export type Run = (action: DesktopAction, payload?: unknown, success?: string) => Promise<WorkspaceSnapshot | null>;
+export type Page = 'home' | 'route' | 'desk' | 'evidence' | 'settings';
+export const evidenceLabels: Record<EvidenceStatus, string> = {assisted:'在帮助下完成',independent:'独立完成过',delayed:'经过延迟验证',transfer:'经过迁移验证',needs_review:'仍待验证'};
+export const activityLabels: Record<ActivityKind,string> = {prediction:'预测与解释',application:'应用与实践',argument:'论证与表达',reconstruction:'独立重构',diagnosis:'发现与纠正',selection:'判断与选路'};
+export const modeLabels: Record<SessionMode,string> = {practice:'学习与尝试',delayed:'延迟重构',transfer:'迁移应用',diagnosis:'纠错练习',selection:'判断适用条件'};
+export const outcomeLabels: Record<string,string> = {met:'达到本次标准',partial:'部分达到',not_yet:'需要继续尝试',uncertain:'暂无法判断',not_applicable:'本条件下不适用'};
+export const helpLabels: Record<string,string> = {hint:'一点提示',confused:'重新理解',example:'换个例子',answer:'完整示范',explore:'探索支线',review_solution:'查看核验解答'};
+export const dateLabel = (v:string) => new Date(v).toLocaleDateString('zh-CN',{month:'long',day:'numeric'});
+export const timeLabel = (v:string) => new Date(v).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+export const tomorrow = () => new Date(Date.now()+86400000).toISOString();
+export function budgetUsed(s:WorkspaceSnapshot) { const n=new Date(); return s.usage.filter(u => {const d=new Date(u.createdAt); return d.getMonth()===n.getMonth() && d.getFullYear()===n.getFullYear() && u.status!=='failed';}).reduce((a,u)=>a+u.estimatedCny,0); }
+export function isSnapshot(v:unknown):v is WorkspaceSnapshot{return !!v&&typeof v==='object'&&'projects' in v&&'settings' in v;}
+export function Button({children,className='',variant='secondary',...props}:ButtonHTMLAttributes<HTMLButtonElement>&{variant?:'primary'|'secondary'|'ghost'|'danger'}){return <button className={'button button-'+variant+' '+className} {...props}>{children}</button>}
+export function Badge({children,tone=''}:{children:ReactNode;tone?:string}){return <span className={'badge '+tone}>{children}</span>}
+export function Empty({icon:Icon=BookOpen,title,children,action}:{icon?:typeof BookOpen;title:string;children:ReactNode;action?:ReactNode}){return <div className="empty"><div className="empty-icon"><Icon size={26}/></div><h3>{title}</h3><p>{children}</p>{action}</div>}
+export function MountainArt(){return <svg className="mountain-art" viewBox="0 0 680 360" aria-hidden="true"><defs><linearGradient id="mountainFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#dce3cf"/><stop offset="100%" stopColor="#edf0df"/></linearGradient><linearGradient id="foregroundFade" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#54715c"/><stop offset="100%" stopColor="#849277"/></linearGradient></defs><circle cx="430" cy="101" r="42" fill="#e9ce83" opacity=".65"/><path d="M0 306 170 155 220 183 330 68 464 222 539 128 680 261V360H0Z" fill="url(#mountainFade)"/><path d="m267 142 63-74 79 91-44-18-35-24-23 31-13-14Z" fill="#f9faed"/><path d="M78 360 229 225 285 253 398 127 540 278 589 233 680 316V360Z" fill="#a4b297"/><path d="m355 174 43-47 59 63-40-13-22-24-17 27Z" fill="#e4e9d7"/><path d="M0 360 109 297 196 317 291 249 414 325 508 255 680 341V360Z" fill="url(#foregroundFade)"/><path d="M270 360c56-20 92-26 76-42-14-14-31-13-21-25 8-10 42-22 31-30" fill="none" stroke="#efe9cf" strokeWidth="4" strokeLinecap="round" strokeDasharray="2 9"/><path d="M357 264v-30m0 0 18 7-18 6" fill="#cfab61" stroke="#5e715b" strokeWidth="2.5"/><g fill="none" stroke="#758b71" strokeWidth="1.5" opacity=".6"><path d="m511 79 7-3 7 3m7-20 6-3 6 3M177 120l8-4 8 4"/></g></svg>}
+

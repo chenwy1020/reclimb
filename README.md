@@ -1,0 +1,33 @@
+# 重登 · 个人 AI 学习空间
+
+Windows 上的个人学习应用，用于阅读不同书籍、课程和文章，保留尝试、帮助和能力证据。Electron 主进程管理本地资料与模型调用，React 呈现学习桌，SQLite 保存长期档案。
+
+本仓库当前为私有仓库，保留 `UNLICENSED`。尚未选择开源许可证，不提供公共包发布。
+
+## 开发
+
+使用 Windows x64 与 Node.js 24，并按锁文件安装依赖：
+
+```powershell
+npm ci
+node node_modules/electron/install.js
+$env:RECLIMB_DATA_DIR = Join-Path $PWD '.local-test-data'
+npm run dev
+```
+
+开发和验收使用独立资料目录，不指向正在学习的档案。
+
+```powershell
+npm run typecheck
+npm test
+npm run build
+npm run package
+```
+
+安装包包含运行环境，普通使用者无需安装开发工具。完整备份不包含服务密钥；每位使用者自行配置服务与预算，资料保存在各自电脑。
+
+## 设计原则
+
+必要的摩擦应来自亲自思考、重构和迁移。系统错误、保存失败或反复维护 AI 的逻辑不属于学习者应该承担的困难。题目核验与能力证据管理不能代替真实教学效果的观察。
+
+本仓库包含源码、通用测试和原创夹具。私人教材、学习档案、日志、凭据及个人验收账目不进入 Git。升级所需的定点修正逻辑暂保留在私有代码中；未来公开前还需进行去标识化审查。

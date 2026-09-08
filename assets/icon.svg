@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="forest" x1="24" y1="16" x2="222" y2="242" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3A624A"/>
+      <stop offset="1" stop-color="#244734"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="55" fill="url(#forest)"/>
+  <rect x="9" y="9" width="238" height="238" rx="54" fill="none" stroke="#65826A" stroke-opacity=".25" stroke-width="2"/>
+  <path d="M43 184 98 68 131 134 159 94 213 184Z" fill="#EDEEDC" fill-opacity=".055" stroke="#F1F1DD" stroke-width="10" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="m84 100 14-32 18 36-17-10Z" fill="#F1F1DD"/>
+  <path d="M120 183c18-10 22-17 13-24-7-5-5-12 2-18" fill="none" stroke="#D4DDC3" stroke-width="4" stroke-linecap="round" stroke-dasharray="1 10"/>
+</svg>
+

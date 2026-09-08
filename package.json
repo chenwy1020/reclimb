@@ -1,0 +1,96 @@
+{
+  "name": "reclimb-learning",
+  "version": "0.3.0",
+  "private": true,
+  "description": "重登 · 可复用的个人 AI 学习空间",
+  "main": "dist/main/index.cjs",
+  "author": "Reclimb",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/build-main.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "start": "electron .",
+    "package": "npm run build && electron-builder --win nsis --x64",
+    "test:desktop": "node scripts/smoke-v03.mjs",
+    "test:desktop:v02": "node scripts/smoke-v02.mjs",
+    "test:desktop:legacy": "node scripts/smoke-desktop.mjs",
+    "package:source": "node scripts/package-source.mjs"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@napi-rs/canvas": "^1.0.8",
+    "adm-zip": "^0.6.0",
+    "cheerio": "^1.2.0",
+    "katex": "^0.18.7",
+    "lucide-react": "^0.577.0",
+    "mammoth": "^1.11.0",
+    "pdfjs-dist": "^6.2.108",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "sql.js": "^1.14.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/sql.js": "^1.4.9",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "44.2.0",
+    "electron-builder": "^26.8.0",
+    "esbuild": "^0.28.1",
+    "playwright": "^1.58.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vitest": "^4.0.18"
+  },
+  "build": {
+    "appId": "cn.reclimb.learning",
+    "productName": "重登",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/sql.js/dist/sql-wasm.wasm",
+        "to": "sql-wasm.wasm"
+      },
+      {
+        "from": "assets/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": true,
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "重登",
+      "artifactName": "Reclimb-Setup-${version}.${ext}"
+    },
+    "electronDist": "node_modules/electron/dist"
+  }
+}

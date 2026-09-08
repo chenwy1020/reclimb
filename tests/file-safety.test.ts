@@ -1,0 +1,3 @@
+import {describe,it,expect} from 'vitest';import {safeMaterialFilename,canOpenOriginal} from '../src/main/file-safety';
+describe('original file safety',()=>{it('keeps the true extension when shortening names',()=>{const name='a'.repeat(176)+'.cmd.md';const safe=safeMaterialFilename(name);expect(safe.endsWith('.md')).toBe(true);expect(safe.length).toBeLessThanOrEqual(180);});it('never launches executable originals',()=>{for(const name of ['payload.cmd','payload.exe','article.html','x.url','x.lnk'])expect(canOpenOriginal(name)).toBe(false);expect(canOpenOriginal('book.pdf')).toBe(true);});it('rejects unsafe archive extensions',()=>{expect(()=>safeMaterialFilename('payload.cmd')).toThrow();});});
+

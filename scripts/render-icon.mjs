@@ -1,0 +1,5 @@
+import {_electron as electron} from 'playwright';import {createRequire} from 'node:module';import {readFileSync,writeFileSync} from 'node:fs';import {resolve} from 'node:path';
+const require=createRequire(import.meta.url);const env={...process.env,RECLIMB_DATA_DIR:resolve('.test-data/icon-render'),RECLIMB_DEV_URL:''};delete env.ELECTRON_RUN_AS_NODE;
+const app=await electron.launch({executablePath:require('electron'),args:['.'],cwd:process.cwd(),env});
+try{const page=await app.firstWindow();await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();await page.setContent('<html><style>html,body{margin:0;background:transparent}</style>'+readFileSync('assets/icon.svg','utf8')+'</html>');const png=await page.locator('svg').screenshot({omitBackground:true});writeFileSync('assets/icon.png',png);const head=Buffer.alloc(22);head.writeUInt16LE(1,2);head.writeUInt16LE(1,4);head.writeUInt16LE(1,10);head.writeUInt16LE(32,12);head.writeUInt32LE(png.length,14);head.writeUInt32LE(22,18);writeFileSync('assets/icon.ico',Buffer.concat([head,png]));console.log('Rendered icon:',png.length,'bytes');}finally{await app.close();}
+
