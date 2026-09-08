@@ -80,11 +80,11 @@ export class LearningStore {
       const check = db.exec('PRAGMA quick_check');
       if (check[0]?.values.some(row => row[0] !== 'ok')) throw new Error('学习数据库完整性检查失败；原文件已保留。');
       const version = Number(db.exec('PRAGMA user_version')[0]?.values[0]?.[0] ?? 0);
-      if (version > 3) throw new Error('此学习数据库由更新版本创建，请先升级应用。');
+      if (version > 4) throw new Error('此学习数据库由更新版本创建，请先升级应用。');
       mkdirSync(dataDirectory, { recursive: true });
-      if(existing && version<3){
+      if(existing && version<4){
         const backupDirectory=join(dataDirectory,'upgrade-backups');mkdirSync(backupDirectory,{recursive:true});
-        writeFileSync(join(backupDirectory,'pre-0.3-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID()+'.sqlite'),existing,{flag:'wx',mode:0o600});
+        writeFileSync(join(backupDirectory,'pre-0.3.1-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID()+'.sqlite'),existing,{flag:'wx',mode:0o600});
       }
       const store = new LearningStore(db, sql, dataDirectory);
       store.transaction(() => {
@@ -95,7 +95,7 @@ export class LearningStore {
         db!.run('CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), entity TEXT NOT NULL)');
         db!.run('CREATE TABLE IF NOT EXISTS fragment_terms (fragment_id TEXT NOT NULL, project_id TEXT NOT NULL, term TEXT NOT NULL, PRIMARY KEY(fragment_id, term))');
         db!.run('CREATE INDEX IF NOT EXISTS fragment_terms_lookup ON fragment_terms(project_id, term)');
-        db!.run('PRAGMA user_version=3');
+        db!.run('PRAGMA user_version=4');
         // Rebuild only when adopting an older store that has not yet had a term index.
         if (store.rows('SELECT 1 FROM fragment_terms LIMIT 1').length === 0) {
           for (const fragment of store.list('fragments')) store.indexFragment(fragment);

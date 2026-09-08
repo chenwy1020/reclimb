@@ -1,5 +1,18 @@
-import AdmZip from 'adm-zip';import {readFileSync,readdirSync,statSync,writeFileSync} from 'node:fs';import {join,resolve,relative} from 'node:path';import {createHash} from 'node:crypto';
-const root=process.cwd(),zip=new AdmZip();const include=['src','tests','scripts','docs','assets','README.md','package.json','package-lock.json','tsconfig.json','vite.config.ts','vitest.config.ts','index.html','.gitignore'];const manifest=[];
-function add(path){const absolute=resolve(root,path);const rel=relative(root,absolute);if(rel.startsWith('..'))throw new Error('Source path escapes workspace');if(statSync(absolute).isDirectory()){for(const name of readdirSync(absolute).sort())add(join(path,name));return;}const bytes=readFileSync(absolute);zip.addFile(path.replaceAll('\\','/'),bytes);manifest.push({path:path.replaceAll('\\','/'),sha256:createHash('sha256').update(bytes).digest('hex')});}
-for(const path of include)add(path);zip.addFile('SOURCE-MANIFEST.json',Buffer.from(JSON.stringify(manifest,null,2)));const version=JSON.parse(readFileSync('package.json','utf8')).version;writeFileSync('release/Reclimb-Source-'+version+'.zip',zip.toBuffer());console.log('Source files:',manifest.length);
+import AdmZip from 'adm-zip';
+import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {sourceFiles,forbiddenSourcePath} from './source-files.mjs';
+execFileSync(process.execPath,['scripts/audit-source.mjs'],{stdio:'inherit'});
+const zip=new AdmZip(),manifest=[];
+for(const path of sourceFiles()){
+ if(forbiddenSourcePath.test(path))throw new Error('Unapproved source file: '+path);
+ const bytes=readFileSync(path);zip.addFile(path,bytes);
+ manifest.push({path,sha256:createHash('sha256').update(bytes).digest('hex')});
+}
+zip.addFile('SOURCE-MANIFEST.json',Buffer.from(JSON.stringify(manifest,null,2)));
+const version=JSON.parse(readFileSync('package.json','utf8')).version;
+mkdirSync('release',{recursive:true});
+writeFileSync('release/Reclimb-Source-'+version+'.zip',zip.toBuffer());
+console.log('Source files:',manifest.length);
 

@@ -64,6 +64,7 @@ export function finishAssessment(store: LearningStore, attemptId: string, assess
     if (!attempt) throw new Error('找不到这次提交。');
     const session = store.get('sessions', attempt.sessionId);
     if (!session || session.projectId !== attempt.projectId) throw new Error('提交与学习会话不属于同一项目。');
+    if(session.messages.some(message=>message.role==='user'&&message.attemptId===attemptId&&message.responseMode==='discussion'))throw new Error('这次输入保存时用于一起分析，不补发能力评价；可在核验通过后另作新的尝试。');
     const project = store.get('projects', attempt.projectId);
     const capability = store.get('capabilities', session.capabilityId);
     if (!project || !capability || capability.projectId !== attempt.projectId) throw new Error('会话与学习能力不属于同一项目。');

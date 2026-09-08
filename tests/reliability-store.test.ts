@@ -13,11 +13,11 @@ describe('0.3 archive adoption',()=>{
   db.run('INSERT INTO projects VALUES (?,?,?)',['p',null,JSON.stringify(project)]);db.run('PRAGMA user_version=2');const original=Buffer.from(db.export());db.close();writeFileSync(join(dir,'learning.sqlite'),original);
   const store=await LearningStore.open(dir);
   try{
-   const backups=readdirSync(join(dir,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.3-/);expect(readFileSync(join(dir,'upgrade-backups',backups[0]))).toEqual(original);
+   const backups=readdirSync(join(dir,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.3\.1-/);expect(readFileSync(join(dir,'upgrade-backups',backups[0]))).toEqual(original);
    expect(store.get('projects','p')).toEqual(project);
    for(const collection of ['teachingVersions','taskReviews','disputes','corrections','answerExposures'])expect(store.list(collection as never)).toEqual([]);
   }finally{store.close();}
   const next=await LearningStore.open(dir);next.close();expect(readdirSync(join(dir,'upgrade-backups'))).toHaveLength(1);
-  const check=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(check.exec('PRAGMA user_version')[0].values[0][0]).toBe(3);check.close();
+  const check=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(check.exec('PRAGMA user_version')[0].values[0][0]).toBe(4);check.close();
  });
 });
