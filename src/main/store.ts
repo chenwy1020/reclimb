@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import type { Collection, EntityMap, Fragment, Settings, WorkspaceSnapshot } from '../shared/types';
 
-export const COLLECTIONS: Collection[] = ['projects', 'capabilities', 'materials', 'fragments', 'sessions', 'attempts', 'evidence', 'reviews', 'usage', 'sourceTranscriptions','teachingVersions','taskReviews','disputes','corrections','answerExposures'];
+export const COLLECTIONS: Collection[] = ['projects', 'capabilities', 'materials', 'fragments', 'sessions', 'attempts', 'evidence', 'reviews', 'usage', 'sourceTranscriptions','teachingVersions','taskReviews','disputes','corrections','answerExposures','routeVersions','learningUnits','learningPositions','teachingObservations','understandingDrafts','readingLayouts'];
 const COLLECTION_SET = new Set<string>(COLLECTIONS);
 const APPEND_ONLY=new Set<Collection>(['teachingVersions','taskReviews','corrections','answerExposures']);
 const DEFAULT_SETTINGS: Settings = {
@@ -80,11 +80,11 @@ export class LearningStore {
       const check = db.exec('PRAGMA quick_check');
       if (check[0]?.values.some(row => row[0] !== 'ok')) throw new Error('学习数据库完整性检查失败；原文件已保留。');
       const version = Number(db.exec('PRAGMA user_version')[0]?.values[0]?.[0] ?? 0);
-      if (version > 4) throw new Error('此学习数据库由更新版本创建，请先升级应用。');
+      if (version > 5) throw new Error('此学习数据库由更新版本创建，请先升级应用。');
       mkdirSync(dataDirectory, { recursive: true });
-      if(existing && version<4){
+      if(existing && version<5){
         const backupDirectory=join(dataDirectory,'upgrade-backups');mkdirSync(backupDirectory,{recursive:true});
-        writeFileSync(join(backupDirectory,'pre-0.3.1-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID()+'.sqlite'),existing,{flag:'wx',mode:0o600});
+        writeFileSync(join(backupDirectory,'pre-0.4-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID()+'.sqlite'),existing,{flag:'wx',mode:0o600});
       }
       const store = new LearningStore(db, sql, dataDirectory);
       store.transaction(() => {
@@ -95,7 +95,7 @@ export class LearningStore {
         db!.run('CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), entity TEXT NOT NULL)');
         db!.run('CREATE TABLE IF NOT EXISTS fragment_terms (fragment_id TEXT NOT NULL, project_id TEXT NOT NULL, term TEXT NOT NULL, PRIMARY KEY(fragment_id, term))');
         db!.run('CREATE INDEX IF NOT EXISTS fragment_terms_lookup ON fragment_terms(project_id, term)');
-        db!.run('PRAGMA user_version=4');
+        db!.run('PRAGMA user_version=5');
         // Rebuild only when adopting an older store that has not yet had a term index.
         if (store.rows('SELECT 1 FROM fragment_terms LIMIT 1').length === 0) {
           for (const fragment of store.list('fragments')) store.indexFragment(fragment);
@@ -175,7 +175,7 @@ export class LearningStore {
     });
   }
   snapshot(): WorkspaceSnapshot {
-    return { projects: this.list('projects'), capabilities: this.list('capabilities'), materials: this.list('materials'), fragments: this.list('fragments'), sessions: this.list('sessions'), attempts: this.list('attempts'), evidence: this.list('evidence'), reviews: this.list('reviews'), usage: this.list('usage'), sourceTranscriptions:this.list('sourceTranscriptions'),teachingVersions:this.list('teachingVersions'),taskReviews:this.list('taskReviews'),disputes:this.list('disputes'),corrections:this.list('corrections'),answerExposures:this.list('answerExposures'), settings: this.getSettings(), dataDirectory: this.dataDirectory };
+    return { projects: this.list('projects'), capabilities: this.list('capabilities'), materials: this.list('materials'), fragments: this.list('fragments'), sessions: this.list('sessions'), attempts: this.list('attempts'), evidence: this.list('evidence'), reviews: this.list('reviews'), usage: this.list('usage'), sourceTranscriptions:this.list('sourceTranscriptions'),teachingVersions:this.list('teachingVersions'),taskReviews:this.list('taskReviews'),disputes:this.list('disputes'),corrections:this.list('corrections'),answerExposures:this.list('answerExposures'),routeVersions:this.list('routeVersions'),learningUnits:this.list('learningUnits'),learningPositions:this.list('learningPositions'),teachingObservations:this.list('teachingObservations'),understandingDrafts:this.list('understandingDrafts'),readingLayouts:this.list('readingLayouts'), settings: this.getSettings(), dataDirectory: this.dataDirectory };
   }
   transaction<T>(fn: () => T): T {
     this.ensureOpen();
@@ -238,4 +238,3 @@ export class LearningStore {
     return this.rows(`SELECT f.entity FROM fragments f JOIN fragment_terms t ON t.fragment_id=f.id WHERE f.project_id=? AND t.project_id=? AND t.term IN (${queryTerms.map(() => '?').join(',')}) GROUP BY f.id ORDER BY COUNT(DISTINCT t.term) DESC, f.rowid LIMIT ?`, [projectId, projectId, ...queryTerms, count]).map(row => JSON.parse(String(row.entity)) as Fragment);
   }
 }
-

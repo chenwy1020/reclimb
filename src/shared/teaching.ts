@@ -5,7 +5,7 @@ export interface StartingPoint { familiarity: Familiarity; background: string; u
 export interface LearningScope { suggestedFocus: string; reason: string; status: 'proposed' | 'confirmed'; confirmedAt?: string; }
 export interface NearStep { id: string; capabilityId: string; title: string; objective: string; reason: string; sourceIds: string[]; completion?: string; prerequisites?: string[]; }
 export type TeachingAction = 'explain' | 'demonstrate' | 'attempt' | 'feedback' | 'check' | 'reflect';
-export type TeachingIntent = 'continue' | 'smaller' | 'independent' | 'return';
+export type TeachingIntent = 'continue' | 'smaller' | 'independent' | 'return' | 'challenge' | 'advance' | 'synthesize' | 'consolidate';
 export type ConfusionKind = 'term' | 'reason' | 'step' | 'overload';
 export type SupportScope = 'concept' | 'other_example' | 'current_task' | 'navigation';
 export interface TransferCheck { changedSituation: string; sharedPrinciple: string; requiredAdaptation: string; verdict: 'valid' | 'same_task' | 'uncertain'; reason: string; }

@@ -37,6 +37,27 @@ export interface SourceTranscription {
  uncertainties:string[];
 }
 export interface SourceTextResult {text:string;warnings:string[];transcriptionIds:string[];}
+export interface ReadingBlock {
+ id:string;
+ order:number;
+ kind:'prose'|'source_image';
+ text?:string;
+ region?:SourceRegion;
+ reason?:string;
+ source:'extracted'|'confirmed_transcription'|'original_page';
+ transcriptionId?:string;
+}
+export interface ReadingLayout {
+ id:string;
+ projectId:string;
+ materialId:string;
+ fragmentId:string;
+ pageNumber?:number;
+ version:number;
+ blocks:ReadingBlock[];
+ status:'current'|'superseded';
+ createdAt:string;
+}
 
 /** Old workspaces locate PDF fragments by their unchanged physical-page locator. */
 export function physicalPage(fragment: { pageNumber?: number; locator: string }): number | undefined {

@@ -133,6 +133,15 @@ describe('versioned source transcription', () => {
     expect(store.get('sourceTranscriptions', manual.id)).toEqual(manual);
   });
 
+  it('keeps every still-current confirmed crop in the reading layout and matches the AI source version', () => {
+    const first = createManualTranscription(store, { fragmentId: 'f', pageNumber: 1, region: { x: 0.05, y: 0.1, width: 0.4, height: 0.2 }, text: '$I(e) < 0$', confirmed: true });
+    const second = createManualTranscription(store, { fragmentId: 'f', pageNumber: 1, region: { x: 0.5, y: 0.55, width: 0.4, height: 0.2 }, text: '$c = \\inf_{g\\in\\Gamma} \\max_t I(g(t))$', confirmed: true });
+    const current = store.list('readingLayouts', 'p').filter(layout => layout.fragmentId === 'f' && layout.status === 'current').at(-1)!;
+    const shown = current.blocks.filter(block => block.source === 'confirmed_transcription').map(block => block.transcriptionId);
+    const used = sourceText(store.get('fragments', 'f')!, store.list('sourceTranscriptions', 'p')).transcriptionIds;
+    expect(shown).toEqual([first.id, second.id]);expect(shown).toEqual(used);expect(current.blocks[0]).toMatchObject({kind:'source_image',source:'original_page'});
+  });
+
   it('prioritizes a confirmed crop ahead of long OCR text and reports only versions present in a bounded excerpt', () => {
     const fragment = { ...store.get('fragments', 'f')!, pageNumber: 1, text: '旧OCR原文'.repeat(1000), searchableText: '旧OCR原文'.repeat(1000), quality: { kind: 'ocr-text' as const, needsVerification: true, reasons: ['公式需核对'] } };
     const base = { id: 't', projectId: 'p', materialId: 'm', fragmentId: 'f', pageNumber: 1, region: { x: 0, y: 0, width: 0.5, height: 0.5 }, version: 2, text: 'CORRECT_FORMULA', status: 'confirmed' as const, createdAt: '2026-01-02', confirmedAt: '2026-01-02', uncertainties: [] };

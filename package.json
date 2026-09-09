@@ -1,6 +1,6 @@
 {
   "name": "reclimb-learning",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "重登 · 可复用的个人 AI 学习空间",
   "main": "dist/main/index.cjs",
@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "start": "electron .",
     "package": "npm run build && electron-builder --win nsis --x64",
-    "test:desktop": "node scripts/smoke-v03.mjs",
+    "test:desktop": "node scripts/smoke-v04.mjs",
+    "test:desktop:v031": "node scripts/smoke-v03.mjs",
     "test:desktop:v02": "node scripts/smoke-v02.mjs",
     "test:desktop:legacy": "node scripts/smoke-desktop.mjs",
     "package:source": "node scripts/package-source.mjs"

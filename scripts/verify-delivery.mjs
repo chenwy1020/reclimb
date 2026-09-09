@@ -17,7 +17,7 @@ if(new Set(names).size!==names.length||manifest.length+1!==names.length)throw ne
 for(const item of manifest){const bytes=zip.readFile(item.path);if(!bytes||sha(bytes)!==item.sha256||sha(readFileSync(item.path))!==item.sha256)throw new Error('源码清单与交付或当前源文件不一致：'+item.path);}
 const installerHash=sha(readFileSync(installer));
 const packageReport=JSON.parse(readFileSync('output/package-verification-'+tag+'.json','utf8'));
-if(packageReport.installerSha256.toLowerCase()!==installerHash||packageReport.desktopChecksPassed!==55||packageReport.externalRequests?.length!==0)throw new Error('安装包与已验证的包不一致，或桌面检查存在外部请求');
+if(packageReport.installerSha256.toLowerCase()!==installerHash||packageReport.desktopChecksPassed!==62||packageReport.externalRequests?.length!==0)throw new Error('安装包与已验证的包不一致，或桌面检查存在外部请求');
 const report={at:new Date().toISOString(),version,sourceFiles:manifest.length,source:{path:resolve(source),bytes:statSync(source).size,sha256:sha(readFileSync(source))},installer:{path:resolve(installer),bytes:statSync(installer).size,sha256:installerHash},sourceMatchesManifestAndWorkspace:true,personalDataExcluded:true,packagedDesktopChecks:packageReport.desktopChecksPassed};
 writeFileSync('output/delivery-'+tag+'.json',JSON.stringify(report,null,2));
 const checksums=[];
