@@ -96,7 +96,8 @@ describe('learning routes preserve material coverage and historical evidence', (
     await service.generateRoute('project');
     const original = new Map(store.list('capabilities').map(capability => [capability.title, capability.id]));
     definitions = [...definitions].reverse();
-    await service.generateRoute('project');
+    const proposal = await service.generateRoute('project');
+    service.adoptRoute('project', proposal.id);
     const active = store.list('capabilities').filter(capability => !capability.archived);
     expect(active).toHaveLength(3);
     expect(store.list('capabilities')).toHaveLength(3);
@@ -112,7 +113,8 @@ describe('learning routes preserve material coverage and historical evidence', (
     const before = await acquireEvidence(service, store);
     const old = store.list('capabilities')[0];
     definitions = [{ ...definitions[0], description: '在陌生情境中判断条件独立性，指出不能直接相乘的情形' }];
-    await service.generateRoute('project');
+    const proposal = await service.generateRoute('project');
+    service.adoptRoute('project', proposal.id);
     const current = store.list('capabilities').find(capability => !capability.archived&&capability.title===old.title)!;
     expect(current.id).not.toBe(old.id);
     expect(store.get('capabilities', old.id)).toMatchObject({ description: old.description, archived: true });
@@ -130,7 +132,8 @@ describe('learning routes preserve material coverage and historical evidence', (
     const before = await acquireEvidence(service, store);
     const old = store.list('capabilities')[0];
     store.put('projects', { ...store.get('projects', 'project')!, goal: '设计能检验因果关系的研究，而不仅是计算概率', updatedAt: new Date().toISOString() });
-    await service.generateRoute('project');
+    const proposal = await service.generateRoute('project');
+    service.adoptRoute('project', proposal.id);
     const current = store.list('capabilities').find(capability => !capability.archived&&capability.title===old.title)!;
     expect(current.id).not.toBe(old.id);
     expect(current.goalContext).toBe(store.get('projects', 'project')?.goal);

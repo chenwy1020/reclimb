@@ -7,8 +7,8 @@ import AdmZip from 'adm-zip';
 import {LearningStore} from '../src/main/store';
 import {writeBackup,readBackup,prepareRestore} from '../src/main/backup';
 
-describe('0.3.1 durable input archives',()=>{
- it('backs up an exact v3 database before migration to v4 without rewriting its records',async()=>{
+describe('durable input archives remain compatible in 0.4',()=>{
+ it('backs up an exact v3 database before migration to v5 without rewriting its records',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'reclimb-v4-upgrade-'));let store:LearningStore|undefined;
   try{
    store=await LearningStore.open(dir);const now=new Date().toISOString();
@@ -17,8 +17,8 @@ describe('0.3.1 durable input archives',()=>{
    const SQL=await initSqlJs(),db=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));
    db.run('PRAGMA user_version=3');const original=Buffer.from(db.export());db.close();writeFileSync(join(dir,'learning.sqlite'),original);
    store=await LearningStore.open(dir);expect(store.get('projects',project.id)).toEqual(project);store.close();store=undefined;
-   const after=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(after.exec('PRAGMA user_version')[0].values[0][0]).toBe(4);after.close();
-   const backups=readdirSync(join(dir,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.3\.1-/);
+   const after=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(after.exec('PRAGMA user_version')[0].values[0][0]).toBe(5);after.close();
+   const backups=readdirSync(join(dir,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.4-/);
    expect(readFileSync(join(dir,'upgrade-backups',backups[0]))).toEqual(original);
    store=await LearningStore.open(dir);expect(readdirSync(join(dir,'upgrade-backups'))).toHaveLength(1);
   }finally{store?.close();rmSync(dir,{recursive:true,force:true});}
@@ -33,7 +33,7 @@ describe('0.3.1 durable input archives',()=>{
    const message={id:'input',role:'user' as const,text:'我还不明白，但这个想法需要保留。',createdAt:now,kind:'note',taskId:'task',inputId:'input',requestId:'request',responseMode:'discussion' as const,responseState:'failed' as const,responseError:'网络不可用',responseUpdatedAt:now,activitySnapshot:activity,helpLevel:0};
    store.put('sessions',{id:'s',projectId:'p',capabilityId:'c',activity,mode:'practice',status:'active',createdAt:now,updatedAt:now,draft:'仍在继续写',helpLevel:0,helpEvents:[],messages:[message],checkpoint:'已保存',nextStep:'稍后回应'});
    const file=join(root,'archive.reclimb');writeBackup(store,file);
-   expect(JSON.parse(new AdmZip(file).readAsText('manifest.json')).version).toBe(4);
+   expect(JSON.parse(new AdmZip(file).readAsText('manifest.json')).version).toBe(5);
    const backup=readBackup(file);expect(backup.records.sessions[0].messages[0]).toEqual(message);expect(backup.records.evidence).toEqual([]);
    await prepareRestore(file,join(root,'restored'));restored=await LearningStore.open(join(root,'restored'));
    expect(restored.get('sessions','s')?.messages[0]).toEqual(message);expect(restored.list('evidence')).toEqual([]);

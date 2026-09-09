@@ -2,7 +2,7 @@ import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, relative, sep } from 'node:path';
 import { parsePdf, deriveSearchableTexts, derivePdfSummary, withLocalPdf } from '../importers';
-import { physicalPage, sourceRegionKey, type PdfMetadata, type PdfPageDetails, type SourceRegion, type SourceTranscription } from '../shared/materials';
+import { physicalPage, sourceRegionKey, sourceText, type PdfMetadata, type PdfPageDetails, type SourceRegion, type SourceTranscription, type ReadingLayout } from '../shared/materials';
 import type { Fragment, Material } from '../shared/types';
 import type { LearningStore } from './store';
 
@@ -14,6 +14,24 @@ function pdfMaterial(store: LearningStore, materialId: string): Material {
   const material = store.get('materials', materialId);
   if (!material || material.kind !== 'pdf') throw new Error('未找到对应的 PDF 原件。');
   return material;
+}
+
+function saveReadingLayout(store:LearningStore,fragment:Fragment,blocks:ReadingLayout['blocks']):ReadingLayout{
+  const previous=store.list('readingLayouts',fragment.projectId).filter(layout=>layout.fragmentId===fragment.id),now=new Date().toISOString();
+  for(const layout of previous)if(layout.status==='current')store.put('readingLayouts',{...layout,status:'superseded'});
+  const next:ReadingLayout={id:randomUUID(),projectId:fragment.projectId,materialId:fragment.materialId,fragmentId:fragment.id,pageNumber:physicalPage(fragment),version:Math.max(0,...previous.map(layout=>layout.version))+1,blocks,status:'current',createdAt:now};store.put('readingLayouts',next);return next;
+}
+
+function saveExtractedReadingLayout(store:LearningStore,fragment:Fragment):void{
+  const current=store.list('readingLayouts',fragment.projectId).filter(layout=>layout.fragmentId===fragment.id&&layout.status==='current').at(-1);if(current?.blocks.some(block=>block.source==='confirmed_transcription'))return;
+  saveReadingLayout(store,fragment,fragment.quality?.needsVerification?[{id:randomUUID(),order:0,kind:'source_image',region:{x:0,y:0,width:1,height:1},reason:fragment.quality.reasons.join(' '),source:'original_page'}]:[{id:randomUUID(),order:0,kind:'prose',text:fragment.text,source:'extracted'}]);
+}
+
+function saveConfirmedReadingLayout(store:LearningStore,transcription:SourceTranscription):void{
+  const fragment=store.get('fragments',transcription.fragmentId);if(!fragment)return;
+  const all=store.list('sourceTranscriptions',fragment.projectId).filter(item=>item.fragmentId===fragment.id),selectedIds=new Set(sourceText(fragment,all).transcriptionIds),selected=all.filter(item=>selectedIds.has(item.id)),fullPage=selected.find(item=>!item.region),regions=selected.filter(item=>!!item.region);const blocks:ReadingLayout['blocks']=[];
+  if(fullPage)blocks.push({id:randomUUID(),order:blocks.length,kind:'prose',text:fullPage.text,source:'confirmed_transcription',transcriptionId:fullPage.id});else blocks.push({id:randomUUID(),order:blocks.length,kind:'source_image',region:{x:0,y:0,width:1,height:1},reason:'只有标注区域经过人工核对，其他内容继续以原页为准。',source:'original_page'});
+  for(const item of regions)blocks.push({id:randomUUID(),order:blocks.length,kind:'prose',text:item.text,region:item.region,source:'confirmed_transcription',transcriptionId:item.id});saveReadingLayout(store,fragment,blocks);
 }
 
 export function getPdfBytes(store: LearningStore, materialId: string): Uint8Array {
@@ -57,7 +75,7 @@ export async function analyzePdfMaterial(store: LearningStore, materialId: strin
     fragments.forEach((fragment, index) => {
       const pageNumber = physicalPage(fragment);
       const page = metadata.pages.find(item => item.pageNumber === pageNumber);
-      store.put('fragments', { ...fragment, ordinal: index, searchableText: searchable[index], ...(page ? { pageNumber, printedPageLabel: page.printedPageLabel, quality: page.quality } : {}) });
+      const updated={ ...fragment, ordinal: index, searchableText: searchable[index], ...(page ? { pageNumber, printedPageLabel: page.printedPageLabel, quality: page.quality } : {}) };store.put('fragments',updated);saveExtractedReadingLayout(store,updated);
     });
   });
   return metadata;
@@ -147,7 +165,7 @@ export function createManualTranscription(store: LearningStore, input: { fragmen
   if (input.confirmed !== true) throw new Error('请先确认手工转录已经对照原页核对。');
   const version = newSourceTranscription(store, { fragmentId: input.fragmentId, pageNumber: input.pageNumber, region: input.region, text: input.text }, 'manual');
   const confirmed: SourceTranscription = { ...version, status: 'confirmed', confirmedAt: version.createdAt };
-  store.put('sourceTranscriptions', confirmed);
+  store.transaction(()=>{store.put('sourceTranscriptions', confirmed);saveConfirmedReadingLayout(store,confirmed);});
   return confirmed;
 }
 
@@ -159,7 +177,7 @@ export function confirmSourceTranscription(store: LearningStore, id: string, tex
   return store.transaction(() => {
     const next = newSourceTranscription(store, { ...previous, text: transcriptText(text ?? previous.text) }, previous.origin ?? 'machine');
     const confirmed: SourceTranscription = { ...next, status: 'confirmed', confirmedAt: new Date().toISOString() };
-    store.put('sourceTranscriptions', confirmed);
+    store.put('sourceTranscriptions', confirmed);saveConfirmedReadingLayout(store,confirmed);
     return confirmed;
   });
 }
