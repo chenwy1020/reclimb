@@ -4,7 +4,7 @@ import {teachingVersionSchema,taskReviewSchema,disputeSchema,correctionSchema,an
 import {teachingContentHash} from './verification-service';
 import {derivesFromDispute} from '../shared/reliability-state';
 const id=z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/),txt=z.string().max(200000),date=z.string().refine(v=>Number.isFinite(Date.parse(v)),'日期无效'),refs=z.array(id).max(100),bookRefs=z.array(id).max(100000);
-const project=z.object({id,title:txt,goal:txt,status:z.enum(['active','paused']),createdAt:date,updatedAt:date,routeSummary:txt.optional(),startingPoint:startingPointSchema.optional(),learningScope:learningScopeSchema.optional(),nearSteps:z.array(nearStepSchema).max(4).optional(),activeRouteVersionId:id.optional(),pendingRouteVersionId:id.optional(),learningPositionId:id.optional()});
+const project=z.object({id,title:txt,goal:txt,status:z.enum(['active','paused']),createdAt:date,updatedAt:date,trashedAt:date.optional(),statusBeforeTrash:z.enum(['active','paused']).optional(),routeSummary:txt.optional(),startingPoint:startingPointSchema.optional(),learningScope:learningScopeSchema.optional(),nearSteps:z.array(nearStepSchema).max(4).optional(),activeRouteVersionId:id.optional(),pendingRouteVersionId:id.optional(),learningPositionId:id.optional()});
 const capability=z.object({id,projectId:id,title:txt,description:txt,prerequisites:refs,sourceIds:refs,order:z.number().int(),archived:z.boolean().optional(),goalContext:txt.optional()});
 const quality=z.object({kind:z.enum(['native-text','ocr-text','image-only','mixed','unknown']),needsVerification:z.boolean(),reasons:z.array(txt).max(40)});
 const page=z.object({pageNumber:z.number().int().positive(),printedPageLabel:txt.optional(),width:z.number().positive(),height:z.number().positive(),quality});
@@ -42,7 +42,7 @@ export function writeBackup(store:LearningStore,target:string):void{
  if(safeSettings.vision){const {hasApiKey:visionKey,...safeVision}=safeSettings.vision;safeSettings.vision=safeVision;}
  const files:{materialId:string;entry:string;sha256:string}[]=[];const zip=new AdmZip();
  for(const m of records.materials){if(!within(dataDirectory,m.storedPath)||!existsSync(m.storedPath))throw new Error('原始材料缺失或路径异常，无法生成完整备份：'+m.title);const bytes=readFileSync(m.storedPath);const entry='materials/'+m.id+'/'+basename(m.originalName).replace(/[^\p{L}\p{N}._ -]/gu,'_');zip.addFile(entry,bytes);files.push({materialId:m.id,entry,sha256:sha(bytes)});m.storedPath=entry;}
- zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:5,createdAt:new Date().toISOString(),records:{...records,settings:safeSettings},files},null,2),'utf8'));
+ zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:6,createdAt:new Date().toISOString(),records:{...records,settings:safeSettings},files},null,2),'utf8'));
  const tmp=target+'.partial';
  try{
   writeFileSync(tmp,zip.toBuffer());
@@ -61,7 +61,9 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  for(const e of entries){if(e.entryName.includes('\\')||e.entryName.startsWith('/')||e.entryName.split('/').includes('..')||names.has(e.entryName))throw new Error('备份包含不安全或重复路径');names.add(e.entryName);size+=e.header.size;if(size>500*1024*1024)throw new Error('备份展开后过大');}
  const manifest=zip.getEntry('manifest.json');if(!manifest||manifest.header.size>30*1024*1024)throw new Error('备份清单缺失或过大');
  let raw:any;try{raw=JSON.parse(zip.readAsText(manifest));}catch{throw new Error('备份清单无法解析');}
- if(raw?.format!=='reclimb.backup'||![1,2,3,4,5].includes(raw.version)||!raw.records)throw new Error('这不是受支持的重登备份文件');
+ if(raw?.format!=='reclimb.backup'||!raw.records)throw new Error('这不是受支持的重登备份文件');
+ if(typeof raw.version==='number'&&raw.version>6)throw new Error('此备份由更新版本创建，请先升级应用。');
+ if(![1,2,3,4,5,6].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
  const records:any={};
  const introduced:Record<string,number>={sourceTranscriptions:2,teachingVersions:3,taskReviews:3,disputes:3,corrections:3,answerExposures:3,routeVersions:5,learningUnits:5,learningPositions:5,teachingObservations:5,understandingDrafts:5,readingLayouts:5};
  for(const [key,schema] of Object.entries(entities)){records[key]=z.array(schema).max(100000).parse(raw.version<(introduced[key]??1)?raw.records[key]??[]:raw.records[key]);const ids=new Set<string>();for(const r of records[key]){if(ids.has(r.id))throw new Error('备份包含重复记录');ids.add(r.id);}}

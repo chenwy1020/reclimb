@@ -16,3 +16,13 @@ it('exports saved discussion status and safe review blockers without exposing a 
   expect(text).toContain('一起分析，不作能力判断');expect(text).toContain('回应失败');expect(text).toContain('输入编号：i');expect(text).toContain('题目版本：v');expect(text).toContain('系统状态：uncertain；模型原始状态：ready');expect(text).toContain('第13页');expect(text).not.toContain('SECRET_SOLUTION');
  }finally{store.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+it('excludes recently deleted projects from readable learning results',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'reclimb-export-trash-')),store=await LearningStore.open(dir);
+ try{
+  const snapshot=store.snapshot(),now='2026-09-11T00:00:00.000Z';
+  snapshot.projects.push({id:'visible',title:'保留项目',goal:'继续学习',status:'active',createdAt:now,updatedAt:now},{id:'trashed',title:'最近删除项目',goal:'等待恢复',status:'paused',statusBeforeTrash:'active',trashedAt:now,createdAt:now,updatedAt:now});
+  expect(readableExport(snapshot)).toContain('保留项目');expect(readableExport(snapshot)).not.toContain('最近删除项目');
+  expect(readableExport(snapshot,'visible')).toContain('保留项目');expect(()=>readableExport(snapshot,'trashed')).toThrow(/不存在/);
+ }finally{store.close();rmSync(dir,{recursive:true,force:true});}
+});

@@ -8,10 +8,10 @@ import type {Project,WorkspaceSnapshot} from '../src/shared/types';
 const now='2026-09-09T00:00:00.000Z';
 const project:Project={id:'p',title:'一本书',goal:'理解、会用并重构方法',status:'active',createdAt:now,updatedAt:now};
 const emptySnapshot={projects:[project],capabilities:[],materials:[],fragments:[],sessions:[],attempts:[],evidence:[],reviews:[],usage:[],sourceTranscriptions:[],teachingVersions:[],taskReviews:[],disputes:[],corrections:[],answerExposures:[],routeVersions:[],learningUnits:[],learningPositions:[],teachingObservations:[],understandingDrafts:[],readingLayouts:[],settings:{providerName:'test',baseUrl:'https://example.test',model:'m',monthlyBudgetCny:10,inputPriceCnyPerMillion:1,outputPriceCnyPerMillion:1,priceUpdatedAt:now,hasApiKey:true,personalGoal:'',studyMinutes:30,confirmedPreferences:''},dataDirectory:'x'} satisfies WorkspaceSnapshot;
-const props={busy:false,onStart:async()=>{},onEdit:()=>{},onFiles:()=>{},onUrl:()=>{},onText:()=>{},onSource:()=>{},onSettings:()=>{},run:async()=>null};
+const props={busy:false,onStart:async()=>{},onEdit:()=>{},onDelete:()=>{},onFiles:()=>{},onUrl:()=>{},onText:()=>{},onSource:()=>{},onSettings:()=>{},run:async()=>null};
 
 it('offers one initial route entry instead of two competing suggestion controls',()=>{
- const html=renderToStaticMarkup(createElement(RoutePage,{snapshot:emptySnapshot,project,...props}));expect((html.match(/建立学习路线/g)??[])).toHaveLength(1);expect(html).not.toContain('眼下可以走的几步');expect(html).not.toContain('根据我的起点准备几步建议');
+ const html=renderToStaticMarkup(createElement(RoutePage,{snapshot:emptySnapshot,project,...props}));expect((html.match(/建立学习路线/g)??[])).toHaveLength(1);expect(html).not.toContain('眼下可以走的几步');expect(html).not.toContain('根据我的起点准备几步建议');expect(html).toContain('删除项目');
 });
 
 it('shows a durable current unit, whole-book map and an adoptable adjustment proposal',()=>{

@@ -31,6 +31,7 @@ export class LearningService {
  constructor(public store:LearningStore,readKey:()=>string,factory:(settings:Settings,key:string)=>ModelProvider=(s,k)=>new ChatProvider({baseUrl:s.baseUrl,model:s.model,apiKey:k}),spendLimitCny?:number) {this.runner=new CallRunner(store,readKey,factory,spendLimitCny);this.verifier=new VerificationService(store,this.runner);this.ensureLegacyCurriculum();this.recoverInterruptedInputs();}
  private ensureLegacyCurriculum():void{
   for(const project of this.store.list('projects')){
+   if(project.trashedAt)continue;
    const active=project.activeRouteVersionId?this.store.get('routeVersions',project.activeRouteVersionId):undefined;
    if(active){const units=this.store.list('learningUnits',project.id).filter(unit=>active.unitIds.includes(unit.id)&&unit.status!=='retired');if(!units.length)continue;this.store.transaction(()=>{for(const session of this.store.list('sessions',project.id).filter(item=>!item.unitId)){const unit=units.find(item=>item.capabilityId===session.capabilityId);if(unit)this.store.put('sessions',{...session,unitId:unit.id,routeVersionId:active.id});}if(!project.learningPositionId){const latest=this.store.list('sessions',project.id).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0],unit=units.find(item=>item.id===latest?.unitId)??units.sort((a,b)=>a.order-b.order)[0],historicalAt=[project.updatedAt,latest?.updatedAt].filter((value):value is string=>!!value).sort().at(-1)??project.createdAt;if(unit)this.updatePosition(project.id,unit,latest?.unitId===unit.id?latest.id:undefined,'continue','旧档案能够确定到这一学习单元；具体阶段仍待续学时校准。',latest?.nextStep||unit.coreQuestion,'inferred',historicalAt);}});continue;}
    const capabilities=this.store.list('capabilities',project.id).filter(capability=>!capability.archived).sort((a,b)=>a.order-b.order);if(!capabilities.length)continue;const now=new Date().toISOString(),routeId=randomUUID(),seeds=project.nearSteps?.length?project.nearSteps.map((step,index)=>({title:step.title,coreQuestion:step.objective,purpose:step.reason,expectedOutcome:step.completion||'完成一次可追溯的理解或尝试',sourceIds:step.sourceIds,capabilityId:step.capabilityId,order:index})):capabilities.map((capability,index)=>({title:capability.title,coreQuestion:capability.description,purpose:'接续旧版能力方向，并在实际学习中校准单元范围。',expectedOutcome:capability.description,sourceIds:capability.sourceIds,capabilityId:capability.id,order:index}));
@@ -41,7 +42,7 @@ export class LearningService {
  }
  private recoverInterruptedInputs():void {
   if(recoveredInputStores.has(this.store))return;
-  const sessions=this.store.list('sessions').filter(session=>session.messages.some(message=>message.role==='user'&&message.inputId&&message.responseState==='running'));
+  const sessions=this.store.list('sessions').filter(session=>!this.store.get('projects',session.projectId)?.trashedAt&&session.messages.some(message=>message.role==='user'&&message.inputId&&message.responseState==='running'));
   if(sessions.length){const now=new Date().toISOString();this.store.transaction(()=>{for(const session of sessions)this.store.put('sessions',{...session,messages:session.messages.map(message=>message.role==='user'&&message.inputId&&message.responseState==='running'?{...message,responseState:'failed' as const,responseError:'上次回应被中断，输入已保存在本机，可稍后重试。',responseUpdatedAt:now}:message),updatedAt:now});});}
   recoveredInputStores.add(this.store);
  }
@@ -376,6 +377,7 @@ export class LearningService {
  }
  async reviewDispute(disputeId:string,options:{allowSendingPrivateContext?:boolean}={}):Promise<Dispute>{
   const dispute=this.store.get('disputes',disputeId);if(!dispute)throw new Error('待核对议题不存在。');
+  this.requireProject(dispute.projectId);
   if(!options.allowSendingPrivateContext){const local={...dispute,status:'unresolved' as const,updatedAt:new Date().toISOString()};this.store.put('disputes',local);return local;}
   const version=this.store.get('teachingVersions',dispute.teachingVersionId);if(!version||version.contentHash!==dispute.contentHash)throw new Error('议题对应的原教学版本无法核对。');
   return this.runner.withReservation('核对学习议题',this.runner.estimateCost(30000,6000)*2,async reservationId=>{
@@ -397,6 +399,6 @@ export class LearningService {
   const text=[review.status==='ready'?'核验说明（查看后按本题帮助记录）':'待核对的说明（仍有不确定性，不能据此认证答案）',review.summary,...review.issues.map(issue=>'需核对：'+issue.message),'条件分支',...review.branches.map(branch=>branch.condition+'：'+branch.applicability+'\n'+branch.expectedBehavior),'核对解答',review.privateSolution,...(review.sourceChecks??[]).map(check=>'来源核对：'+check.reason),...review.localChecks.map(check=>'本机计算（只核对所提交计算）\n'+check.details)].join('\n\n');
   const now=new Date().toISOString();this.store.transaction(()=>{this.store.put('sessions',{...session,helpLevel:Math.max(4,session.helpLevel),helpEvents:[...session.helpEvents,{id:randomUUID(),kind:'answer',level:4,scope:'current_task',taskId:taskId(session),createdAt:now}],messages:[...session.messages,{id:randomUUID(),role:'assistant',kind:'review_solution',text,taskId:taskId(session),scope:'current_task',createdAt:now}],updatedAt:now});this.verifier.recordExposure(session,'review_solution',text);});return text;
  }
- private requireProject(id:string){const p=this.store.get('projects',id);if(!p)throw new Error('学习项目不存在');return p;}
- private requireSession(id:string){const s=this.store.get('sessions',id);if(!s)throw new Error('这次学习不存在');return s;}
+ private requireProject(id:string){const p=this.store.get('projects',id);if(!p)throw new Error('学习项目不存在');if(p.trashedAt)throw new Error('这个项目在最近删除中，请先恢复后继续学习。');return p;}
+ private requireSession(id:string){const s=this.store.get('sessions',id);if(!s)throw new Error('这次学习不存在');this.requireProject(s.projectId);return s;}
 }
