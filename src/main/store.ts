@@ -80,11 +80,12 @@ export class LearningStore {
       const check = db.exec('PRAGMA quick_check');
       if (check[0]?.values.some(row => row[0] !== 'ok')) throw new Error('学习数据库完整性检查失败；原文件已保留。');
       const version = Number(db.exec('PRAGMA user_version')[0]?.values[0]?.[0] ?? 0);
-      if (version > 5) throw new Error('此学习数据库由更新版本创建，请先升级应用。');
+      if (version > 6) throw new Error('此学习数据库由更新版本创建，请先升级应用。');
       mkdirSync(dataDirectory, { recursive: true });
-      if(existing && version<5){
+      if(existing && version<6){
         const backupDirectory=join(dataDirectory,'upgrade-backups');mkdirSync(backupDirectory,{recursive:true});
-        writeFileSync(join(backupDirectory,'pre-0.4-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID()+'.sqlite'),existing,{flag:'wx',mode:0o600});
+        const label=version<5?'pre-0.4':'pre-0.4.1';
+        writeFileSync(join(backupDirectory,label+'-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID()+'.sqlite'),existing,{flag:'wx',mode:0o600});
       }
       const store = new LearningStore(db, sql, dataDirectory);
       store.transaction(() => {
@@ -95,7 +96,7 @@ export class LearningStore {
         db!.run('CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), entity TEXT NOT NULL)');
         db!.run('CREATE TABLE IF NOT EXISTS fragment_terms (fragment_id TEXT NOT NULL, project_id TEXT NOT NULL, term TEXT NOT NULL, PRIMARY KEY(fragment_id, term))');
         db!.run('CREATE INDEX IF NOT EXISTS fragment_terms_lookup ON fragment_terms(project_id, term)');
-        db!.run('PRAGMA user_version=5');
+        db!.run('PRAGMA user_version=6');
         // Rebuild only when adopting an older store that has not yet had a term index.
         if (store.rows('SELECT 1 FROM fragment_terms LIMIT 1').length === 0) {
           for (const fragment of store.list('fragments')) store.indexFragment(fragment);
@@ -161,6 +162,18 @@ export class LearningStore {
       this.db.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
       if (collection === 'fragments') this.db.run('DELETE FROM fragment_terms WHERE fragment_id = ?', [id]);
       this.dirty = true;
+    });
+  }
+  deleteProjectRecords(projectId:string):void{
+    if(!projectId.trim())throw new Error('缺少有效的项目编号。');
+    this.transaction(()=>{
+      for(const collection of COLLECTIONS){
+        if(collection==='projects')continue;
+        this.db.run(`DELETE FROM ${this.collection(collection)} WHERE project_id = ?`,[projectId]);
+      }
+      this.db.run('DELETE FROM fragment_terms WHERE project_id = ?',[projectId]);
+      this.db.run('DELETE FROM projects WHERE id = ?',[projectId]);
+      this.dirty=true;
     });
   }
   getSettings(): Settings {

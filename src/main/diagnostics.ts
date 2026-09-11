@@ -37,4 +37,5 @@ export class DiagnosticLog {
     for(const file of this.files()){try{entries.push(JSON.parse(readFileSync(file.path,'utf8')));bytes+=file.stat.size;}catch{/* A damaged diagnostic must not block access to learning records. */}}
     return {entries,bytes,description:'包含最近 7 天的模型名称、调用标识、结束原因、校验结果和失败回复片段。片段可能包含学习内容；不包含密钥、认证头或完整请求。总量最多 20 MB。'};
   }
+  clear():void{for(const file of this.files())unlinkSync(file.path);}
 }

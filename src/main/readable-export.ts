@@ -1,9 +1,10 @@
 import type {WorkspaceSnapshot} from '../shared/types';
 import {evidenceStanding,reviewStanding} from '../shared/reliability-state';
 import {publicVerificationBlocker} from '../shared/reliability';
+import {visibleProjects} from '../shared/projects';
 export function readableExport(snapshot:WorkspaceSnapshot,projectId?:string):string{
  const body=['# 我的重登学习档案','导出时间：'+new Date().toISOString(),'能力记录描述具体任务表现；AI核验与评价不等于正确性认证或全面掌握。'];
- const projects=projectId?snapshot.projects.filter(p=>p.id===projectId):snapshot.projects;
+ const available=visibleProjects(snapshot.projects);const projects=projectId?available.filter(p=>p.id===projectId):available;
  if(projectId&&!projects.length)throw new Error('学习项目不存在');
  for(const project of projects){
   body.push('## '+project.title,'项目编号：'+project.id,project.goal,project.routeSummary??'');

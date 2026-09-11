@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {ArrowRight,FileText,FolderOpen,LoaderCircle,Sprout,Upload,X} from 'lucide-react';
 import type {Project,WorkspaceSnapshot} from '../shared/types';
+import {visibleProjects} from '../shared/projects';
 import type {Familiarity} from '../shared/teaching';
 import {Button,type Run} from './ui';
 export type Modal='project'|'url'|'text'|'restore'|'editProject'|null;
@@ -9,7 +10,7 @@ const[familiarity,setFamiliarity]=useState<Familiarity>(project?.startingPoint?.
 const[title,setTitle]=useState(modal==='editProject'?project?.title||'':'');const[goal,setGoal]=useState(modal==='editProject'?project?.goal||'':'');const[text,setText]=useState('');const[url,setUrl]=useState('');const[confirmed,setConfirmed]=useState(false);const[validation,setValidation]=useState('');
 const titles={project:'开启一段新的学习',editProject:'让目标更贴近现在的你',text:'把一段材料放进学习空间',url:'导入公开文章',restore:'从备份恢复学习空间'};
 async function submit(){setValidation('');let result:WorkspaceSnapshot|null=null;
-if(modal==='project'){if(!goal.trim()){setValidation('先写下你想拥有的能力，暂时模糊也没有关系。');return}result=await run('project.create',{title:title.trim()||goal.trim().slice(0,24),goal:goal.trim(),startingPoint:{familiarity,background:background.trim()}});if(result){const p=[...result.projects].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];if(p)onCreated(p.id)}}
+if(modal==='project'){if(!goal.trim()){setValidation('先写下你想拥有的能力，暂时模糊也没有关系。');return}result=await run('project.create',{title:title.trim()||goal.trim().slice(0,24),goal:goal.trim(),startingPoint:{familiarity,background:background.trim()}});if(result){const p=[...visibleProjects(result.projects)].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];if(p)onCreated(p.id)}}
 else if(modal==='editProject'&&project){if(!title.trim()||!goal.trim()){setValidation('请保留项目名称和能力目标。');return}result=await run('project.update',{id:project.id,title:title.trim(),goal:goal.trim(),startingPoint:{familiarity,background:background.trim()}},'目标已更新，可以按新的目标重新梳理路线。')}
 else if(modal==='text'&&project){if(!title.trim()||!text.trim()){setValidation('请填写材料标题和正文。');return}result=await run('material.importText',{projectId:project.id,title:title.trim(),text:text.trim()},'文字材料已导入。')}
 else if(modal==='url'&&project){try{const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol))throw new Error()}catch{setValidation('请输入完整的 http 或 https 文章链接。');return}result=await run('material.importUrl',{projectId:project.id,url:url.trim()},'文章已导入，请查看解析提示。')}
@@ -25,7 +26,6 @@ return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentT
 {(validation||error)&&<p className="form-error" role="alert">{validation||error}</p>}<div className="modal-footer"><Button disabled={busy} onClick={close}>取消</Button><Button variant={modal==='restore'?'danger':'primary'} disabled={busy||(modal==='restore'&&!confirmed)} onClick={()=>void submit()}>{busy?<LoaderCircle size={16} className="spin"/>:modal==='restore'?<Upload size={16}/>:<ArrowRight size={16}/>} {modal==='restore'?'选择备份并恢复':modal==='project'?'建立学习项目':modal==='editProject'?'保存目标':'导入材料'}</Button></div>
 </section></div>;
 }
-
 
 
 
