@@ -1,0 +1,7 @@
+{
+  "version": "0.4.2",
+  "suiteTag": "v042",
+  "smokeScript": "smoke-v042.mjs",
+  "desktopReportName": "desktop-verification-v042.json",
+  "expectedChecks": 73
+}

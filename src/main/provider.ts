@@ -1,6 +1,13 @@
 import {redactDiagnostic} from './diagnostics';
+const FIREWORKS_HOST='api.fireworks.ai';
+const DEEPSEEK_HOST='api.deepseek.com';
+const LONG_OUTPUT_TOKENS=4096;
+const FIREWORKS_REASONING_BUDGET=2048;
+const FIREWORKS_DEEPSEEK_MODELS=new Set(['deepseek-v4-flash-0731','deepseek-v4p1-flash','deepseek-flash']);
+const normalizedModel=(model:string)=>model.trim().toLowerCase().split('/').at(-1)??'';
+const isVerifiedFireworksDeepSeek=(host:string,model:string)=>host===FIREWORKS_HOST&&FIREWORKS_DEEPSEEK_MODELS.has(normalizedModel(model));
 export interface ModelRequest { system: string; user: string; json?: boolean; maxOutputTokens?: number; schema?: Record<string, unknown>; images?: {dataUrl:string}[]; }
-export interface ModelResult { text: string; inputTokens: number; outputTokens: number; usageKnown: boolean; finishReason?: string; providerRequestId?: string; reasoningTokens?: number; }
+export interface ModelResult { text: string; inputTokens: number; outputTokens: number; usageKnown: boolean; finishReason?: string; providerRequestId?: string; reasoningTokens?: number; reportedModel?: string; }
 export interface ModelProvider { complete(request: ModelRequest): Promise<ModelResult>; }
 export class ProviderError extends Error { constructor(message:string, public definitelyUnbilled = false,public diagnosticDetail?:string,public providerRequestId?:string){super(message);} }
 export function buildChatUrl(base:string):string {
@@ -18,16 +25,21 @@ export class ChatProvider implements ModelProvider {
  constructor(private options:{baseUrl:string;model:string;apiKey:string;fetcher?:typeof fetch}){}
  async complete(request:ModelRequest):Promise<ModelResult>{
   const url=buildChatUrl(this.options.baseUrl);
-  const useSchema = new URL(url).hostname === 'api.fireworks.ai' && !!request.schema;
-  // Verified on this exact Fireworks model: leave room for the structured answer
-  // without disabling reasoning. Do not send provider-specific controls elsewhere.
-  const boundedThinking = useSchema && this.options.model === 'accounts/fireworks/models/deepseek-v4-flash-0731' && (request.maxOutputTokens ?? 4096) >= 4096;
+  const host=new URL(url).hostname.toLowerCase(),structured=request.json===true;
+  const useSchema = host === FIREWORKS_HOST && structured && !!request.schema;
+  const maxOutputTokens=request.maxOutputTokens??LONG_OUTPUT_TOKENS;
+  const verifiedFireworksDeepSeek=structured&&isVerifiedFireworksDeepSeek(host,this.options.model);
+  const thinking=structured&&host===DEEPSEEK_HOST
+   ?{type:'disabled'}
+   :verifiedFireworksDeepSeek
+    ?maxOutputTokens>=LONG_OUTPUT_TOKENS?{type:'enabled',budget_tokens:FIREWORKS_REASONING_BUDGET}:{type:'disabled'}
+    :undefined;
   const format = useSchema ? {type:'json_schema',json_schema:{name:'reclimb_response',schema:request.schema,strict:true}} : {type:'json_object'};
   if(request.images?.some(image=>!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(image.dataUrl)||image.dataUrl.length>16_000_000))throw new ProviderError('识别图像格式无效或过大',true);
   const userContent=request.images?.length?[{type:'text',text:request.user},...request.images.map(image=>({type:'image_url',image_url:{url:image.dataUrl}}))]:request.user;
   let response:Response;
   try {
-   response=await (this.options.fetcher??fetch)(url,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:'Bearer '+this.options.apiKey},body:JSON.stringify({model:this.options.model,messages:[{role:'system',content:request.system},{role:'user',content:userContent}],stream:false,max_tokens:request.maxOutputTokens??4096,...(request.json?{response_format:format}:{}),...(boundedThinking?{thinking:{type:'enabled',budget_tokens:2048}}:{})}),signal:AbortSignal.timeout(120000)});
+   response=await (this.options.fetcher??fetch)(url,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:'Bearer '+this.options.apiKey},body:JSON.stringify({model:this.options.model,messages:[{role:'system',content:request.system},{role:'user',content:userContent}],stream:false,max_tokens:maxOutputTokens,...(structured?{response_format:format}:{}),...(thinking?{thinking}:{})}),signal:AbortSignal.timeout(120000)});
   } catch {throw new ProviderError('AI服务暂时未响应或连接失败。作答已保存；本次费用待服务商账单核对。');}
   if(!response.ok){
    const messages:Record<number,string>={400:'服务不支持当前请求格式，请检查模型和接口设置',401:'AI服务认证失败，请检查密钥',403:'AI服务拒绝访问，请检查账号权限',404:'未找到模型或接口，请检查服务地址与模型名',429:'AI服务额度不足或请求过于频繁，请稍后再试'};
@@ -42,9 +54,8 @@ export class ChatProvider implements ModelProvider {
   if(typeof text!=='string')throw new ProviderError('AI没有返回可用内容，你的作答已保存');
   const input=body?.usage?.prompt_tokens,output=body?.usage?.completion_tokens;
   const usageKnown=Number.isFinite(input)&&input>=0&&Number.isFinite(output)&&output>=0;
-  const finish=body?.choices?.[0]?.finish_reason,requestId=response.headers.get('x-request-id')??body?.id;
+  const finish=body?.choices?.[0]?.finish_reason,requestId=response.headers.get('x-request-id')??body?.id,reportedModel=body?.model;
   const reasoning=body?.usage?.completion_tokens_details?.reasoning_tokens;
-  return {text,inputTokens:usageKnown?input:0,outputTokens:usageKnown?output:0,usageKnown,...(typeof finish==='string'?{finishReason:finish.slice(0,80)}:{}),...(typeof requestId==='string'?{providerRequestId:requestId.slice(0,200)}:{}),...(Number.isFinite(reasoning)&&reasoning>=0?{reasoningTokens:reasoning}:{})};
+  return {text,inputTokens:usageKnown?input:0,outputTokens:usageKnown?output:0,usageKnown,...(typeof finish==='string'?{finishReason:finish.slice(0,80)}:{}),...(typeof requestId==='string'?{providerRequestId:requestId.slice(0,200)}:{}),...(Number.isFinite(reasoning)&&reasoning>=0?{reasoningTokens:reasoning}:{}),...(typeof reportedModel==='string'&&reportedModel.trim()?{reportedModel:reportedModel.trim().slice(0,200)}:{})};
  }
 }
-

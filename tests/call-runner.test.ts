@@ -126,4 +126,65 @@ describe('bounded structured generation', () => {
       expect(t.store.list('usage')).toHaveLength(calls);
     } finally { t.close(); }
   });
+  it('uses the active model profile for each new operation and records the provider reported model', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reclimb-profile-calls-'));
+    const store = await LearningStore.open(dir);
+    const profiles = [
+      { id:'fast',name:'快速路线',providerName:'DeepSeek',baseUrl:'https://api.deepseek.com',model:'deepseek-v4-flash',inputPriceCnyPerMillion:1,outputPriceCnyPerMillion:2,priceUpdatedAt:'2026-09-12',enabled:true },
+      { id:'careful',name:'严谨核验',providerName:'兼容服务',baseUrl:'https://example.test/v1',model:'careful-model',inputPriceCnyPerMillion:3,outputPriceCnyPerMillion:4,priceUpdatedAt:'2026-09-12',enabled:true },
+    ];
+    store.updateSettings({modelProfiles:profiles,activeModelProfileId:'fast',monthlyBudgetCny:100} as any);
+    const seen:{model:string;key:string}[]=[];
+    const runner=new CallRunner(store,(settings:any)=>'key-'+settings.activeModelProfileId,(settings,key)=>({complete:async()=>{
+      seen.push({model:settings.model,key});
+      return {...reply('{"text":"ready"}'),reportedModel:'resolved-'+settings.model};
+    }}));
+    try {
+      await runner.run('第一次',{}, {schema});
+      store.updateSettings({activeModelProfileId:'careful'} as any);
+      await runner.run('第二次',{}, {schema});
+      expect(seen).toEqual([{model:'deepseek-v4-flash',key:'key-fast'},{model:'careful-model',key:'key-careful'}]);
+      expect(store.list('usage').map(u=>({profile:u.modelProfileId,name:u.profileName,requested:u.requestedModel,reported:u.reportedModel}))).toEqual([
+        {profile:'fast',name:'快速路线',requested:'deepseek-v4-flash',reported:'resolved-deepseek-v4-flash'},
+        {profile:'careful',name:'严谨核验',requested:'careful-model',reported:'resolved-careful-model'},
+      ]);
+    } finally { store.close(); rmSync(dir,{recursive:true,force:true}); }
+  });
+  it('pins a reservation to the model profile that reserved its cost', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reclimb-profile-reservation-'));
+    const store = await LearningStore.open(dir);
+    const profiles = [
+      { id:'a',name:'A',providerName:'A',baseUrl:'https://a.test/v1',model:'model-a',inputPriceCnyPerMillion:1,outputPriceCnyPerMillion:1,priceUpdatedAt:'2026-09-12',enabled:true },
+      { id:'b',name:'B',providerName:'B',baseUrl:'https://b.test/v1',model:'model-b',inputPriceCnyPerMillion:10,outputPriceCnyPerMillion:10,priceUpdatedAt:'2026-09-12',enabled:true },
+    ];
+    store.updateSettings({modelProfiles:profiles,activeModelProfileId:'a',monthlyBudgetCny:100} as any);
+    const seen:string[]=[];
+    const runner=new CallRunner(store,(settings:any)=>'key-'+settings.activeModelProfileId,(settings,key)=>({complete:async()=>{seen.push(settings.model+'/'+key);return reply('{"text":"ready"}');}}));
+    try {
+      await runner.withReservation('教学片段',.01,async reservationId=>{
+        store.updateSettings({activeModelProfileId:'b'} as any);
+        await runner.run('生成',{}, {schema,reservationId});
+      });
+      expect(seen).toEqual(['model-a/key-a']);
+      expect(store.list('usage').find(u=>u.entryType==='call')).toMatchObject({modelProfileId:'a',requestedModel:'model-a'});
+    } finally { store.close(); rmSync(dir,{recursive:true,force:true}); }
+  });
+  it('attributes a vision call without borrowing the active teaching profile identity',async()=>{
+    const dir=mkdtempSync(join(tmpdir(),'reclimb-vision-attribution-')),store=await LearningStore.open(dir);
+    store.updateSettings({monthlyBudgetCny:100,modelProfiles:[{id:'teaching',name:'教学模型',providerName:'教学服务',baseUrl:'https://teaching.test/v1',model:'teaching-model',inputPriceCnyPerMillion:1,outputPriceCnyPerMillion:1,priceUpdatedAt:'2026-09-12',enabled:true}],activeModelProfileId:'teaching'} as any);
+    const runner=new CallRunner(store,()=> 'vision-key',()=>({complete:async()=>({...reply('{"text":"page"}'),reportedModel:'vision-resolved'})}));
+    try{
+      const settings={...store.getSettings(),providerName:'视觉服务',baseUrl:'https://vision.example/v1',model:'vision-model'};
+      await runner.run('原页视觉转写',{}, {schema,settings,key:'vision-key',profileSnapshot:{name:'原页图像识别',providerName:'视觉服务'}});
+      expect(store.list('usage')[0]).toMatchObject({profileName:'原页图像识别',providerName:'视觉服务',requestedModel:'vision-model',reportedModel:'vision-resolved'});
+      expect(store.list('usage')[0].modelProfileId).toBeUndefined();
+    }finally{store.close();rmSync(dir,{recursive:true,force:true});}
+  });
+  it('never asks a configured model for more output than that profile supports, including format repair',async()=>{
+    const dir=mkdtempSync(join(tmpdir(),'reclimb-output-limit-')),store=await LearningStore.open(dir);
+    store.updateSettings({monthlyBudgetCny:100,modelProfiles:[{id:'limited',name:'较短输出模型',providerName:'兼容服务',baseUrl:'https://limited.test/v1',model:'limited-model',maxOutputTokens:2048,inputPriceCnyPerMillion:1,outputPriceCnyPerMillion:1,priceUpdatedAt:'2026-09-12',enabled:true}],activeModelProfileId:'limited'} as any);
+    const seen:number[]=[];let calls=0;const runner=new CallRunner(store,()=> 'key',()=>({complete:async request=>{seen.push(request.maxOutputTokens??0);calls++;return reply(calls===1?'invalid':'{"text":"ready"}');}}));
+    try{await runner.run('学习路线',{}, {schema,maxOutputTokens:9000});expect(seen).toEqual([2048,2048]);}
+    finally{store.close();rmSync(dir,{recursive:true,force:true});}
+  });
 });

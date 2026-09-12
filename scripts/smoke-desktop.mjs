@@ -87,7 +87,9 @@ try{
  assert.ok(s.fragments.some(f=>f.locator.includes('00:00:01.000')));assert.ok(s.materials.every(m=>existsSync(m.storedPath)));record('正式运行时解析中文PDF及DOCX/EPUB/TXT/HTML/SRT/VTT，保留实际来源定位');
 
  // Configure an isolated local compatible service, never a paid or external endpoint.
- await api('settings.save',{settings:{baseUrl,providerName:'本地自动化验证接口',model:'test-local-model',monthlyBudgetCny:100},apiKey:'local-test-key-never-valid-external'});
+ s=await snap();const {hasApiKey:_hasKey,...defaultProfile}=s.settings.modelProfiles.find(profile=>profile.id===s.settings.activeModelProfileId);
+ await api('settings.modelProfile.save',{profile:{...defaultProfile,providerName:'本地自动化验证接口',baseUrl,model:'test-local-model'},apiKey:'local-test-key-never-valid-external'});
+ await api('settings.save',{settings:{monthlyBudgetCny:100}});
  assert.ok((await snap()).settings.hasApiKey);
  const keyFile=readFileSync(join(dataDir,'credentials.json'),'utf8');assert.ok(!keyFile.includes('local-test-key'));record('真实Windows保护保存密钥，页面及密文文件无明文');
  await api('settings.test');
@@ -143,5 +145,3 @@ try{
  console.log(JSON.stringify({passed:results.length,artifacts:artifactDir},null,2));
 }catch(error){if(page&&!page.isClosed())await page.screenshot({path:join(artifactDir,'failure.png'),fullPage:true}).catch(()=>{});if(app)await app.evaluate(({app})=>app.exit(1)).catch(()=>{});app=undefined;throw error;}
 finally{await close().catch(()=>{});await new Promise(r=>server.close(r));}
-
-

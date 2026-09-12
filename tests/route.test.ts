@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { LearningStore } from '../src/main/store';
 import { LearningService } from '../src/main/learning-service';
-import type { ModelProvider, ModelRequest } from '../src/main/provider';
+import {ChatProvider,type ModelProvider, type ModelRequest } from '../src/main/provider';
 import type { Activity, Capability, Project } from '../src/shared/types';
 
 type RouteCapability = Pick<Capability, 'title' | 'description' | 'prerequisites' | 'sourceIds'>;
@@ -77,6 +77,16 @@ async function acquireEvidence(service: LearningService, store: LearningStore) {
 }
 
 describe('learning routes preserve material coverage and historical evidence', () => {
+  it('sends a DeepSeek route through the real provider adapter with thinking disabled and publishes the valid result',async()=>{
+    const directory=mkdtempSync(join(tmpdir(),'reclimb-route-deepseek-'));const store=await LearningStore.open(directory);resources.push({directory,store});
+    store.transaction(()=>{store.put('projects',{id:'project',title:'全书路线',goal:'建立可持续更新的全书地图',status:'active',createdAt:'2026-09-07T00:00:00Z',updatedAt:'2026-09-07T00:00:00Z'});store.updateSettings({providerName:'DeepSeek',baseUrl:'https://api.deepseek.com/chat/completions',model:'deepseek-v4-flash',monthlyBudgetCny:100});});material(store,['第一节解释核心对象。']);
+    let sent:any;const service=new LearningService(store,()=> 'test-key', (settings,key)=>new ChatProvider({baseUrl:settings.baseUrl,model:settings.model,apiKey:key,fetcher:async(_url,options)=>{sent=JSON.parse(String(options?.body));return new Response(JSON.stringify({id:'deepseek-route',model:'deepseek-v4-flash-0731',choices:[{finish_reason:'stop',message:{content:JSON.stringify(route([definition()]))}}],usage:{prompt_tokens:100,completion_tokens:200}}),{status:200,headers:{'content-type':'application/json'}});}}));
+    const published=await service.generateRoute('project');
+    expect(sent).toMatchObject({model:'deepseek-v4-flash',max_tokens:9000,thinking:{type:'disabled'},response_format:{type:'json_object'}});
+    expect(published.status).toBe('adopted');expect(store.get('projects','project')?.activeRouteVersionId).toBe(published.id);
+    expect(store.list('usage').find(item=>item.kind==='学习路线')).toMatchObject({requestedModel:'deepseek-v4-flash',reportedModel:'deepseek-v4-flash-0731',publicationStatus:'published'});
+  });
+
   it('includes the final chapter of a long material in the model context with a real source ID', async () => {
     const { store, service, provider } = await environment(input => route([definition('理解最后一章', [], [input.sources.at(-1).id])]));
     const paragraphs = Array.from({ length: 240 }, (_, index) => index === 239 ? '终章唯一标记：序贯证据更新要求重新判断模型的适用条件。' : `第 ${index + 1} 节讨论基础概念与例子。`);
@@ -84,9 +94,24 @@ describe('learning routes preserve material coverage and historical evidence', (
     await service.generateRoute('project');
     const context = provider.inputs[0];
     expect(context.sources.some((source: { id: string; text: string; locator: string }) => source.id === 'material-239' && source.text.includes('终章唯一标记') && source.locator === '第 240 章')).toBe(true);
+    expect(context.materials[0]).not.toHaveProperty('sectionLocators');
+    expect(context.sectionIndex).toHaveLength(240);
     expect(context.coverage.totalFragments).toBe(240);
     expect(context.coverage.sampledFragments).toBeLessThan(240);
     expect(store.list('capabilities')[0].sourceIds).toEqual(['material-239']);
+  });
+
+  it('balances a bounded section index across materials instead of dropping every later material', async () => {
+    const {store,service,provider}=await environment(input=>route([definition('跨材料建立全书粗图',[],[input.sources[0].id])]));
+    material(store,Array.from({length:2100},(_,index)=>`第一份材料第 ${index+1} 段。`),'book-a');
+    material(store,Array.from({length:4},(_,index)=>`第二份材料第 ${index+1} 段。`),'book-b');
+    await service.generateRoute('project');
+    const context=provider.inputs[0],index=context.sectionIndex as Array<{id:string;materialId:string}>;
+    expect(index).toHaveLength(2000);
+    expect(index.filter(item=>item.materialId==='book-b').map(item=>item.id)).toEqual(['book-b-0','book-b-1','book-b-2','book-b-3']);
+    expect(index.some(item=>item.id==='book-a-2099')).toBe(true);
+    expect(context.coverage).toMatchObject({totalFragments:2104,indexedFragments:2000});
+    expect(context.coverage.method).toMatch(/按材料平衡/);
   });
 
   it('keeps capability IDs when definitions, goal, references and prerequisites remain the same', async () => {
@@ -147,7 +172,7 @@ describe('learning routes preserve material coverage and historical evidence', (
     ['不存在', [definition('条件', ['只存在于历史路线的能力'])]],
   ] as const)('rejects %s prerequisites before changing the current route', async (message, invalid) => {
     let response = route([definition()]);
-    const { store, service } = await environment(() => response);
+    const { store, service, provider } = await environment(() => response);
     material(store, ['条件概率与证据。']);
     await service.generateRoute('project');
     const before = store.list('capabilities');
@@ -156,9 +181,40 @@ describe('learning routes preserve material coverage and historical evidence', (
     const withHistory = store.list('capabilities');
     response = route([...invalid]);
     await expect(service.generateRoute('project')).rejects.toThrow(message);
+    expect(provider.requests).toHaveLength(3);
+    expect(store.list('usage').slice(-2).map(item=>item.publicationStatus)).toEqual(['discarded','discarded']);
     expect(store.list('capabilities')).toEqual(withHistory);
     expect(store.get('projects', 'project')).toEqual(project);
     expect(store.get('capabilities', before[0].id)?.archived).toBe(false);
+  });
+
+  it('repairs a structurally valid route whose capability graph is inconsistent', async () => {
+    const {store,service,provider}=await environment(input=>input.repair
+      ? route([definition('识别条件'),definition('使用条件',['识别条件']),definition('检查边界',['使用条件'])])
+      : route([definition('识别条件',['不存在的能力']),definition('使用条件'),definition('检查边界')]));
+    material(store,['条件概率与证据。']);
+    const generated=await service.generateRoute('project');
+    expect(generated.status).toBe('adopted');
+    expect(provider.requests).toHaveLength(2);
+    expect(store.list('usage').map(item=>item.publicationStatus)).toEqual(['discarded','published']);
+    expect(store.list('capabilities').find(item=>item.title==='检查边界')?.prerequisites).toHaveLength(1);
+  });
+
+  it('repairs an adjustment that tries to reuse an old capability after changing its meaning', async () => {
+    let previous:Capability[]|undefined;
+    const {store,service,provider}=await environment(input=>{
+      if(!previous)return route([definition('识别条件'),definition('使用条件'),definition('检查边界')]);
+      const capabilities=previous.map((item,index)=>({title:item.title,description:!input.repair&&index===0?item.description+'并完成另一项新任务':item.description,prerequisites:[],sourceIds:item.sourceIds,existingCapabilityId:item.id}));
+      return route(capabilities as RouteCapability[]);
+    });
+    material(store,['条件概率与证据。']);
+    await service.generateRoute('project');
+    previous=store.list('capabilities').filter(item=>!item.archived);
+    const proposal=await service.generateRoute('project');
+    expect(proposal.status).toBe('proposed');
+    expect(provider.requests).toHaveLength(3);
+    expect(store.list('usage').map(item=>item.publicationStatus)).toEqual(['published','discarded','published']);
+    expect(proposal.capabilitySnapshots.map(item=>item.id)).toEqual(previous.map(item=>item.id));
   });
 
   it('rejects a reference to a source outside the current project without replacing its route', async () => {
@@ -195,6 +251,7 @@ describe('learning routes preserve material coverage and historical evidence', (
     await expect(service.generateRoute('project')).rejects.toThrow(/生成期间/);
     expect(store.get('projects', 'project')?.goal).toBe('独立检查论证中的隐藏前提');
     expect(store.list('capabilities')).toEqual([]);
+    expect(store.list('usage').map(item=>item.publicationStatus)).toEqual(['discarded']);
   });
 });
 
@@ -210,7 +267,7 @@ describe('near-step usability before route publication',()=>{
 });
 it('repairs redundant source lists before publishing a compact route and reserves the finite output allowance',async()=>{
  const ids=Array.from({length:6},(_,index)=>'material-'+index);const {store,service,provider}=await environment(input=>{const definitions=[definition('辨认条件',[],input.repair?ids.slice(0,2):ids),definition('比较条件',[],[ids[1]]),definition('说明边界',[],[ids[2]])];const response=route(definitions);response.nearSteps=response.nearSteps.map(step=>({...step,sourceIds:input.repair?ids.slice(0,2):ids}));return response;});material(store,ids.map((_,index)=>'可核对的真实材料片段'+index));await service.generateRoute('project');
- expect(provider.requests).toHaveLength(2);expect(provider.requests.map(request=>request.maxOutputTokens)).toEqual([6000,9000]);expect(store.list('capabilities').every(cap=>cap.sourceIds.length<=3&&cap.sourceIds.every(id=>ids.includes(id)))).toBe(true);expect(store.get('projects','project')?.nearSteps?.every(step=>step.sourceIds.length<=3)).toBe(true);expect(store.list('usage').map(usage=>usage.publicationStatus)).toEqual(['discarded','published']);
+ expect(provider.requests).toHaveLength(2);expect(provider.requests.map(request=>request.maxOutputTokens)).toEqual([9000,12000]);expect(store.list('capabilities').every(cap=>cap.sourceIds.length<=3&&cap.sourceIds.every(id=>ids.includes(id)))).toBe(true);expect(store.get('projects','project')?.nearSteps?.every(step=>step.sourceIds.length<=3)).toBe(true);expect(store.list('usage').map(usage=>usage.publicationStatus)).toEqual(['discarded','published']);
 });
 it('sends exact current source enums and repairs an invented source before publication',async()=>{
  const ids=['material-0','material-1','material-2'];const {store,service,provider}=await environment(raw=>route([definition('条件',[],raw.repair?[ids[0]]:['fabricated-id']),definition('比较',[],[ids[1]]),definition('边界',[],[ids[2]])]));material(store,['当前来源一','当前来源二','当前来源三']);await service.generateRoute('project');

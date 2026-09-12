@@ -2,16 +2,17 @@ import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.j
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
-import type { Collection, EntityMap, Fragment, Settings, WorkspaceSnapshot } from '../shared/types';
+import {DEFAULT_MODEL_PROFILE_ID,type Collection,type EntityMap,type Fragment,type ModelProfile,type Settings,type WorkspaceSnapshot} from '../shared/types';
 
 export const COLLECTIONS: Collection[] = ['projects', 'capabilities', 'materials', 'fragments', 'sessions', 'attempts', 'evidence', 'reviews', 'usage', 'sourceTranscriptions','teachingVersions','taskReviews','disputes','corrections','answerExposures','routeVersions','learningUnits','learningPositions','teachingObservations','understandingDrafts','readingLayouts'];
 const COLLECTION_SET = new Set<string>(COLLECTIONS);
 const APPEND_ONLY=new Set<Collection>(['teachingVersions','taskReviews','corrections','answerExposures']);
 const DEFAULT_SETTINGS: Settings = {
-  providerName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro',
+  providerName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', maxOutputTokens:12000,
   monthlyBudgetCny: 0, inputPriceCnyPerMillion: 10, outputPriceCnyPerMillion: 30,
   priceUpdatedAt: '2026-09-07（保守估算，非官方报价）', hasApiKey: false,
   personalGoal: '', studyMinutes: 30, confirmedPreferences: '',
+  modelProfiles:[{id:DEFAULT_MODEL_PROFILE_ID,name:'默认模型',providerName:'DeepSeek',baseUrl:'https://api.deepseek.com',model:'deepseek-v4-pro',maxOutputTokens:12000,inputPriceCnyPerMillion:10,outputPriceCnyPerMillion:30,priceUpdatedAt:'2026-09-07（保守估算，非官方报价）',enabled:true}],activeModelProfileId:DEFAULT_MODEL_PROFILE_ID,
 };
 const RENAME_RETRY_DELAYS_MS = [15, 30, 60, 120] as const;
 const renameWaiter = new Int32Array(new SharedArrayBuffer(4));
@@ -42,7 +43,18 @@ function terms(text: string): string[] {
   }
   return [...found];
 }
-function cleanSettings(value: Partial<Settings>): Settings {
+const PROFILE_ID=/^[a-zA-Z0-9_-]{1,120}$/;
+const ACTIVE_PROFILE_FIELDS=['providerName','baseUrl','model','maxOutputTokens','inputPriceCnyPerMillion','outputPriceCnyPerMillion','priceUpdatedAt'] as const;
+function cleanProfile(value:unknown):ModelProfile|undefined{
+  if(!value||typeof value!=='object')return;
+  const raw=value as Record<string,unknown>,id=typeof raw.id==='string'?raw.id.trim():'',name=typeof raw.name==='string'?raw.name.trim().slice(0,120):'',providerName=typeof raw.providerName==='string'?raw.providerName.trim().slice(0,200):'',baseUrl=typeof raw.baseUrl==='string'?raw.baseUrl.trim().slice(0,2000):'',model=typeof raw.model==='string'?raw.model.trim().slice(0,150):'';
+  if(!PROFILE_ID.test(id)||!name||!providerName||!baseUrl||!model)return;
+  const inputPrice=typeof raw.inputPriceCnyPerMillion==='number'&&Number.isFinite(raw.inputPriceCnyPerMillion)&&raw.inputPriceCnyPerMillion>=.01?raw.inputPriceCnyPerMillion:10;
+  const outputPrice=typeof raw.outputPriceCnyPerMillion==='number'&&Number.isFinite(raw.outputPriceCnyPerMillion)&&raw.outputPriceCnyPerMillion>=.01?raw.outputPriceCnyPerMillion:30;
+  const maxOutputTokens=typeof raw.maxOutputTokens==='number'&&Number.isInteger(raw.maxOutputTokens)&&raw.maxOutputTokens>=512&&raw.maxOutputTokens<=131072?raw.maxOutputTokens:12000;
+  return{id,name,providerName,baseUrl,model,maxOutputTokens,inputPriceCnyPerMillion:inputPrice,outputPriceCnyPerMillion:outputPrice,priceUpdatedAt:typeof raw.priceUpdatedAt==='string'?raw.priceUpdatedAt.slice(0,2000):'待核对',enabled:raw.enabled===true};
+}
+export function normalizeSettings(value: Partial<Settings>): Settings {
   const settings = { ...DEFAULT_SETTINGS };
   for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
     if (key === 'hasApiKey') continue;
@@ -53,7 +65,20 @@ function cleanSettings(value: Partial<Settings>): Settings {
   }
   const v=value.vision;
   if(v&&typeof v==='object')settings.vision={enabled:v.enabled===true,providerName:typeof v.providerName==='string'?v.providerName.slice(0,200):'',baseUrl:typeof v.baseUrl==='string'?v.baseUrl.slice(0,2000):'',model:typeof v.model==='string'?v.model.slice(0,150):'',inputPriceCnyPerMillion:Number.isFinite(v.inputPriceCnyPerMillion)&&v.inputPriceCnyPerMillion>=.01?v.inputPriceCnyPerMillion:10,outputPriceCnyPerMillion:Number.isFinite(v.outputPriceCnyPerMillion)&&v.outputPriceCnyPerMillion>=.01?v.outputPriceCnyPerMillion:30,priceUpdatedAt:typeof v.priceUpdatedAt==='string'?v.priceUpdatedAt.slice(0,2000):'待核对',hasApiKey:false};
+  settings.providerName=typeof settings.providerName==='string'&&settings.providerName.trim()?settings.providerName.trim().slice(0,200):DEFAULT_SETTINGS.providerName;
+  settings.baseUrl=typeof settings.baseUrl==='string'&&settings.baseUrl.trim()?settings.baseUrl.trim().slice(0,2000):DEFAULT_SETTINGS.baseUrl;
+  settings.model=typeof settings.model==='string'&&settings.model.trim()?settings.model.trim().slice(0,150):DEFAULT_SETTINGS.model;
+  settings.maxOutputTokens=typeof settings.maxOutputTokens==='number'&&Number.isInteger(settings.maxOutputTokens)&&settings.maxOutputTokens>=512&&settings.maxOutputTokens<=131072?settings.maxOutputTokens:12000;
+  const seen=new Set<string>(),profiles=(Array.isArray(value.modelProfiles)?value.modelProfiles.map(cleanProfile).filter((profile):profile is ModelProfile=>!!profile&&(!seen.has(profile.id)&&!!seen.add(profile.id))):[]);
+  if(!profiles.length)profiles.push({id:DEFAULT_MODEL_PROFILE_ID,name:'默认模型',providerName:settings.providerName,baseUrl:settings.baseUrl,model:settings.model,maxOutputTokens:settings.maxOutputTokens,inputPriceCnyPerMillion:settings.inputPriceCnyPerMillion,outputPriceCnyPerMillion:settings.outputPriceCnyPerMillion,priceUpdatedAt:settings.priceUpdatedAt,enabled:true});
+  let active=profiles.find(profile=>profile.id===value.activeModelProfileId&&profile.enabled)??profiles.find(profile=>profile.enabled);
+  if(!active){profiles[0]={...profiles[0],enabled:true};active=profiles[0];}
+  settings.modelProfiles=profiles;settings.activeModelProfileId=active.id;settings.hasApiKey=false;
+  for(const field of ACTIVE_PROFILE_FIELDS)(settings as unknown as Record<string,unknown>)[field]=active[field];
   return settings;
+}
+export function activeModelProfile(settings:Settings):ModelProfile{
+  const normalized=normalizeSettings(settings);return normalized.modelProfiles!.find(profile=>profile.id===normalized.activeModelProfileId)!;
 }
 
 /** A local SQLite store. Each outer transaction is one atomic disk replacement. */
@@ -80,11 +105,11 @@ export class LearningStore {
       const check = db.exec('PRAGMA quick_check');
       if (check[0]?.values.some(row => row[0] !== 'ok')) throw new Error('学习数据库完整性检查失败；原文件已保留。');
       const version = Number(db.exec('PRAGMA user_version')[0]?.values[0]?.[0] ?? 0);
-      if (version > 6) throw new Error('此学习数据库由更新版本创建，请先升级应用。');
+      if (version > 7) throw new Error('此学习数据库由更新版本创建，请先升级应用。');
       mkdirSync(dataDirectory, { recursive: true });
-      if(existing && version<6){
+      if(existing && version<7){
         const backupDirectory=join(dataDirectory,'upgrade-backups');mkdirSync(backupDirectory,{recursive:true});
-        const label=version<5?'pre-0.4':'pre-0.4.1';
+        const label=version<5?'pre-0.4':version<6?'pre-0.4.1':'pre-0.4.2';
         writeFileSync(join(backupDirectory,label+'-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID()+'.sqlite'),existing,{flag:'wx',mode:0o600});
       }
       const store = new LearningStore(db, sql, dataDirectory);
@@ -96,7 +121,7 @@ export class LearningStore {
         db!.run('CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), entity TEXT NOT NULL)');
         db!.run('CREATE TABLE IF NOT EXISTS fragment_terms (fragment_id TEXT NOT NULL, project_id TEXT NOT NULL, term TEXT NOT NULL, PRIMARY KEY(fragment_id, term))');
         db!.run('CREATE INDEX IF NOT EXISTS fragment_terms_lookup ON fragment_terms(project_id, term)');
-        db!.run('PRAGMA user_version=6');
+        db!.run('PRAGMA user_version=7');
         // Rebuild only when adopting an older store that has not yet had a term index.
         if (store.rows('SELECT 1 FROM fragment_terms LIMIT 1').length === 0) {
           for (const fragment of store.list('fragments')) store.indexFragment(fragment);
@@ -178,10 +203,14 @@ export class LearningStore {
   }
   getSettings(): Settings {
     const row = this.rows('SELECT entity FROM settings WHERE id=1')[0];
-    return cleanSettings(row ? JSON.parse(String(row.entity)) as Partial<Settings> : {});
+    return normalizeSettings(row ? JSON.parse(String(row.entity)) as Partial<Settings> : {});
   }
   updateSettings(partial: Partial<Settings>): void {
-    const settings = cleanSettings({ ...this.getSettings(), ...partial });
+    const current=this.getSettings(),hasProfiles=Object.prototype.hasOwnProperty.call(partial,'modelProfiles');let merged:Partial<Settings>={...current,...partial};
+    if(!hasProfiles&&current.modelProfiles&&ACTIVE_PROFILE_FIELDS.some(field=>Object.prototype.hasOwnProperty.call(partial,field))){
+      merged={...merged,modelProfiles:current.modelProfiles.map(profile=>profile.id===current.activeModelProfileId?{...profile,...Object.fromEntries(ACTIVE_PROFILE_FIELDS.filter(field=>Object.prototype.hasOwnProperty.call(partial,field)).map(field=>[field,partial[field]]))}:profile)};
+    }
+    const settings = normalizeSettings(merged);
     this.transaction(() => {
       this.db.run('INSERT OR REPLACE INTO settings(id, entity) VALUES (1, ?)', [JSON.stringify(settings)]);
       this.dirty = true;

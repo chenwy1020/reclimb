@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CredentialsStore, type CredentialCipher } from '../src/main/credentials';
+import { buildChatUrl } from '../src/main/provider';
+import { DEFAULT_MODEL_PROFILE_ID } from '../src/shared/types';
 function cipher(): CredentialCipher {
   const key = randomBytes(32);
   return {
@@ -24,6 +26,32 @@ function fixture(crypto = cipher()) {
   return { directory, path, crypto, store: new CredentialsStore(path, crypto) };
 }
 describe('endpoint-bound credentials', () => {
+  it('keeps independent encrypted keys for profiles that share one endpoint', () => {
+    const { path, store } = fixture();
+    store.write('fast', 'https://api.deepseek.com', 'sk-fast-private');
+    store.write('steady', 'https://api.deepseek.com', 'sk-steady-private');
+    expect(store.read('fast', 'https://api.deepseek.com')).toBe('sk-fast-private');
+    expect(store.read('steady', 'https://api.deepseek.com')).toBe('sk-steady-private');
+    store.remove('fast');
+    expect(store.read('fast', 'https://api.deepseek.com')).toBe('');
+    expect(store.read('steady', 'https://api.deepseek.com')).toBe('sk-steady-private');
+    const raw=readFileSync(path,'utf8');expect(raw).not.toContain('sk-fast-private');expect(raw).not.toContain('sk-steady-private');expect(raw).not.toContain('api.deepseek.com');
+  });
+  it('checks all configured profiles with one credential decryption',()=>{
+    const inner=cipher();let decryptions=0;const counted:CredentialCipher={...inner,decryptString(value){decryptions++;return inner.decryptString(value)}};const {store}=fixture(counted);
+    store.write('fast','https://api.deepseek.com','sk-fast');store.write('steady','https://api.deepseek.com','sk-steady');decryptions=0;
+    expect([...store.configured([{id:'fast',baseUrl:'https://api.deepseek.com'},{id:'steady',baseUrl:'https://api.deepseek.com'},{id:'missing',baseUrl:'https://api.deepseek.com'}])].sort()).toEqual(['fast','steady']);expect(decryptions).toBe(1);
+  });
+  it('binds a legacy v1 key only to the migrated default profile and preserves it during v2 upgrade', () => {
+    const { path, crypto, store } = fixture();
+    const legacy={purpose:'reclimb-endpoint-credential',version:1,endpoint:buildChatUrl('https://api.deepseek.com'),key:'sk-legacy-private'};
+    writeFileSync(path,JSON.stringify({version:1,encrypted:crypto.encryptString(JSON.stringify(legacy)).toString('base64')}));
+    expect(store.read(DEFAULT_MODEL_PROFILE_ID,'https://api.deepseek.com')).toBe('sk-legacy-private');
+    expect(store.read('other','https://api.deepseek.com')).toBe('');
+    store.write('other','https://other.example/v1','sk-other-private');
+    expect(store.read(DEFAULT_MODEL_PROFILE_ID,'https://api.deepseek.com')).toBe('sk-legacy-private');
+    expect(store.read('other','https://other.example/v1')).toBe('sk-other-private');
+  });
   it('encrypts the key and binding and reopens only for the same normalized endpoint', () => {
     const { path, crypto, store } = fixture();
     store.write('https://API.deepseek.com/', 'sk-private-example');
@@ -70,11 +98,25 @@ describe('endpoint-bound credentials', () => {
   });
   it('treats corrupt ciphertext and decryption failure as disconnected', () => {
     const { path, store } = fixture(); writeFileSync(path, '{bad json'); expect(store.read('https://api.deepseek.com')).toBe('');
-    store.write('https://api.deepseek.com', 'sk-valid'); const unavailable = new CredentialsStore(path, cipher()); expect(unavailable.read('https://api.deepseek.com')).toBe('');
+    expect(()=>store.write('https://api.deepseek.com', 'sk-valid')).toThrow();store.clear();store.write('https://api.deepseek.com', 'sk-valid'); const unavailable = new CredentialsStore(path, cipher()); expect(unavailable.read('https://api.deepseek.com')).toBe('');
     expect(store.read('http://untrusted.example')).toBe('');
+  });
+  it('refuses to overwrite an existing unreadable credential file when saving another profile',()=>{
+    const {path,store}=fixture(),original='{"version":2,"encrypted":"not-readable"}';writeFileSync(path,original,'utf8');
+    expect(()=>store.write('second-profile','https://api.example.test','second-key')).toThrow(/读取|损坏|保留/);
+    expect(readFileSync(path,'utf8')).toBe(original);
   });
   it('clears credentials explicitly and when saving an empty key', () => {
     const { path, store } = fixture(); store.write('https://api.deepseek.com', 'sk-delete'); store.clear(); expect(existsSync(path)).toBe(false);
     store.clear(); store.write('https://api.deepseek.com', 'sk-delete'); store.write('https://api.deepseek.com', '  '); expect(store.read('https://api.deepseek.com')).toBe('');
+  });
+  it('can detach credentials transactionally and restore the exact encrypted file on rollback',()=>{
+    const {path,store}=fixture();store.write('fast','https://api.deepseek.com','sk-fast');store.write('steady','https://api.deepseek.com','sk-steady');const before=readFileSync(path);
+    const reset=store.beginClear();expect(existsSync(path)).toBe(false);expect(store.read('fast','https://api.deepseek.com')).toBe('');
+    reset.rollback();expect(readFileSync(path)).toEqual(before);expect(store.read('fast','https://api.deepseek.com')).toBe('sk-fast');expect(store.read('steady','https://api.deepseek.com')).toBe('sk-steady');
+  });
+  it('keeps detached credentials inactive after a committed reset',()=>{
+    const {path,store}=fixture();store.write('fast','https://api.deepseek.com','sk-fast');const reset=store.beginClear();reset.commit();
+    expect(existsSync(path)).toBe(false);expect(store.read('fast','https://api.deepseek.com')).toBe('');
   });
 });

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 export interface DiagnosticEntry {
   id: string; createdAt: string; operationId: string; kind: string; model: string;
+  modelProfileId?: string; profileName?: string; providerName?: string; requestedModel?: string; reportedModel?: string;
   status: 'valid' | 'invalid' | 'transport_error' | 'published';
   reasoningTokens?: number; finishReason?: string; providerRequestId?: string; error?: string; response?: string;
 }
@@ -27,7 +28,7 @@ export class DiagnosticLog {
   record(entry: Omit<DiagnosticEntry,'id'|'createdAt'> & Partial<Pick<DiagnosticEntry,'id'|'createdAt'>>, secrets: string[] = []): string {
     mkdirSync(this.directory,{recursive:true});
     const id=randomUUID();
-    const safe:DiagnosticEntry={id,createdAt:new Date(this.now()).toISOString(),operationId:entry.operationId,kind:entry.kind,model:entry.model,status:entry.status,...(entry.reasoningTokens!==undefined?{reasoningTokens:entry.reasoningTokens}:{}),...(entry.finishReason?{finishReason:entry.finishReason}:{}),...(entry.providerRequestId?{providerRequestId:entry.providerRequestId}:{}),...(entry.error?{error:entry.error.slice(0,4000)}:{}),...(entry.response?{response:entry.response.slice(0,65536)}:{})};
+    const safe:DiagnosticEntry={id,createdAt:new Date(this.now()).toISOString(),operationId:entry.operationId,kind:entry.kind,model:entry.model,status:entry.status,...(entry.modelProfileId?{modelProfileId:entry.modelProfileId}:{}),...(entry.profileName?{profileName:entry.profileName}:{}),...(entry.providerName?{providerName:entry.providerName}:{}),...(entry.requestedModel?{requestedModel:entry.requestedModel}:{}),...(entry.reportedModel?{reportedModel:entry.reportedModel}:{}),...(entry.reasoningTokens!==undefined?{reasoningTokens:entry.reasoningTokens}:{}),...(entry.finishReason?{finishReason:entry.finishReason}:{}),...(entry.providerRequestId?{providerRequestId:entry.providerRequestId}:{}),...(entry.error?{error:entry.error.slice(0,4000)}:{}),...(entry.response?{response:entry.response.slice(0,65536)}:{})};
     const body=redactDiagnostic(JSON.stringify(safe,null,2),secrets);
     this.prune(Buffer.byteLength(body));writeFileSync(join(this.directory,id+'.json'),body,{encoding:'utf8',mode:0o600});
     return id;
@@ -35,7 +36,8 @@ export class DiagnosticLog {
   preview():{entries:DiagnosticEntry[];bytes:number;description:string} {
     this.prune(); const entries:DiagnosticEntry[]=[];let bytes=0;
     for(const file of this.files()){try{entries.push(JSON.parse(readFileSync(file.path,'utf8')));bytes+=file.stat.size;}catch{/* A damaged diagnostic must not block access to learning records. */}}
-    return {entries,bytes,description:'包含最近 7 天的模型名称、调用标识、结束原因、校验结果和失败回复片段。片段可能包含学习内容；不包含密钥、认证头或完整请求。总量最多 20 MB。'};
+    entries.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    return {entries,bytes,description:'包含最近 7 天的模型配置、请求模型、服务商报告模型、调用标识、结束原因、校验结果和失败回复片段。片段可能包含学习内容；不包含密钥、认证头或完整请求。总量最多 20 MB。'};
   }
   clear():void{for(const file of this.files())unlinkSync(file.path);}
 }
