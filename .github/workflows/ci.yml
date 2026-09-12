@@ -1,8 +1,15 @@
 name: Windows checks
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      test_scope:
+        description: 'auto uses this patch release profile; full runs all accumulated tests'
+        type: choice
+        options: [auto, full]
+        default: auto
 permissions:
   contents: read
 concurrency:
@@ -21,6 +28,11 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run typecheck
-      - run: npm test
+      - run: node scripts/test-profile.mjs
+        id: tests
+        env:
+          RECLIMB_TEST_SCOPE: ${{ inputs.test_scope || 'auto' }}
       - run: npm run build
+      - run: npm run test:desktop:full
+        if: steps.tests.outputs.scope == 'full'
       - run: node scripts/audit-source.mjs --tracked

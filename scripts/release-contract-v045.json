@@ -1,0 +1,14 @@
+{
+  "version": "0.4.5",
+  "suiteTag": "v045",
+  "smokeScript": "smoke-v045.mjs",
+  "desktopReportName": "desktop-verification-v045.json",
+  "expectedChecks": 10,
+  "targetTests": [
+    "tests/teaching.test.ts",
+    "tests/service.test.ts",
+    "tests/call-runner-repair.test.ts",
+    "tests/test-profile.test.ts",
+    "tests/delivery-v045.test.ts"
+  ]
+}
