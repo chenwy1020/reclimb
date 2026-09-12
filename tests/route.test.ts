@@ -8,6 +8,7 @@ import { LearningStore } from '../src/main/store';
 import { LearningService } from '../src/main/learning-service';
 import {ChatProvider,type ModelProvider, type ModelRequest } from '../src/main/provider';
 import type { Activity, Capability, Project } from '../src/shared/types';
+import { routeSchemaFor } from '../src/main/schemas';
 
 type RouteCapability = Pick<Capability, 'title' | 'description' | 'prerequisites' | 'sourceIds'>;
 type Input = Record<string, any>;
@@ -54,6 +55,90 @@ function route(capabilities: RouteCapability[]) { capabilities=[...capabilities,
 function definition(title = '理解条件概率', prerequisites: string[] = [], sourceIds = ['material-0']): RouteCapability {
   return { title, description: '说明观察证据如何改变概率判断', prerequisites, sourceIds };
 }
+
+function referencedRoute() {
+  return {
+    summary: '从条件与结论的区别进入论证分析。',
+    capabilities: [definition('辨认论证条件'), definition('检查推理连接', ['辨认论证条件']), definition('说明适用边界', ['检查推理连接'])],
+    mapNodes: [{ key: 'premises', title: '条件', question: '论证从哪里开始？', role: '问题入口', sourceIds: ['material-0'], connectsTo: ['reasoning'] }, { key: 'reasoning', title: '推理', question: '条件如何支持结论？', role: '连接条件和结论', sourceIds: ['material-0'], connectsTo: [] }],
+    units: [
+      { title: '先拆开一段论证', capabilityTitle: '辨认论证条件', coreQuestion: '哪些是给定条件？', purpose: '先分清论证对象。', expectedOutcome: '能指出论证中的条件。', phase: 'survey' as const, sourceIds: ['material-0'], prerequisiteTitles: [], unresolvedGaps: [] as string[] },
+      { title: '比较两种推理连接', capabilityTitle: '检查推理连接', coreQuestion: '哪一步需要额外理由？', purpose: '检查推理是否成立。', expectedOutcome: '能说明一个推理缺口。', phase: 'expand' as const, sourceIds: ['material-0'], prerequisiteTitles: ['先拆开一段论证'], unresolvedGaps: [] as string[] },
+    ],
+  };
+}
+
+describe('route reference contract', () => {
+  it('tells the actual generation request which namespace each reference uses', async () => {
+    const { store, service, provider } = await environment(() => referencedRoute());
+    material(store, ['给定前提与待判断结论应当明确区分。']);
+    await service.generateRoute('project');
+    const properties = (provider.requests[0].schema as any).properties;
+    expect(properties.capabilities.items.properties.prerequisites.description).toContain('capabilities[].title');
+    expect(properties.units.items.properties.prerequisiteTitles.description).toContain('units[].title');
+    expect(properties.units.items.properties.capabilityTitle.description).toContain('capabilities[].title');
+    expect(properties.mapNodes.items.properties.connectsTo.description).toContain('mapNodes[].key');
+    expect(properties.units.items.properties.unresolvedGaps.description).toContain('未知');
+    expect(provider.inputs[0].referenceProtocol).toBeDefined();
+    expect(JSON.stringify(provider.inputs[0].referenceProtocol)).toContain('不要复制');
+  });
+
+  it('reports the bad reference and exact allowed titles instead of an opaque graph error', () => {
+    const candidate = referencedRoute();
+    candidate.capabilities[0].prerequisites = ['命题逻辑'];
+    candidate.units[1].prerequisiteTitles = ['辨认论证条件'];
+    candidate.mapNodes[0].connectsTo = ['推理'];
+    const result = routeSchemaFor(false, ['material-0']).safeParse(candidate);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issues = result.error.issues;
+    const capability = issues.find(issue => issue.path.join('.') === 'capabilities.0.prerequisites.0');
+    expect(capability?.message).toContain('命题逻辑');
+    expect(capability?.message).toContain('辨认论证条件');
+    expect(capability?.message).toContain('unresolvedGaps');
+    const unit = issues.find(issue => issue.path.join('.') === 'units.1.prerequisiteTitles.0');
+    expect(unit?.message).toContain('辨认论证条件');
+    expect(unit?.message).toContain('先拆开一段论证');
+    const map = issues.find(issue => issue.path.join('.') === 'mapNodes.0.connectsTo.0');
+    expect(map?.message).toContain('推理');
+    expect(map?.message).toContain('reasoning');
+  });
+
+  it('keeps outside foundations as unknown gaps after repairing the original candidate', async () => {
+    const original = referencedRoute();
+    original.capabilities[0].prerequisites = ['命题逻辑'];
+    const { store, service, provider } = await environment(input => {
+      if (!input.repair) return original;
+      const candidate = JSON.parse(input.repair.previousResponse);
+      expect(candidate).toEqual(original);
+      expect(input.repair.validationIssues.some((issue: any) => issue.message.includes('命题逻辑') && issue.message.includes('unresolvedGaps'))).toBe(true);
+      candidate.capabilities[0].prerequisites = [];
+      candidate.units[0].unresolvedGaps = ['命题逻辑的相关基础尚未确认，先结合一次小尝试核对。'];
+      return candidate;
+    });
+    material(store, ['给定前提与待判断结论应当明确区分。']);
+    const generated = await service.generateRoute('project');
+    expect(provider.requests).toHaveLength(2);
+    expect(generated.unitSnapshots[0].unresolvedGaps).toEqual(['命题逻辑的相关基础尚未确认，先结合一次小尝试核对。']);
+    expect(store.get('learningUnits', generated.unitIds[0])?.unresolvedGaps).toEqual(generated.unitSnapshots[0].unresolvedGaps);
+    expect(store.list('evidence')).toHaveLength(0);
+    expect(store.list('capabilities').find(item => item.title === '辨认论证条件')?.prerequisites).toEqual([]);
+    expect(store.list('usage').map(item => item.publicationStatus)).toEqual(['discarded', 'published']);
+  });
+
+  it('distinguishes stored historical IDs from output titles when adjusting a route', async () => {
+    const { store, service, provider } = await environment(() => referencedRoute());
+    material(store, ['给定前提与待判断结论应当明确区分。']);
+    await service.generateRoute('project');
+    const prerequisite = store.list('capabilities').find(item => item.title === '辨认论证条件')!;
+    await service.generateRoute('project');
+    const existing = provider.inputs[1].existingCapabilities.find((item: any) => item.title === '检查推理连接');
+    expect(existing.prerequisites).toEqual([prerequisite.id]);
+    expect(existing.prerequisiteTitles).toEqual(['辨认论证条件']);
+    expect(provider.inputs[1].referenceProtocol.existingReferences).toMatch(/ID/);
+    expect(provider.inputs[1].referenceProtocol.existingReferences).toContain('capabilities[].title');
+  });
+});
 function activity(input: Input) {
   const activity:Activity={ title: input.capability.title, instruction: '结合给定材料，判断一条新增证据会怎样改变原来的判断，并说明依据。', kind: 'application', rubric: ['给出明确结论', '引用材料中的理由'], sourceIds: input.sources.map((source: { id: string }) => source.id).slice(0, 2), referenceAnswer: '结论需要结合条件和先验信息。', assessmentBasis: 'source' };
   return {steps:[{action:'explain',title:'理解对象',content:'先从材料的基本概念开始。',sourceIds:activity.sourceIds},{action:'attempt',title:activity.title,content:'现在尝试一个小判断。',sourceIds:activity.sourceIds,activity}]};
