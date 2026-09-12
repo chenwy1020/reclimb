@@ -46,3 +46,6 @@ public/pdf-assets/
 credentials.json
 vision-credentials.json
 .local-test-data/
+
+!/docs/使用说明-0.4.5.md
+!/docs/验证记录-0.4.5.md

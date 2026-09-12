@@ -56,6 +56,7 @@ const server=createServer(async(req,res)=>{
  }else if('answer' in u){
   value={outcome:'met',feedback:'本地自动化评价：这次明确比较了两个最高值。$\\max_t J(g(t))$ 是比较对象。此响应仅用于验证接口和证据归因。',criteria:u.activity.rubric.map((criterion,i)=>({criterion,criterionId:u.activity.rubricIds?.[i],result:'met',reason:'本地模拟按标准返回；不证明真实学习效果。'})),limitations:['自动化模拟评价，不是实际模型的教学效果验收。'],sourceIds};
  }else if(u.instruction?.includes('核对新旧任务'))value={changedSituation:'模拟中的具体情境变化',sharedPrinciple:'比较同一能量原理',requiredAdaptation:'重建新情境的输入',verdict:'valid',reason:'仅用于自动化测试迁移核对接口'};
+ else if(u.kind==='confused')value={text:u.confusionKind==='overload'?'本地节奏支持：先只读眼前这句，准备好后再继续原任务。':'本地术语支持：泛函把一个状态对应到一个实数。这里不替当前题作答。',sourceIds,scope:u.confusionKind==='overload'?'navigation':'concept'};
  else value={text:u.kind==='explore'?'本地探索回应：先核对“路径”的含义，再回到原来的判断。\n\n$g:[0,1]\\to E$\n\n这个解释只提供背景，不替当前题作答。':u.kind==='answer'?'本地完整示范：先分别求每条路径的最高能量，再比较这些值。这段支持需要归到当前任务。':'本地提示：先指出每条路径对应的最高能量。',sourceIds,scope:u.kind==='explore'?'concept':u.kind==='example'?'other_example':'current_task'};
  if(holdNext&&'answer' in u){holdNext=false;await new Promise(resolve=>releaseResponse=resolve)}
  res.writeHead(200,{'Content-Type':'application/json','x-request-id':'local-v03-'+requests});res.end(JSON.stringify({model:'resolved-'+body.model,choices:[{finish_reason:'stop',message:{content:JSON.stringify(value)}}],usage:{prompt_tokens:100,completion_tokens:80}}));
@@ -163,10 +164,10 @@ try{
  await page.getByRole('textbox',{name:'我的尝试',exact:true}).fill('我的原任务草稿：先分别找出最高能量，再比较 $3<5$。');
  await page.getByText('已保存到本机',{exact:true}).waitFor();record('进入一个小尝试，草稿绑定当前任务');
  await page.getByRole('button',{name:'这里没跟上',exact:true}).click();await page.getByRole('button',{name:'这个术语是什么意思',exact:false}).click();await settle();
- active=await session();assert.equal(active.teaching.current.action,'explain');assert.equal(active.teaching.lastConfusion,'term');assert.equal(active.taskDrafts[originalTask].includes('原任务草稿'),true);
+ active=await session();assert.equal(active.teaching.current.id,originalStep);assert.equal(active.teaching.current.action,'attempt');assert.equal(active.teaching.lastConfusion,'term');assert.equal(active.draft.includes('原任务草稿'),true);
  await page.getByRole('button',{name:'这里没跟上',exact:true}).click();await page.getByRole('button',{name:'信息有点多，慢一点',exact:false}).click();await settle();
- active=await session();assert.equal(active.teaching.confusionCount,2);assert.equal(active.teaching.lastConfusion,'overload');assert.ok(active.teaching.returnStep);assert.equal(active.teaching.upcoming.find(x=>x.activity)?.activity.rubric.length,1);record('连续两次卡点实际缩小教学，保留返回位置与原稿');
- await page.getByRole('button',{name:'回到原来这一步',exact:true}).click();await settle();active=await session();assert.equal(active.teaching.current.taskId,originalTask);assert.ok((await page.getByRole('textbox',{name:'我的尝试',exact:true}).inputValue()).includes('原任务草稿'));
+ active=await session();assert.equal(active.teaching.confusionCount,2);assert.equal(active.teaching.lastConfusion,'overload');assert.equal(active.teaching.current.id,originalStep);assert.equal(active.teaching.current.taskId,originalTask);assert.equal(active.helpLevel,0);record('连续两次卡点补充不同支持，保留当前任务、步骤与原稿');
+ assert.ok((await page.getByRole('textbox',{name:'我的尝试',exact:true}).inputValue()).includes('原任务草稿'));
  await page.getByRole('button',{name:'我还想探究一个问题',exact:false}).click();await page.getByRole('textbox',{name:'探索问题',exact:true}).fill('路径 g 的输入和输出为什么这样定义？');await page.getByRole('button',{name:'保存问题并探究',exact:true}).click();await settle();
  assert.ok((await session()).teaching.returnStep);await page.getByRole('button',{name:'回到原来这一步',exact:true}).click();await settle();assert.equal((await session()).teaching.current.taskId,originalTask);assert.ok((await session()).draft.includes('原任务草稿'));record('探索形成持久支线，返回同一任务与草稿');
  await page.getByRole('button',{name:'给一点提示',exact:true}).click();await settle();await page.getByRole('button',{name:'提交这次尝试',exact:true}).click();await settle();
