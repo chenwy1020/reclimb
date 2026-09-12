@@ -3,16 +3,17 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, re
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import {DEFAULT_MODEL_PROFILE_ID,type Collection,type EntityMap,type Fragment,type ModelProfile,type Settings,type WorkspaceSnapshot} from '../shared/types';
+import {DEFAULT_MODEL_OUTPUT_TOKENS,isModelOutputLimit} from '../shared/model-limits';
 
 export const COLLECTIONS: Collection[] = ['projects', 'capabilities', 'materials', 'fragments', 'sessions', 'attempts', 'evidence', 'reviews', 'usage', 'sourceTranscriptions','teachingVersions','taskReviews','disputes','corrections','answerExposures','routeVersions','learningUnits','learningPositions','teachingObservations','understandingDrafts','readingLayouts'];
 const COLLECTION_SET = new Set<string>(COLLECTIONS);
 const APPEND_ONLY=new Set<Collection>(['teachingVersions','taskReviews','corrections','answerExposures']);
 const DEFAULT_SETTINGS: Settings = {
-  providerName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', maxOutputTokens:12000,
+  providerName: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', maxOutputTokens:DEFAULT_MODEL_OUTPUT_TOKENS,
   monthlyBudgetCny: 0, inputPriceCnyPerMillion: 10, outputPriceCnyPerMillion: 30,
   priceUpdatedAt: '2026-09-07（保守估算，非官方报价）', hasApiKey: false,
   personalGoal: '', studyMinutes: 30, confirmedPreferences: '',
-  modelProfiles:[{id:DEFAULT_MODEL_PROFILE_ID,name:'默认模型',providerName:'DeepSeek',baseUrl:'https://api.deepseek.com',model:'deepseek-v4-pro',maxOutputTokens:12000,inputPriceCnyPerMillion:10,outputPriceCnyPerMillion:30,priceUpdatedAt:'2026-09-07（保守估算，非官方报价）',enabled:true}],activeModelProfileId:DEFAULT_MODEL_PROFILE_ID,
+  modelProfiles:[{id:DEFAULT_MODEL_PROFILE_ID,name:'默认模型',providerName:'DeepSeek',baseUrl:'https://api.deepseek.com',model:'deepseek-v4-pro',maxOutputTokens:DEFAULT_MODEL_OUTPUT_TOKENS,inputPriceCnyPerMillion:10,outputPriceCnyPerMillion:30,priceUpdatedAt:'2026-09-07（保守估算，非官方报价）',enabled:true}],activeModelProfileId:DEFAULT_MODEL_PROFILE_ID,
 };
 const RENAME_RETRY_DELAYS_MS = [15, 30, 60, 120] as const;
 const renameWaiter = new Int32Array(new SharedArrayBuffer(4));
@@ -51,7 +52,7 @@ function cleanProfile(value:unknown):ModelProfile|undefined{
   if(!PROFILE_ID.test(id)||!name||!providerName||!baseUrl||!model)return;
   const inputPrice=typeof raw.inputPriceCnyPerMillion==='number'&&Number.isFinite(raw.inputPriceCnyPerMillion)&&raw.inputPriceCnyPerMillion>=.01?raw.inputPriceCnyPerMillion:10;
   const outputPrice=typeof raw.outputPriceCnyPerMillion==='number'&&Number.isFinite(raw.outputPriceCnyPerMillion)&&raw.outputPriceCnyPerMillion>=.01?raw.outputPriceCnyPerMillion:30;
-  const maxOutputTokens=typeof raw.maxOutputTokens==='number'&&Number.isInteger(raw.maxOutputTokens)&&raw.maxOutputTokens>=512&&raw.maxOutputTokens<=131072?raw.maxOutputTokens:12000;
+  const maxOutputTokens=isModelOutputLimit(raw.maxOutputTokens)?raw.maxOutputTokens:DEFAULT_MODEL_OUTPUT_TOKENS;
   return{id,name,providerName,baseUrl,model,maxOutputTokens,inputPriceCnyPerMillion:inputPrice,outputPriceCnyPerMillion:outputPrice,priceUpdatedAt:typeof raw.priceUpdatedAt==='string'?raw.priceUpdatedAt.slice(0,2000):'待核对',enabled:raw.enabled===true};
 }
 export function normalizeSettings(value: Partial<Settings>): Settings {
@@ -68,7 +69,7 @@ export function normalizeSettings(value: Partial<Settings>): Settings {
   settings.providerName=typeof settings.providerName==='string'&&settings.providerName.trim()?settings.providerName.trim().slice(0,200):DEFAULT_SETTINGS.providerName;
   settings.baseUrl=typeof settings.baseUrl==='string'&&settings.baseUrl.trim()?settings.baseUrl.trim().slice(0,2000):DEFAULT_SETTINGS.baseUrl;
   settings.model=typeof settings.model==='string'&&settings.model.trim()?settings.model.trim().slice(0,150):DEFAULT_SETTINGS.model;
-  settings.maxOutputTokens=typeof settings.maxOutputTokens==='number'&&Number.isInteger(settings.maxOutputTokens)&&settings.maxOutputTokens>=512&&settings.maxOutputTokens<=131072?settings.maxOutputTokens:12000;
+  settings.maxOutputTokens=isModelOutputLimit(settings.maxOutputTokens)?settings.maxOutputTokens:DEFAULT_MODEL_OUTPUT_TOKENS;
   const seen=new Set<string>(),profiles=(Array.isArray(value.modelProfiles)?value.modelProfiles.map(cleanProfile).filter((profile):profile is ModelProfile=>!!profile&&(!seen.has(profile.id)&&!!seen.add(profile.id))):[]);
   if(!profiles.length)profiles.push({id:DEFAULT_MODEL_PROFILE_ID,name:'默认模型',providerName:settings.providerName,baseUrl:settings.baseUrl,model:settings.model,maxOutputTokens:settings.maxOutputTokens,inputPriceCnyPerMillion:settings.inputPriceCnyPerMillion,outputPriceCnyPerMillion:settings.outputPriceCnyPerMillion,priceUpdatedAt:settings.priceUpdatedAt,enabled:true});
   let active=profiles.find(profile=>profile.id===value.activeModelProfileId&&profile.enabled)??profiles.find(profile=>profile.enabled);

@@ -12,7 +12,8 @@ if(packagedExecutable)assert.ok(existsSync(packagedExecutable),'RECLIMB_TEST_EXE
 const projectTrashChecks=process.env.RECLIMB_TEST_PROJECT_TRASH==='1';
 const modelProfileChecks=process.env.RECLIMB_TEST_MODEL_PROFILES==='1';
 const reportName=process.env.RECLIMB_TEST_REPORT_NAME?.trim()||'desktop-verification-v04.json';
-const suiteTag=modelProfileChecks?'v042':projectTrashChecks?'v041':'v04';
+const outputLimitChecks=process.env.RECLIMB_TEST_OUTPUT_LIMIT==='1';
+const suiteTag=outputLimitChecks?'v043':modelProfileChecks?'v042':projectTrashChecks?'v041':'v04';
 const artifactDir=resolve(process.env.RECLIMB_TEST_ARTIFACT_DIR?.trim()||('output/playwright/'+suiteTag)),dataDir=resolve('.test-data/desktop-'+suiteTag+'-'+stamp);
 const optionalPdf=process.env.RECLIMB_TEST_PDF?.trim();
 if(optionalPdf&&!existsSync(optionalPdf))throw new Error('RECLIMB_TEST_PDF 指向的可选本机 PDF 不存在。');
@@ -117,6 +118,25 @@ try{
  let steadyProfileId=s.settings.activeModelProfileId,fastProfileId;
  if(modelProfileChecks){
   const beforeProfileSwitchRequests=requests;await page.getByRole('button',{name:'新增模型配置',exact:true}).click();await page.getByLabel('配置名称',{exact:true}).fill('本地快速模型');await page.getByLabel('服务名称',{exact:true}).fill('本地自动化模拟服务');await page.getByLabel('模型名称',{exact:true}).fill('local-fast-mock');await page.getByLabel('接口地址',{exact:true}).fill(baseUrl);await page.getByLabel(/^API 密钥/).fill('local-fast-key-'+stamp);await page.getByRole('button',{name:'保存配置',exact:true}).click();await settle();s=await snap();fastProfileId=s.settings.modelProfiles.find(profile=>profile.name==='本地快速模型').id;assert.equal(s.settings.modelProfiles.length,2);assert.ok(s.settings.modelProfiles.every(profile=>profile.hasApiKey));assert.ok(!JSON.stringify(s).includes('local-fast-key-'+stamp));record('可新增第二个模型配置，相同接口也分别保存密钥且公开快照不泄露');
+  if(outputLimitChecks){
+   for(const limit of [384000,393216]){
+    await page.locator('.model-profile').filter({hasText:'本地快速模型'}).getByRole('button',{name:'编辑',exact:true}).click();
+    const outputField=page.getByRole('spinbutton',{name:/^单次回复上限/});
+    await outputField.fill(String(limit));assert.equal(await outputField.evaluate(input=>input.checkValidity()),true);
+    await page.getByRole('button',{name:'保存配置',exact:true}).click();await settle();
+    assert.equal((await snap()).settings.modelProfiles.find(profile=>profile.id===fastProfileId).maxOutputTokens,limit);
+    await reload();await nav('设置');
+    assert.equal((await snap()).settings.modelProfiles.find(profile=>profile.id===fastProfileId).maxOutputTokens,limit);
+    assert.equal(requests,beforeProfileSwitchRequests);record('真实设置表单保存 '+limit+' token 并重载保留，不产生请求');
+   }
+   await page.locator('.model-profile').filter({hasText:'本地快速模型'}).getByRole('button',{name:'编辑',exact:true}).click();
+   const invalidOutput=page.getByRole('spinbutton',{name:/^单次回复上限/});await invalidOutput.fill('393217');
+   assert.equal(await invalidOutput.evaluate(input=>input.checkValidity()),false);
+   await page.getByRole('button',{name:'保存配置',exact:true}).click();await settle();
+   assert.equal((await snap()).settings.modelProfiles.find(profile=>profile.id===fastProfileId).maxOutputTokens,393216);
+   assert.equal(await invalidOutput.inputValue(),'393217');assert.equal(requests,beforeProfileSwitchRequests);
+   await page.getByRole('button',{name:'取消',exact:true}).click();record('超出上限时拒绝保存且不改变原配置或发起请求');
+  }
   await page.getByRole('combobox',{name:'下一次请求使用的模型配置',exact:true}).selectOption(fastProfileId);await settle();s=await snap();assert.equal(s.settings.activeModelProfileId,fastProfileId);assert.equal(s.settings.model,'local-fast-mock');assert.equal(requests,beforeProfileSwitchRequests);record('顶栏切换只更新下一次请求的模型，不产生模型调用');
   await page.getByLabel('本机每月预算（元）',{exact:true}).fill('77');await page.locator('.model-profile.is-active').getByRole('button',{name:'测试连接',exact:true}).click();await settle();assert.equal(await page.getByLabel('本机每月预算（元）',{exact:true}).inputValue(),'77');s=await snap();const profileTestUsage=s.usage.filter(item=>item.kind==='连接检查').at(-1);assert.equal(calls.at(-1).model,'local-fast-mock');assert.equal(profileTestUsage.modelProfileId,fastProfileId);assert.equal(profileTestUsage.requestedModel,'local-fast-mock');assert.equal(profileTestUsage.reportedModel,'resolved-local-fast-mock');await page.getByLabel('本机每月预算（元）',{exact:true}).fill('100');await page.getByRole('button',{name:'保存常规设置',exact:true}).first().click();await settle();record('模型测试、请求体和用量记录都绑定所选配置，且不覆盖尚未保存的常规设置');
  }
