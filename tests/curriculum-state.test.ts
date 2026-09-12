@@ -56,7 +56,7 @@ describe('curriculum progression',()=>{
  });
 });
 
-describe('schema version 6 curriculum storage',()=>{
+describe('schema version 7 curriculum storage',()=>{
  it('backs up the exact v4 database before adding curriculum collections',async()=>{
   const root=mkdtempSync(join(tmpdir(),'reclimb-v5-'));roots.push(root);
   let store=await LearningStore.open(root);store.put('projects',{id:'p',title:'教材',goal:'掌握整本教材',status:'active',createdAt:'2026-09-09T00:00:00Z',updatedAt:'2026-09-09T00:00:00Z'});store.close();
@@ -68,7 +68,7 @@ describe('schema version 6 curriculum storage',()=>{
   expect(store.list('teachingObservations')).toEqual([]);
   expect(store.list('understandingDrafts')).toEqual([]);
   store.close();
-  const migrated=new SQL.Database(readFileSync(join(root,'learning.sqlite')));expect(migrated.exec('PRAGMA user_version')[0].values[0][0]).toBe(6);migrated.close();
+  const migrated=new SQL.Database(readFileSync(join(root,'learning.sqlite')));expect(migrated.exec('PRAGMA user_version')[0].values[0][0]).toBe(7);migrated.close();
   const backups=readdirSync(join(root,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.4-/);expect(readFileSync(join(root,'upgrade-backups',backups[0]))).toEqual(original);
  });
 });

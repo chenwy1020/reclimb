@@ -61,6 +61,10 @@ if(-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
   $executable = Get-CheckedExtractionPath (Join-Path $applicationDirectory $productExecutableName)
 }
 if(-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'The actual application executable was not found after extraction.' }
+$appAsar = Get-CheckedExtractionPath (Join-Path $applicationDirectory 'resources\app.asar')
+if(-not (Test-Path -LiteralPath $appAsar -PathType Leaf)) { throw 'The packaged app.asar was not found.' }
+& node (Join-Path $workspace 'scripts\verify-packaged-dependencies.mjs') $appAsar
+if($LASTEXITCODE -ne 0) { throw ('Packaged runtime dependency validation failed with exit code ' + $LASTEXITCODE) }
 
 $previousExecutable = $env:RECLIMB_TEST_EXECUTABLE
 $previousPdf = $env:RECLIMB_TEST_PDF
@@ -92,6 +96,7 @@ $report = [ordered]@{
   applicationDirectory = $applicationDirectory
   nsisInstallerExecuted = $false
   freshWindowsInstallationVerified = $false
+  packagedRuntimeDependenciesVerified = $true
   desktopChecksPassed = $desktop.passed
   localMockRequests = $desktop.localMockRequests
   externalRequests = @($desktop.externalRequests)

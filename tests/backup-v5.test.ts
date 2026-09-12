@@ -8,7 +8,7 @@ import {readBackup,writeBackup} from '../src/main/backup';
 
 const roots:string[]=[];afterEach(()=>roots.splice(0).forEach(root=>rmSync(root,{recursive:true,force:true})));
 
-it('round-trips route, position, observations, understanding and reading layout in format 6',async()=>{
+it('round-trips route, position, observations, understanding and reading layout in format 7',async()=>{
  const root=mkdtempSync(join(tmpdir(),'reclimb-backup-v5-'));roots.push(root);const store=await LearningStore.open(join(root,'workspace')),now='2026-09-09T00:00:00.000Z',original=join(store.dataDirectory,'book.md');writeFileSync(original,'原创材料');
  store.transaction(()=>{
   store.put('projects',{id:'p',title:'书',goal:'掌握方法',status:'active',activeRouteVersionId:'r',learningPositionId:'pos',createdAt:now,updatedAt:now});
@@ -25,12 +25,12 @@ it('round-trips route, position, observations, understanding and reading layout 
   store.put('understandingDrafts',{id:'draft',projectId:'p',routeVersionId:'r',unitId:'u',version:1,phase:'expand',title:'我的理解',blocks:[{id:'block',author:'learner',text:'我的解释',sourceIds:['f'],sourceInputIds:[]}],status:'working',createdAt:now});
   store.put('readingLayouts',{id:'layout',projectId:'p',materialId:'m',fragmentId:'f',version:1,blocks:[{id:'reading',order:0,kind:'prose',text:'正文',source:'extracted'}],status:'current',createdAt:now});
  });
- const file=join(root,'all.reclimb');writeBackup(store,file);const zip=new AdmZip(file),manifest=JSON.parse(zip.readAsText(zip.getEntry('manifest.json')!));expect(manifest.version).toBe(6);
+ const file=join(root,'all.reclimb');writeBackup(store,file);const zip=new AdmZip(file),manifest=JSON.parse(zip.readAsText(zip.getEntry('manifest.json')!));expect(manifest.version).toBe(7);
  const restored=readBackup(file).records;expect(restored.routeVersions).toHaveLength(2);expect(restored.routeVersions.every(route=>route.unitIds[0]==='u')).toBe(true);expect(restored.learningPositions[0]).toMatchObject({unitId:'u',sessionId:'s'});expect(restored.sessions[0].routeVersionId).toBe('old-route');expect(restored.teachingObservations[0]).toMatchObject({outcome:'met',progressionEligible:true});expect(restored.understandingDrafts[0].blocks[0].author).toBe('learner');expect(restored.readingLayouts[0].fragmentId).toBe('f');
  const mismatched=new AdmZip(file),entry=mismatched.getEntry('manifest.json')!,changed=JSON.parse(mismatched.readAsText(entry));changed.records.projects[0].activeRouteVersionId='old-route';changed.records.routeVersions.find((route:any)=>route.id==='old-route').status='adopted';changed.records.routeVersions.find((route:any)=>route.id==='r').status='superseded';mismatched.updateFile(entry.entryName,Buffer.from(JSON.stringify(changed)));const mismatchFile=join(root,'mainline-mismatch.reclimb');writeFileSync(mismatchFile,mismatched.toBuffer());expect(()=>readBackup(mismatchFile)).toThrow(/主线|当前路线/);store.close();
 });
 
-it('rejects a format 6 learning position that crosses project boundaries',async()=>{
+it('rejects a format 7 learning position that crosses project boundaries',async()=>{
  const root=mkdtempSync(join(tmpdir(),'reclimb-backup-v5-invalid-'));roots.push(root);const store=await LearningStore.open(join(root,'workspace')),now='2026-09-09T00:00:00.000Z',original=join(store.dataDirectory,'book.md');writeFileSync(original,'x');
  store.put('projects',{id:'p',title:'书',goal:'学',status:'active',createdAt:now,updatedAt:now});store.put('materials',{id:'m',projectId:'p',title:'书',kind:'md',originalName:'book.md',storedPath:original,importedAt:now,warnings:[],fragmentCount:0,summary:''});const file=join(root,'base.reclimb');writeBackup(store,file);store.close();
  const zip=new AdmZip(file),entry=zip.getEntry('manifest.json')!,manifest=JSON.parse(zip.readAsText(entry));manifest.records.learningPositions=[{id:'pos',projectId:'p',routeVersionId:'missing',unitId:'missing',intent:'continue',reason:'x',nextRequirement:'x',confidence:'inferred',updatedAt:now}];zip.updateFile(entry.entryName,Buffer.from(JSON.stringify(manifest)));const broken=join(root,'broken.reclimb');writeFileSync(broken,zip.toBuffer());expect(()=>readBackup(broken)).toThrow(/关联|路线|单元/);

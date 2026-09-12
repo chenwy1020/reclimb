@@ -6,6 +6,10 @@ import {sourceFiles,forbiddenSourcePath} from './source-files.mjs';
 
 const version=JSON.parse(readFileSync('package.json','utf8')).version;
 const tag='v'+version.split('.').join('');
+const contractPath='scripts/release-contract-'+tag+'.json';
+if(!existsSync(contractPath))throw new Error('缺少当前版本的交付契约：'+contractPath);
+const contract=JSON.parse(readFileSync(contractPath,'utf8'));
+if(contract.version!==version||contract.suiteTag!==tag||!Number.isInteger(contract.expectedChecks)||contract.expectedChecks<1)throw new Error('当前版本的交付契约无效');
 const source='release/Reclimb-Source-'+version+'.zip';
 const installer='release/Reclimb-Setup-'+version+'.exe';
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -17,7 +21,7 @@ if(new Set(names).size!==names.length||manifest.length+1!==names.length)throw ne
 for(const item of manifest){const bytes=zip.readFile(item.path);if(!bytes||sha(bytes)!==item.sha256||sha(readFileSync(item.path))!==item.sha256)throw new Error('源码清单与交付或当前源文件不一致：'+item.path);}
 const installerHash=sha(readFileSync(installer));
 const packageReport=JSON.parse(readFileSync('output/package-verification-'+tag+'.json','utf8'));
-if(packageReport.installerSha256.toLowerCase()!==installerHash||packageReport.desktopChecksPassed!==66||packageReport.externalRequests?.length!==0)throw new Error('安装包与已验证的包不一致，或桌面检查存在外部请求');
+if(packageReport.installerSha256.toLowerCase()!==installerHash||packageReport.packagedRuntimeDependenciesVerified!==true||packageReport.desktopChecksPassed!==contract.expectedChecks||packageReport.externalRequests?.length!==0)throw new Error('安装包与已验证的包不一致、缺少运行依赖，或桌面检查存在外部请求');
 const report={at:new Date().toISOString(),version,sourceFiles:manifest.length,source:{path:resolve(source),bytes:statSync(source).size,sha256:sha(readFileSync(source))},installer:{path:resolve(installer),bytes:statSync(installer).size,sha256:installerHash},sourceMatchesManifestAndWorkspace:true,personalDataExcluded:true,packagedDesktopChecks:packageReport.desktopChecksPassed};
 writeFileSync('output/delivery-'+tag+'.json',JSON.stringify(report,null,2));
 const checksums=[];
