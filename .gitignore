@@ -36,6 +36,8 @@ public/pdf-assets/
 !/docs/验证记录-0.4.2.md
 !/docs/开发与扩展-0.4.2.md
 !/docs/IMPLEMENTATION-0.4.2.md
+!/docs/使用说明-0.4.3.md
+!/docs/验证记录-0.4.3.md
 *.sqlite
 *.sqlite-*
 *.reclimb

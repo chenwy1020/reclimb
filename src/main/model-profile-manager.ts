@@ -4,6 +4,7 @@ import {buildChatUrl} from './provider';
 import {modelProfileInputSchema} from './settings-schema';
 import {LearningStore} from './store';
 import {CredentialsStore} from './credentials';
+import {DEFAULT_MODEL_OUTPUT_TOKENS} from '../shared/model-limits';
 
 export interface ModelCallContext {profile:ModelProfile;settings:Settings;key:string}
 
@@ -50,7 +51,7 @@ export class ModelProfileManager {
 
  context(id=this.store.getSettings().activeModelProfileId):ModelCallContext{
   const current=this.store.getSettings(),profile=this.require(String(id??''));if(!profile.enabled)throw new Error('这个模型配置已停用。');
-  const settings:Settings={...current,activeModelProfileId:profile.id,providerName:profile.providerName,baseUrl:profile.baseUrl,model:profile.model,maxOutputTokens:profile.maxOutputTokens??12000,inputPriceCnyPerMillion:profile.inputPriceCnyPerMillion,outputPriceCnyPerMillion:profile.outputPriceCnyPerMillion,priceUpdatedAt:profile.priceUpdatedAt,hasApiKey:false};
+  const settings:Settings={...current,activeModelProfileId:profile.id,providerName:profile.providerName,baseUrl:profile.baseUrl,model:profile.model,maxOutputTokens:profile.maxOutputTokens??DEFAULT_MODEL_OUTPUT_TOKENS,inputPriceCnyPerMillion:profile.inputPriceCnyPerMillion,outputPriceCnyPerMillion:profile.outputPriceCnyPerMillion,priceUpdatedAt:profile.priceUpdatedAt,hasApiKey:false};
   return {profile,settings,key:this.credentials.read(profile.id,profile.baseUrl)};
  }
 }
