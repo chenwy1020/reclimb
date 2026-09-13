@@ -7,7 +7,8 @@ const FIREWORKS_REASONING_BUDGET=2048;
 const FIREWORKS_DEEPSEEK_MODELS=new Set(['deepseek-v4-flash-0731','deepseek-v4p1-flash','deepseek-flash']);
 const normalizedModel=(model:string)=>model.trim().toLowerCase().split('/').at(-1)??'';
 const isVerifiedFireworksDeepSeek=(host:string,model:string)=>host===FIREWORKS_HOST&&FIREWORKS_DEEPSEEK_MODELS.has(normalizedModel(model));
-export interface ModelRequest { system: string; user: string; json?: boolean; maxOutputTokens?: number; schema?: Record<string, unknown>; images?: {dataUrl:string}[]; }
+export interface ModelMessage {role:'system'|'user'|'assistant';content:string}
+export interface ModelRequest { system: string; user: string; messages?:ModelMessage[]; json?: boolean; maxOutputTokens?: number; schema?: Record<string, unknown>; images?: {dataUrl:string}[]; }
 export interface ModelResult { text: string; inputTokens: number; outputTokens: number; usageKnown: boolean; finishReason?: string; providerRequestId?: string; reasoningTokens?: number; reportedModel?: string; cacheHitTokens?:number; cacheMissTokens?:number; }
 export interface ModelProvider { complete(request: ModelRequest): Promise<ModelResult>; }
 export class ProviderError extends Error { constructor(message:string, public definitelyUnbilled = false,public diagnosticDetail?:string,public providerRequestId?:string){super(message);} }
@@ -37,10 +38,12 @@ export class ChatProvider implements ModelProvider {
     :undefined;
   const format = useSchema ? {type:'json_schema',json_schema:{name:'reclimb_response',schema:request.schema,strict:true}} : {type:'json_object'};
   if(request.images?.some(image=>!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(image.dataUrl)||image.dataUrl.length>16_000_000))throw new ProviderError('识别图像格式无效或过大',true);
-  const userContent=request.images?.length?[{type:'text',text:request.user},...request.images.map(image=>({type:'image_url',image_url:{url:image.dataUrl}}))]:request.user;
+  const sequence=request.messages??[{role:'system' as const,content:request.system},{role:'user' as const,content:request.user}];
+  const imageIndex=sequence.findIndex(message=>message.role==='user');
+  const messages=sequence.map((message,index)=>index===imageIndex&&request.images?.length?{...message,content:[{type:'text',text:message.content},...request.images.map(image=>({type:'image_url',image_url:{url:image.dataUrl}}))]}:message);
   let response:Response;
   try {
-   response=await (this.options.fetcher??fetch)(url,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:'Bearer '+this.options.apiKey},body:JSON.stringify({model:this.options.model,messages:[{role:'system',content:request.system},{role:'user',content:userContent}],stream:false,max_tokens:maxOutputTokens,...(structured?{response_format:format}:{}),...(thinking?{thinking}:{})}),signal:AbortSignal.timeout(120000)});
+   response=await (this.options.fetcher??fetch)(url,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:'Bearer '+this.options.apiKey},body:JSON.stringify({model:this.options.model,messages,stream:false,max_tokens:maxOutputTokens,...(structured?{response_format:format}:{}),...(thinking?{thinking}:{})}),signal:AbortSignal.timeout(120000)});
   } catch {throw new ProviderError('AI服务暂时未响应或连接失败。作答已保存；本次费用待服务商账单核对。');}
   if(!response.ok){
    const messages:Record<number,string>={400:'服务不支持当前请求格式，请检查模型和接口设置',401:'AI服务认证失败，请检查密钥',403:'AI服务拒绝访问，请检查账号权限',404:'未找到模型或接口，请检查服务地址与模型名',429:'AI服务额度不足或请求过于频繁，请稍后再试'};

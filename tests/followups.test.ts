@@ -16,7 +16,7 @@ async function setup(reply?:(input:any)=>any,reviewer:(input:any)=>any=reviewedT
  store.put('materials',{id:'m',projectId:'p',title:'原创比较资料',kind:'md',originalName:'original.md',storedPath:path,importedAt:now,warnings:[],fragmentCount:1,summary:'比较对象与判断依据'});
  store.put('fragments',{id:'f',projectId:'p',materialId:'m',locator:'第一段',ordinal:0,text:'集合中的最大值不小于该集合内任何值。'});
  store.put('capabilities',{id:'c',projectId:'p',title:'说明比较依据',description:'依据所有数值进行比较',prerequisites:[],sourceIds:['f'],order:0});
- const calls:any[]=[];const factory=()=>({complete:async(request:any)=>{const raw=JSON.parse(request.user),input=raw.original??raw;calls.push(input);let result;
+ const requests:any[]=[];const calls:any[]=[];const factory=()=>({complete:async(request:any)=>{requests.push(request);const raw=JSON.parse(request.user),input=raw.original??raw;calls.push(input);let result;
   if(input.operation==='review_teaching')result=reviewer(input);
   else if(input.operation==='discuss_followup')result=reply?await reply(input):{text:'一个不同例子：集合中每个数都与候选值比较。',sourceIds:['f'],scope:'other_example'};
   else if('answer' in input)result={outcome:'met',feedback:'已按原标准说明比较过程。',criteria:input.activity.rubric.map((criterion:string)=>({criterion,result:'met',reason:'明确比较了所有值'})),limitations:[],sourceIds:['f']};
@@ -25,7 +25,7 @@ async function setup(reply?:(input:any)=>any,reviewer:(input:any)=>any=reviewedT
  const service=new LearningService(store,()=> 'local-test-key',factory);let session=await service.start('p','c');
  // Model-generated tasks omit hidden answers; emulate only a legacy stored task for this regression.
  if(referenceAnswer){const original=store.get('teachingVersions',session.teachingVersionId!)!,id=original.id+'-legacy-fixture',activity={...original.activity,teachingVersionId:id,referenceAnswer},steps=original.steps.map(step=>({...step,teachingVersionId:id,...(step.activity?{activity}:{})})),version={...original,id,origin:'legacy' as const,activity,steps};store.put('teachingVersions',{...version,contentHash:teachingContentHash(version)});session={...session,activity,teachingVersionId:id,teaching:{...session.teaching!,current:steps[0],upcoming:steps.slice(1)}};store.put('sessions',session);}
- return{store,service,session,calls,factory};
+ return{store,service,session,requests,calls,factory};
 }
 const context=(session:any)=>({task:session.activity,version:session.teachingVersionId,teaching:session.teaching,draft:session.draft,checkpoint:session.checkpoint,nextStep:session.nextStep});
 
@@ -122,4 +122,17 @@ it('saves the selected legacy history entry when the current step shares its id 
  for(const [index,invalid] of [{...followup,historyIndex:1},{...followup,id:'wrong-step'},{...followup,teachingVersionId:t.store.get('sessions',t.session.id)!.teachingVersionId}].entries())expect(()=>t.service.recordInput(t.session.id,{...request,requestId:'invalid-mixed-'+index,followup:invalid})).toThrow('只能针对');
  expect(()=>t.service.recordInput(t.session.id,{...request,followup:{...followup,historyIndex:1}})).toThrow('记录编号');
  const path=join(t.store.dataDirectory,'mixed-history.reclimb');writeBackup(t.store,path);expect(readBackup(path).records.sessions[0].messages.find(message=>message.id===receipt.inputId)?.followup).toMatchObject({historyIndex:0,contextWarning:expect.stringContaining('无法唯一确定')});
+});
+
+it('appends source-thread turns to an unchanged original request and includes later confirmed source changes separately',async()=>{
+ const t=await setup();const first=t.service.recordInput(t.session.id,{requestId:'prefix-first',kind:'explore',text:'解释这段',followup:{kind:'source',id:'f',intent:'question'}});await t.service.respondInput(t.session.id,first.inputId);
+ const firstRequest=t.requests.at(-1),response=t.store.get('sessions',t.session.id)!.messages.find(m=>m.role==='assistant'&&m.inputId===first.inputId)!;
+ const second=t.service.recordInput(t.session.id,{requestId:'prefix-second',kind:'explore',text:'接着说明理由',followup:{kind:'message',id:response.id,intent:'question'}});await t.service.respondInput(t.session.id,second.inputId);
+ expect(t.requests.at(-1).messages.slice(0,firstRequest.messages.length)).toEqual(firstRequest.messages);
+ expect(t.store.list('usage').filter(u=>u.threadId===first.inputId)).toHaveLength(2);
+ const fragment=t.store.get('fragments','f')!;t.store.put('fragments',{...fragment,pageNumber:1});
+ t.store.put('sourceTranscriptions',{id:'prefix-confirmed',projectId:'p',materialId:'m',fragmentId:'f',pageNumber:1,version:1,text:'这是后续人工确认的材料修订。',status:'confirmed',origin:'manual',createdAt:new Date().toISOString(),confirmedAt:new Date().toISOString(),uncertainties:[]});
+ const third=t.service.recordInput(t.session.id,{requestId:'prefix-third',kind:'explore',text:'现在的来源有没有变化',followup:{kind:'message',id:response.id,intent:'question'}});await t.service.respondInput(t.session.id,third.inputId);
+ const sent=JSON.parse(t.requests.at(-1).messages[1].content);expect(sent.sources[0].text).toContain('最大值');expect(sent.sourceUpdates[0].currentSource.text).toContain('后续人工确认');
+ expect(t.requests.at(-1).messages[1].content).not.toBe(firstRequest.messages[1].content);expect(t.store.list('evidence')).toEqual([]);
 });
