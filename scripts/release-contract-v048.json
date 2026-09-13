@@ -1,0 +1,13 @@
+{
+  "version": "0.4.8",
+  "suiteTag": "v048",
+  "smokeScript": "smoke-v048.mjs",
+  "desktopReportName": "desktop-verification-v048.json",
+  "expectedChecks": 4,
+  "targetTests": [
+    "tests/appearance.test.ts",
+    "tests/renderer-project-trash.test.ts",
+    "tests/test-profile.test.ts",
+    "tests/delivery-v048.test.ts"
+  ]
+}

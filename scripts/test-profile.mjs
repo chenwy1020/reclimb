@@ -2,7 +2,7 @@ import {spawnSync} from 'node:child_process';
 import {appendFileSync,readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
-const contract = JSON.parse(readFileSync(new URL('./release-contract-v047.json', import.meta.url), 'utf8'));
+const contract = JSON.parse(readFileSync(new URL('./release-contract-v048.json', import.meta.url), 'utf8'));
 
 export function selectTestProfile(version, scope = 'auto') {
   if (!['auto', 'full'].includes(scope)) throw new Error('Test scope must be auto or full.');
