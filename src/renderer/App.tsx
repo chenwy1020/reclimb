@@ -75,7 +75,7 @@ return <div className="app-shell" style={sidebar.style}><Sidebar snapshot={snaps
 {page==='desk'&&project&&<DeskPage snapshot={snapshot} project={project} session={currentSession} onRecord={recordInput} onRespond={respondInput} onSolution={reviewSolution} draft={draft} draftStatus={draftStatus} busy={!!busy} onDraft={changeDraft} onSave={()=>void flushDraft().catch(e=>setError(e.message))} onSelectSession={id=>void navigate('desk',projectId,id)} onStart={startLesson} onSource={setSourceId} run={run} onSettings={()=>void navigate('settings')}/>}
 {page==='evidence'&&project&&<EvidencePage snapshot={snapshot} project={project} evidence={snapshot.evidence.filter(e=>e.projectId===projectId)} busy={!!busy} onSource={setSourceId} onSession={id=>void navigate('desk',projectId,id)} onReview={reviewLesson} run={run}/>}
 {page==='settings'&&<SettingsPage key={'settings-'+restoreVersion} snapshot={snapshot} used={budgetUsed(snapshot)} busy={!!busy} run={run} onRestore={()=>setModal('restore')}/>}
-<footer className="page-footer"><Mountain size={14}/> 每一次独立走过的路，都会留下来。<span>重登 · 0.4.7</span></footer>
+<footer className="page-footer"><Mountain size={14}/> 每一次独立走过的路，都会留下来。<span>重登 · 0.4.8</span></footer>
 </div></main>
 {modal&&<AppModal error={error} modal={modal} project={project} busy={!!busy} close={()=>setModal(null)} run={run} onCreated={id=>{setProjectId(id);setSessionId('');setPage('route')}}/>}
 {deleteOpen&&project&&<ProjectDeleteModal snapshot={snapshot} project={project} busy={!!busy} onCancel={()=>setDeleteOpen(false)} onConfirm={trashCurrentProject}/>}
