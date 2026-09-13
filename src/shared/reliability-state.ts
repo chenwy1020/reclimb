@@ -1,4 +1,9 @@
 import type {Evidence,Review,WorkspaceSnapshot} from './types';
+import type {AnswerExposure} from './reliability';
+/** Unassigned source discussions can reveal a later unit's answer within this project. */
+export function exposureCandidates(exposures:AnswerExposure[],projectId:string,capabilityId:string):AnswerExposure[]{
+ return exposures.filter(exposure=>exposure.projectId===projectId&&(exposure.capabilityId===capabilityId||(!exposure.teachingVersionId&&exposure.taskId.startsWith('source-followup-'))));
+}
 type Records=Pick<WorkspaceSnapshot,'teachingVersions'|'taskReviews'|'disputes'|'corrections'|'evidence'>;
 export interface Standing {effective:boolean;reason?:string}
 export function derivesFromDispute(snapshot:Records,versionId:string):boolean{
