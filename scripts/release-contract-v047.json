@@ -1,0 +1,31 @@
+{
+  "version": "0.4.7",
+  "suiteTag": "v047",
+  "smokeScript": "smoke-v047.mjs",
+  "desktopReportName": "desktop-verification-v047.json",
+  "expectedChecks": 19,
+  "targetTests": [
+    "tests/inline-followups.test.ts",
+    "tests/appearance.test.ts",
+    "tests/prompt-cache.test.ts",
+    "tests/renderer-input-record.test.ts",
+    "tests/renderer-richtext.test.ts",
+    "tests/followups.test.ts",
+    "tests/cache-usage.test.ts",
+    "tests/service.test.ts",
+    "tests/teaching.test.ts",
+    "tests/provider.test.ts",
+    "tests/call-runner-repair.test.ts",
+    "tests/diagnostics.test.ts",
+    "tests/renderer-model-profiles.test.ts",
+    "tests/backup.test.ts",
+    "tests/backup-v4.test.ts",
+    "tests/backup-v6.test.ts",
+    "tests/test-profile.test.ts",
+    "tests/delivery-v047.test.ts",
+    "tests/evidence.test.ts",
+    "tests/verification.test.ts",
+    "tests/verification-blockers.test.ts",
+    "tests/reliability-state.test.ts"
+  ]
+}

@@ -50,7 +50,7 @@ describe('repair keeps the rejected result and bounded validation context', () =
       expect(result.references).toEqual(['source-1']);
       expect(t.requests).toHaveLength(2);
       const request = t.requests[1];
-      expect(t.reserved[1]).toBe(reserveCost(request.system.length + request.user.length, request.maxOutputTokens!, 1, 1));
+      expect(t.reserved[1]).toBe(reserveCost(request.messages!.reduce((sum,message)=>sum+message.content.length+32,0)+JSON.stringify(request.schema).length, request.maxOutputTokens!, 1, 1));
     } finally { t.close(); }
   });
 

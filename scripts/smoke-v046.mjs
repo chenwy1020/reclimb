@@ -23,7 +23,7 @@ const server=createServer(async(req,res)=>{
  try{
   let raw='';for await(const chunk of req)raw+=chunk;
   const body=JSON.parse(raw),payload=JSON.parse(body.messages.find(message=>message.role==='user').content);
-  const input=payload.original??payload,sourceIds=(input.sources??[]).slice(0,1).map(source=>source.id);
+  const input={...(payload.original??payload)};for(const message of body.messages.filter(m=>m.role==='user').slice(1)){const part=JSON.parse(message.content);if(part.anchor){input.anchor=part.anchor;input.question=part.question;}}if(input.operation==='discuss_followup'&&!input.thread)input.thread=body.messages.slice(2,-1);const sourceIds=(input.sources??[]).slice(0,1).map(source=>source.id);
   calls.push(input);
   if(input.kind==='confused'&&failHelp){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{message:'local support test failure'}}));return;}
   let result;
@@ -54,7 +54,7 @@ await new Promise(done=>server.listen(0,'127.0.0.1',done));
 const baseUrl='http://127.0.0.1:'+server.address().port+'/v1';
 const api=(action,payload={})=>page.evaluate(({action,payload})=>window.learning.request(action,payload),{action,payload});
 const snapshot=()=>api('workspace.snapshot');
-const settle=async()=>{await page.locator('.working').waitFor({state:'hidden'});await page.waitForTimeout(80)};
+const settle=async()=>{await page.waitForFunction(()=>!document.querySelector('[aria-label="下一次请求使用的模型配置"]')?.disabled);await page.waitForTimeout(80)};
 async function launch(){
  app=await electron.launch({executablePath:executable||require('electron'),args:executable?[]:['.'],cwd:root,env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>key!=='ELECTRON_RUN_AS_NODE')),RECLIMB_DATA_DIR:dataDirectory,RECLIMB_DEV_URL:''},timeout:45000});
  app.process().stderr.on('data',data=>{if(/error/i.test(data.toString()))stderr.push(data.toString().slice(0,1600));});

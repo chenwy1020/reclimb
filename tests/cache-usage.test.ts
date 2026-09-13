@@ -9,7 +9,7 @@ import {ChatProvider,type ModelRequest} from '../src/main/provider';
 import {CallRunner,serializeTeachingContext} from '../src/main/call-runner';
 import {LearningStore} from '../src/main/store';
 import {readBackup,writeBackup} from '../src/main/backup';
-import {summarizeCacheUsage} from '../src/shared/cache-usage';
+import {summarizeCacheUsage,groupCacheUsage} from '../src/shared/cache-usage';
 import {CacheUsageSummary} from '../src/renderer/SettingsPage';
 import type {Usage} from '../src/shared/types';
 
@@ -106,4 +106,12 @@ describe('cache-friendly context retains all teaching data',()=>{
    expect(requests[1].system).toContain('independent evaluator policy');expect(requests[1].system).not.toContain('teacher policy');expect(JSON.parse(requests[1].user)).toEqual({input:{text:'two'},sources:[{id:'f',text:'corrected'}],corrections:['use corrected source']});expect(requests[1].schema).not.toEqual(requests[0].schema);
   }finally{store.close();}
  });
+});
+
+it('groups weighted reports by profile, operation and thread while keeping old repair phases unknown',()=>{
+ const rows=[row({id:'a',modelProfileId:'fast',profileName:'快速',threadId:'thread-a',requestPhase:'initial',cacheHitTokens:80,cacheMissTokens:20}),row({id:'b',modelProfileId:'fast',threadId:'thread-a',inputTokens:900,cacheHitTokens:0,cacheMissTokens:900,requestPhase:'repair'}),row({id:'old',modelProfileId:'slow',kind:'核验'}),row({id:'hold',entryType:'hold',status:'failed',inputTokens:100000})];
+ const thread=groupCacheUsage(rows,'thread','2026-09').find(g=>g.key==='thread-a')!;
+ expect(thread).toMatchObject({calls:2,hitRate:.08,repairCalls:1,unknownPhaseCalls:0,inputTokens:1000,outputTokens:20});
+ expect(groupCacheUsage(rows,'model','2026-09')).toHaveLength(2);
+ expect(groupCacheUsage(rows,'operation','2026-09').find(g=>g.key==='核验')).toMatchObject({hitRate:undefined,unknownPhaseCalls:1,repairCalls:0});
 });
