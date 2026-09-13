@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Activity, Assessment, Evidence, EvidenceStatus, Review, Session } from '../shared/types';
 import type { LearningStore } from './store';
-import {evidenceStanding,reviewStanding,versionStanding,derivesFromDispute} from '../shared/reliability-state';
+import {evidenceStanding,reviewStanding,versionStanding,derivesFromDispute,exposureCandidates} from '../shared/reliability-state';
 import {teachingContentHash} from './verification-service';
 const DAY = 24 * 60 * 60 * 1000;
 const normalize = (text: string) => text.normalize('NFKC').replace(/[\p{P}\p{Z}\s]+/gu, '').toLocaleLowerCase();
@@ -89,7 +89,7 @@ export function finishAssessment(store: LearningStore, attemptId: string, assess
         criterion.criterion=activity.rubric[index];
       }
       if(assessment.criteria.every(c=>c.result==='not_applicable'))throw new Error('本次所有标准均不适用，已保留作答，不产生能力判断。');
-      const exposures=snapshot.answerExposures.filter(e=>e.projectId===attempt.projectId&&e.capabilityId===session.capabilityId&&Date.parse(e.createdAt)<=Date.parse(attempt.submittedAt));
+      const exposures=exposureCandidates(snapshot.answerExposures,attempt.projectId,session.capabilityId).filter(e=>Date.parse(e.createdAt)<=Date.parse(attempt.submittedAt));
       for(const exposure of exposures){
         if(exposure.kind==='demonstration'&&exposure.teachingVersionId===version.id&&version.steps.some(step=>(step.action==='explain'||step.action==='demonstrate')&&step.content===exposure.text))continue;
         const relation=review.exposureRelations.find(r=>r.exposureId===exposure.id);
@@ -161,5 +161,4 @@ export function finishAssessment(store: LearningStore, attemptId: string, assess
     return evidence;
   });
 }
-
 

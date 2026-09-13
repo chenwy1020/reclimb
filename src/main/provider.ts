@@ -1,4 +1,5 @@
 import {redactDiagnostic} from './diagnostics';
+import {validatedCacheCounters} from '../shared/cache-usage';
 const FIREWORKS_HOST='api.fireworks.ai';
 const DEEPSEEK_HOST='api.deepseek.com';
 const LONG_OUTPUT_TOKENS=4096;
@@ -7,7 +8,7 @@ const FIREWORKS_DEEPSEEK_MODELS=new Set(['deepseek-v4-flash-0731','deepseek-v4p1
 const normalizedModel=(model:string)=>model.trim().toLowerCase().split('/').at(-1)??'';
 const isVerifiedFireworksDeepSeek=(host:string,model:string)=>host===FIREWORKS_HOST&&FIREWORKS_DEEPSEEK_MODELS.has(normalizedModel(model));
 export interface ModelRequest { system: string; user: string; json?: boolean; maxOutputTokens?: number; schema?: Record<string, unknown>; images?: {dataUrl:string}[]; }
-export interface ModelResult { text: string; inputTokens: number; outputTokens: number; usageKnown: boolean; finishReason?: string; providerRequestId?: string; reasoningTokens?: number; reportedModel?: string; }
+export interface ModelResult { text: string; inputTokens: number; outputTokens: number; usageKnown: boolean; finishReason?: string; providerRequestId?: string; reasoningTokens?: number; reportedModel?: string; cacheHitTokens?:number; cacheMissTokens?:number; }
 export interface ModelProvider { complete(request: ModelRequest): Promise<ModelResult>; }
 export class ProviderError extends Error { constructor(message:string, public definitelyUnbilled = false,public diagnosticDetail?:string,public providerRequestId?:string){super(message);} }
 export function buildChatUrl(base:string):string {
@@ -56,6 +57,8 @@ export class ChatProvider implements ModelProvider {
   const usageKnown=Number.isFinite(input)&&input>=0&&Number.isFinite(output)&&output>=0;
   const finish=body?.choices?.[0]?.finish_reason,requestId=response.headers.get('x-request-id')??body?.id,reportedModel=body?.model;
   const reasoning=body?.usage?.completion_tokens_details?.reasoning_tokens;
-  return {text,inputTokens:usageKnown?input:0,outputTokens:usageKnown?output:0,usageKnown,...(typeof finish==='string'?{finishReason:finish.slice(0,80)}:{}),...(typeof requestId==='string'?{providerRequestId:requestId.slice(0,200)}:{}),...(Number.isFinite(reasoning)&&reasoning>=0?{reasoningTokens:reasoning}:{}),...(typeof reportedModel==='string'&&reportedModel.trim()?{reportedModel:reportedModel.trim().slice(0,200)}:{})};
+  const directCache=body?.usage?.prompt_cache_hit_tokens!==undefined||body?.usage?.prompt_cache_miss_tokens!==undefined;
+  const cache=usageKnown?validatedCacheCounters(input,directCache?body.usage.prompt_cache_hit_tokens:body?.usage?.prompt_tokens_details?.cached_tokens,directCache?body.usage.prompt_cache_miss_tokens:undefined):{};
+  return {text,inputTokens:usageKnown?input:0,outputTokens:usageKnown?output:0,usageKnown,...cache,...(typeof finish==='string'?{finishReason:finish.slice(0,80)}:{}),...(typeof requestId==='string'?{providerRequestId:requestId.slice(0,200)}:{}),...(Number.isFinite(reasoning)&&reasoning>=0?{reasoningTokens:reasoning}:{}),...(typeof reportedModel==='string'&&reportedModel.trim()?{reportedModel:reportedModel.trim().slice(0,200)}:{})};
  }
 }

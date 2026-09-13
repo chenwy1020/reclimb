@@ -38,7 +38,7 @@ export const startingPointSchema=z.object({familiarity:z.enum(['new','some','exp
 export const learningScopeSchema=z.object({suggestedFocus:short,reason:short,status:z.enum(['proposed','confirmed']),confirmedAt:short.optional()});
 export const nearStepSchema=z.object({id,capabilityId:id,title:short,objective:short,reason:short,sourceIds:z.array(id).max(30),completion:short.optional(),prerequisites:z.array(short).max(12).optional()});
 const action=z.enum(['explain','demonstrate','attempt','feedback','check','reflect']);
-export const teachingStepSchema=z.object({id,taskId:id,action,title:short,content:text,sourceIds:z.array(id).max(30),activity:activitySchema.optional(),createdAt:short});
+export const teachingStepSchema=z.object({id,taskId:id,teachingVersionId:id.optional(),action,title:short,content:text,sourceIds:z.array(id).max(30),activity:activitySchema.optional(),createdAt:short});
 export const teachingStateSchema=z.object({version:z.literal(1),current:teachingStepSchema,upcoming:z.array(teachingStepSchema).max(8),history:z.array(teachingStepSchema).max(10000),guidance:z.enum(['guided','supported','independent']),confusionCount:z.number().int().min(0),lastConfusion:z.enum(['term','reason','step','overload']).optional(),returnStep:teachingStepSchema.optional(),returnUpcoming:z.array(teachingStepSchema).max(8).optional()});
 export function requiresUnavailableInput(value:string):boolean {
  return /(?:用|以|使用)[^。！？\n]{0,12}(?:颜色|彩色|横线|波浪线|下划线)[^。！？\n]{0,16}(?:标出|画出|划出|标记|区分)|(?:口头|语音|录音)(?:说明|解释|回答|讲述|复述|表达)|拖(?:动|拽)[^。！？\n]{0,8}(?:卡片|图形)|\b(?:underline|drag and drop|speak aloud|answer orally)\b/i.test(value);

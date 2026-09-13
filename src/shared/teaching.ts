@@ -9,5 +9,5 @@ export type TeachingIntent = 'continue' | 'smaller' | 'independent' | 'return' |
 export type ConfusionKind = 'term' | 'reason' | 'step' | 'overload';
 export type SupportScope = 'concept' | 'other_example' | 'current_task' | 'navigation';
 export interface TransferCheck { changedSituation: string; sharedPrinciple: string; requiredAdaptation: string; verdict: 'valid' | 'same_task' | 'uncertain'; reason: string; }
-export interface TeachingStep { id: string; taskId: string; action: TeachingAction; title: string; content: string; sourceIds: string[]; activity?: Activity; createdAt: string; }
+export interface TeachingStep { id: string; taskId: string; teachingVersionId?:string; action: TeachingAction; title: string; content: string; sourceIds: string[]; activity?: Activity; createdAt: string; }
 export interface TeachingState { version: 1; current: TeachingStep; upcoming: TeachingStep[]; history: TeachingStep[]; guidance: 'guided' | 'supported' | 'independent'; confusionCount: number; lastConfusion?: ConfusionKind; returnStep?: TeachingStep; returnUpcoming?: TeachingStep[]; }
