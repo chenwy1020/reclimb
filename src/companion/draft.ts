@@ -7,6 +7,9 @@ export interface LocalDraft {
 }
 export function newId(){const bytes=new Uint8Array(16);globalThis.crypto.getRandomValues(bytes);return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}
 export function clone<T>(value:T):T{return JSON.parse(JSON.stringify(value)) as T;}
+// Points and frozen submissions are append-only in the editor. Copy their
+// containing arrays instead of serializing every coordinate on every pen-up.
+export function snapshotDraft(draft:LocalDraft):LocalDraft{return{...draft,pages:draft.pages.map(page=>({...page,strokes:page.strokes.map(stroke=>({...stroke,points:stroke.points.slice()}))})),receipts:draft.receipts.slice()};}
 export function newPage():InkPage{return{id:newId(),width:768,height:1024,strokes:[]};}
 export function draftKey(workspaceId:string,targetId:string){return JSON.stringify([workspaceId,targetId]);}
 export function createDraft(workspaceId:string,target:HandwritingTarget):LocalDraft{const page=newPage();return{key:draftKey(workspaceId,target.id),workspaceId,target:clone(target),pages:[page],note:'',pageId:page.id,revision:0,updatedAt:new Date().toISOString(),receipts:[]};}
@@ -33,8 +36,8 @@ export function parsePairingLink(text:string):{url:string;ticket:string}|null{
   url.hash='';url.search='';return{url:url.href,ticket};
  }catch{return null;}
 }
-export function normalizePoint(clientX:number,clientY:number,rect:Pick<DOMRect,'left'|'top'|'width'|'height'>,pressure:number):InkPoint{
- const clamp=(value:number)=>Math.min(1,Math.max(0,value));return{x:clamp((clientX-rect.left)/Math.max(1,rect.width)),y:clamp((clientY-rect.top)/Math.max(1,rect.height)),pressure:pressure>0?clamp(pressure):.5};
+export function normalizePoint(clientX:number,clientY:number,rect:Pick<DOMRect,'left'|'top'|'width'|'height'>,pressure:number,pointerType='mouse'):InkPoint{
+ const clamp=(value:number)=>Math.min(1,Math.max(0,value));return{x:clamp((clientX-rect.left)/Math.max(1,rect.width)),y:clamp((clientY-rect.top)/Math.max(1,rect.height)),pressure:pointerType==='pen'?clamp(pressure):pressure>0?clamp(pressure):.5};
 }
 export function strokeNear(stroke:InkStroke,point:InkPoint,radius:number){
  const px=point.x*768,py=point.y*1024,limit=(radius+stroke.width/2)**2;

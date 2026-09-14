@@ -1,17 +1,19 @@
+import {flushAdditionalLocalDrafts} from './local-save-queue';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import qrcode from 'qrcode-generator';
 import {Tablet,X,RefreshCw,Check,Link as LinkIcon} from 'lucide-react';
-import type {DesktopAction,Session} from '../shared/types';
+import type {DesktopAction,Session,WorkspaceSnapshot} from '../shared/types';
 import type {HandwritingServerStatus,HandwritingSubmission,HandwritingTarget} from '../shared/handwriting';
 import {inkPageDataUrl} from '../shared/ink-svg';
-import {Button,timeLabel} from './ui';
+import {Button,timeLabel,type Run} from './ui';
+import {HandwritingFeedback} from './HandwritingFeedback';
 import {RichText} from './RichText';
 import './handwriting.css';
 
 type SavedInk={record:HandwritingSubmission;target?:HandwritingTarget;pageCount:number};
-export function HandwritingPanel({session}:{session:Session}){
+export function HandwritingPanel({session,snapshot,busy,run,onSettings,onSource}:{session:Session;snapshot:WorkspaceSnapshot;busy:boolean;run:Run;onSettings:()=>void;onSource:(id:string)=>void}){
  const [open,setOpen]=useState(false),[state,setState]=useState<HandwritingServerStatus>({running:false,urls:[]}),[addresses,setAddresses]=useState<string[]>([]),[host,setHost]=useState(''),[error,setError]=useState(''),[working,setWorking]=useState(false),[records,setRecords]=useState<SavedInk[]>([]),[selected,setSelected]=useState<HandwritingSubmission>(),[pageIndex,setPageIndex]=useState(0);
- const sessionRef=useRef(session.id),generation=useRef(0),actionLock=useRef(false);sessionRef.current=session.id;
+ const closing=useRef(false),viewRequest=useRef(0),sessionRef=useRef(session.id),generation=useRef(0),actionLock=useRef(false);sessionRef.current=session.id;
  const qr=useMemo(()=>{if(!state.urls[0])return '';const image=qrcode(0,'M');image.addData(state.urls[0]);image.make();return image.createDataURL(5,12);},[state.urls[0]]);
  useEffect(()=>{const current=++generation.current;setSelected(undefined);setRecords([]);setError('');let active=true,fetching=false;
   const refresh=async()=>{if(fetching)return;fetching=true;try{
@@ -23,8 +25,8 @@ export function HandwritingPanel({session}:{session:Session}){
  useEffect(()=>{if(open)void window.learning.request<string[]>('handwriting.addresses').then(items=>{setAddresses(items);setHost(previous=>items.includes(previous)?previous:items[0]??'127.0.0.1');}).catch(e=>setError(e.message));},[open]);
  useEffect(()=>{if(!selected)return;const previous=document.activeElement as HTMLElement|null;
   document.querySelector<HTMLElement>('[aria-label="关闭手写原稿"]')?.focus();
-  const onKey=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.stopPropagation();setSelected(undefined);}if(event.key==='Tab'){
-   const controls=[...document.querySelectorAll<HTMLElement>('.handwriting-viewer button:not([disabled]),.handwriting-viewer summary')].filter(el=>el.offsetParent!==null);
+  const onKey=(event:KeyboardEvent)=>{if(!document.querySelectorAll('.modal').item(document.querySelectorAll('.modal').length-1)?.classList.contains('handwriting-viewer'))return;if(event.key==='Escape'){event.stopPropagation();void closeViewer();}if(event.key==='Tab'){
+   const controls=[...document.querySelectorAll<HTMLElement>('.handwriting-viewer button:not([disabled]),.handwriting-viewer summary,.handwriting-viewer textarea:not([disabled]),.handwriting-viewer input:not([disabled]),.handwriting-viewer select:not([disabled])')].filter(el=>el.offsetParent!==null);
    const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
   }};window.addEventListener('keydown',onKey);return()=>{window.removeEventListener('keydown',onKey);if(previous?.isConnected)previous.focus({preventScroll:true});};
  },[selected?.id]);
@@ -33,11 +35,12 @@ export function HandwritingPanel({session}:{session:Session}){
   try{const status=await window.learning.request<HandwritingServerStatus>(name,payload);setState(status);}
   catch(e){setError(e instanceof Error?e.message:'操作未完成。');}finally{actionLock.current=false;setWorking(false);}
  }
- async function show(record:HandwritingSubmission){const id=session.id;setError('');try{const full=await window.learning.request<HandwritingSubmission>('handwriting.read',{id:record.id});if(sessionRef.current===id){setSelected(full);setPageIndex(0);}}catch(e){setError(e instanceof Error?e.message:'原稿暂时无法读取。');}}
+ async function closeViewer(){if(closing.current)return;closing.current=true;try{await flushAdditionalLocalDrafts();setSelected(undefined)}catch(e){setError('核对草稿尚未保存，原稿保持打开：'+(e as Error).message)}finally{closing.current=false}}
+ async function show(record:HandwritingSubmission){const id=session.id,request=++viewRequest.current;setError('');try{await flushAdditionalLocalDrafts();const full=await window.learning.request<HandwritingSubmission>('handwriting.read',{id:record.id});if(sessionRef.current===id&&request===viewRequest.current){setSelected(full);setPageIndex(0);}}catch(e){setError(e instanceof Error?e.message:'原稿暂时无法读取。');}}
  function sendTarget(){const step=session.teaching?.current,activity=step?.activity??session.activity;void action('handwriting.target',{sessionId:session.id,expected:{taskId:step?.taskId??activity.id??session.id,stepId:step?.id,teachingVersionId:activity.teachingVersionId??session.teachingVersionId}});}
  const original=selected?records.find(item=>item.record.id===selected.id)?.target:undefined;
  return <section className="handwriting-panel" aria-label="iPad 手写原稿">
-  <div className="handwriting-heading"><div><h3><Tablet size={19}/>用 iPad 写下推导</h3><p>电脑读材料，平板写草稿。原稿先保存，本版不识别或评价手写。</p></div><Button onClick={()=>setOpen(!open)} aria-expanded={open}>iPad 手写</Button></div>
+  <div className="handwriting-heading"><div><h3><Tablet size={19}/>用 iPad 写下推导</h3><p>电脑读材料，平板写推导。原稿先保存，再识别、核对并获取反馈。</p></div><Button onClick={()=>setOpen(!open)} aria-expanded={open}>iPad 手写</Button></div>
   {error&&<p className="handwriting-error" role="alert">{error}</p>}
   {open&&<div className="handwriting-pairing">
    <p className="handwriting-network-note">仅在可信的同一局域网使用。此连接不加密；开启期间只向确认的设备提供你发送的任务。关闭连接会撤销设备授权。</p>
@@ -50,7 +53,7 @@ export function HandwritingPanel({session}:{session:Session}){
     {state.target&&<p>iPad 当前收到：{state.target.projectTitle} · {state.target.title}。电脑切换任务不会替换已保存的草稿。</p>}
    </>}
   </div>}
-  {records.length>0&&<div className="handwriting-history"><h4>已经收到的手写原稿 · {records.length} 份</h4>{records.slice().reverse().map(({record,target,pageCount})=><article key={record.id}><div><strong>{target?.title??'原任务'}</strong><p><Check size={14}/>已保存 · {pageCount} 页 · {timeLabel(record.submittedAt)} · 尚未识别或评价</p></div><Button onClick={()=>void show(record)}>查看原稿</Button></article>)}</div>}
-  {selected&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSelected(undefined)}}><section className="modal handwriting-viewer" role="dialog" aria-modal="true" aria-label="手写原稿"><div className="modal-heading"><div><h2>我的手写原稿</h2><p>{original?.title} · {timeLabel(selected.submittedAt)}</p></div><button className="icon-button" aria-label="关闭手写原稿" onClick={()=>setSelected(undefined)}><X/></button></div><p>学习者原稿 · 未识别、未评价。原任务与提交时的帮助条件一并保留。</p>{original&&<details><summary>核对当时的任务</summary><RichText text={original.instruction}/></details>}<div className="handwriting-controls"><Button disabled={pageIndex===0} onClick={()=>setPageIndex(pageIndex-1)}>上一页</Button><span>{pageIndex+1} / {selected.pages.length}</span><Button disabled={pageIndex===selected.pages.length-1} onClick={()=>setPageIndex(pageIndex+1)}>下一页</Button></div><img className="handwriting-original" src={inkPageDataUrl(selected.pages[pageIndex])} alt={'手写原稿第 '+(pageIndex+1)+' 页'}/>{selected.note&&<RichText text={selected.note}/>}</section></div>}
+  {records.length>0&&<div className="handwriting-history"><h4>已经收到的手写原稿 · {records.length} 份</h4>{records.slice().reverse().map(({record,target,pageCount})=><article key={record.id}><div><strong>{target?.title??'原任务'}</strong><p><Check size={14}/>已保存 · {pageCount} 页 · {timeLabel(record.submittedAt)} · 原稿保留</p></div><Button onClick={()=>void show(record)}>查看原稿</Button></article>)}</div>}
+  {selected&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)void closeViewer()}}><section className="modal handwriting-viewer" role="dialog" aria-modal="true" aria-label="手写原稿"><div className="modal-heading"><div><h2>我的手写原稿</h2><p>{original?.title} · {timeLabel(selected.submittedAt)}</p></div><button className="icon-button" aria-label="关闭手写原稿" onClick={()=>void closeViewer()}><X/></button></div>{error&&<p className="handwriting-error" role="alert">{error}</p>}<p>学习者原稿 · 原任务与提交时的帮助条件一并保留。识别与确认文本显示在下方。</p>{original&&<details><summary>核对当时的任务</summary><RichText text={original.instruction}/></details>}<div className="handwriting-controls"><Button disabled={pageIndex===0} onClick={()=>setPageIndex(pageIndex-1)}>上一页</Button><span>{pageIndex+1} / {selected.pages.length}</span><Button disabled={pageIndex===selected.pages.length-1} onClick={()=>setPageIndex(pageIndex+1)}>下一页</Button></div><img className="handwriting-original" src={inkPageDataUrl(selected.pages[pageIndex])} alt={'手写原稿第 '+(pageIndex+1)+' 页'}/>{selected.note&&<RichText text={selected.note}/>}<HandwritingFeedback key={selected.id} record={selected} session={session} snapshot={snapshot} busy={busy} run={run} onSettings={onSettings} onSource={onSource}/></section></div>}
  </section>;
 }

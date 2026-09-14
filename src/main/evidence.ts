@@ -64,6 +64,21 @@ export function finishAssessment(store: LearningStore, attemptId: string, assess
     if (!attempt) throw new Error('找不到这次提交。');
     const session = store.get('sessions', attempt.sessionId);
     if (!session || session.projectId !== attempt.projectId) throw new Error('提交与学习会话不属于同一项目。');
+    const input=session.messages.find(message=>message.role==='user'&&message.attemptId===attemptId);
+    if(attempt.handwritingId||attempt.handwritingTranscriptionId||input?.handwritingId||input?.handwritingTranscriptionId){
+      const transcription=attempt.handwritingTranscriptionId?store.get('handwritingTranscriptions',attempt.handwritingTranscriptionId):undefined;
+      const original=attempt.handwritingId?store.get('handwritings',attempt.handwritingId):undefined;
+      const target=original?store.get('handwritingTargets',original.targetId):undefined;
+      if(!transcription||transcription.status!=='confirmed'||transcription.unresolved||!original||!target||!target.teachingVersionId
+        ||transcription.handwritingId!==original.id||transcription.contentHash!==original.contentHash||transcription.targetId!==target.id
+        ||transcription.projectId!==attempt.projectId||transcription.sessionId!==session.id||original.sessionId!==session.id
+        ||original.projectId!==attempt.projectId||target.sessionId!==session.id||target.projectId!==attempt.projectId
+        ||attempt.teachingVersionId!==target.teachingVersionId||attempt.taskId!==target.taskId||attempt.stepId!==target.stepId
+        ||attempt.text!==transcription.text||attempt.submittedAt!==transcription.createdAt||attempt.helpLevel<original.helpLevel
+        ||!input||input.inputId!==transcription.inputId||input.handwritingId!==original.id||input.handwritingTranscriptionId!==transcription.id
+        ||input.responseMode!=='assessment'||input.text!==transcription.text||input.helpLevel!==attempt.helpLevel)
+        throw new Error('手写内容尚未完整确认，或原稿、原题、帮助与作答关联不一致，暂停能力评价。');
+    }
     if(session.messages.some(message=>message.role==='user'&&message.attemptId===attemptId&&message.responseMode==='discussion'))throw new Error('这次输入保存时用于一起分析，不补发能力评价；可在核验通过后另作新的尝试。');
     const project = store.get('projects', attempt.projectId);
     const capability = store.get('capabilities', session.capabilityId);
@@ -161,4 +176,3 @@ export function finishAssessment(store: LearningStore, attemptId: string, assess
     return evidence;
   });
 }
-
