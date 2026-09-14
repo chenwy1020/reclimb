@@ -47,12 +47,12 @@ describe('model profile settings',()=>{
   store.close();
  });
 
- it('backs up a version 6 database before upgrading to version 7 without changing legacy records',async()=>{
+ it('backs up a version 6 database before upgrading to version 8 without changing legacy records',async()=>{
   const root=mkdtempSync(join(tmpdir(),'reclimb-model-migration-'));roots.push(root);let store=await LearningStore.open(root);const now='2026-09-12T00:00:00.000Z';
   store.put('projects',{id:'p',title:'旧项目',goal:'保留记录',status:'active',createdAt:now,updatedAt:now});store.updateSettings({providerName:'旧服务',baseUrl:'https://legacy.test/v1',model:'legacy-model',inputPriceCnyPerMillion:4,outputPriceCnyPerMillion:8});store.close();
   const SQL=await initSqlJs(),db=new SQL.Database(readFileSync(join(root,'learning.sqlite')));db.run('PRAGMA user_version=6');const settings=JSON.parse(String(db.exec('SELECT entity FROM settings WHERE id=1')[0].values[0][0]));delete settings.modelProfiles;delete settings.activeModelProfileId;db.run('UPDATE settings SET entity=? WHERE id=1',[JSON.stringify(settings)]);const original=Buffer.from(db.export());db.close();writeFileSync(join(root,'learning.sqlite'),original);
   store=await LearningStore.open(root);expect(store.get('projects','p')?.goal).toBe('保留记录');expect(activeModelProfile(store.getSettings())).toMatchObject({id:DEFAULT_MODEL_PROFILE_ID,providerName:'旧服务',model:'legacy-model'});store.close();
   const backups=readdirSync(join(root,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.4\.2-/);expect(readFileSync(join(root,'upgrade-backups',backups[0]))).toEqual(original);
-  const upgraded=new SQL.Database(readFileSync(join(root,'learning.sqlite')));expect(upgraded.exec('PRAGMA user_version')[0].values[0][0]).toBe(7);upgraded.close();
+  const upgraded=new SQL.Database(readFileSync(join(root,'learning.sqlite')));expect(upgraded.exec('PRAGMA user_version')[0].values[0][0]).toBe(8);upgraded.close();
  });
 });

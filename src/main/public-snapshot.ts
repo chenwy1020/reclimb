@@ -3,6 +3,8 @@ import {publicVerificationBlocker} from '../shared/reliability';
 /** Hidden model reference answers never cross the isolated renderer boundary. */
 export function publicSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
   const copy=structuredClone(snapshot);
+  // Ink is fetched explicitly for its session, never copied into routine UI snapshots.
+  copy.handwritingTargets=[];copy.handwritings=[];
   function visit(value:unknown):void {
     if(!value||typeof value!=='object')return;
     if(Array.isArray(value)){value.forEach(visit);return;}

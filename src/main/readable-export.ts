@@ -2,6 +2,7 @@ import type {WorkspaceSnapshot} from '../shared/types';
 import {evidenceStanding,reviewStanding} from '../shared/reliability-state';
 import {publicVerificationBlocker} from '../shared/reliability';
 import {visibleProjects} from '../shared/projects';
+import {inkPageDataUrl} from '../shared/ink-svg';
 export function readableExport(snapshot:WorkspaceSnapshot,projectId?:string):string{
  const body=['# 我的重登学习档案','导出时间：'+new Date().toISOString(),'能力记录描述具体任务表现；AI核验与评价不等于正确性认证或全面掌握。'];
  const available=visibleProjects(snapshot.projects);const projects=projectId?available.filter(p=>p.id===projectId):available;
@@ -26,6 +27,17 @@ export function readableExport(snapshot:WorkspaceSnapshot,projectId?:string):str
     }
    }
    for(const attempt of snapshot.attempts.filter(a=>a.sessionId===session.id))body.push('#### 作答 '+attempt.id,attempt.submittedAt+'；任务：'+(attempt.taskId??'旧任务')+'；提交时帮助：'+attempt.helpLevel,attempt.text);
+   for(const original of (snapshot.handwritings??[]).filter(item=>item.projectId===project.id&&item.sessionId===session.id)){
+    const target=snapshot.handwritingTargets?.find(item=>item.id===original.targetId&&item.projectId===project.id&&item.sessionId===session.id);
+    body.push('#### 学习者手写原稿：'+(target?.title??original.id),'未识别、未评价；手写保存本身不构成独立完成或其他能力证据。',original.submittedAt+'；原稿编号：'+original.id+'；提交编号：'+original.requestId,'原任务：'+(target?.taskId??'关联未知')+'；原步骤：'+(target?.stepId??'未指定')+'；教学版本：'+(target?.teachingVersionId??'历史任务未保存版本')+'；手写目标：'+original.targetId,'提交时帮助：'+original.helpLevel+'；内容校验：'+original.contentHash);
+    if(target){
+     body.push('提交时的题目：',target.instruction);
+     for(const sourceId of target.sourceIds){const source=snapshot.fragments.find(fragment=>fragment.id===sourceId&&fragment.projectId===project.id),versions=target.sourceVersions?.find(item=>item.fragmentId===sourceId)?.transcriptionIds??[];body.push('原题来源：'+(source?.locator??'未知位置')+'（'+sourceId+'）；转写版本：'+(versions.join('、')||'原始提取文本'));}
+    }
+    if(original.note)body.push('学习者补充文字：',original.note);
+    body.push('以下内嵌图片保留原始笔迹，不是识别后的公式。若查看器不显示内嵌 SVG，请使用完整备份在重登恢复查看。');
+    original.pages.forEach((page,index)=>body.push('![学习者手写原稿，第 '+(index+1)+' 页]('+inkPageDataUrl(page)+')'));
+   }
   }
   for(const review of snapshot.taskReviews.filter(r=>r.projectId===project.id)){
    body.push('### 题目核验 '+review.id,'题目版本：'+review.teachingVersionId+'；系统状态：'+(review.effectiveStatus??review.status)+'；模型原始状态：'+(review.reportedStatus??'历史记录未保存，未知'));
