@@ -1,5 +1,6 @@
 // Handwriting feedback integration: original fixtures, real local persistence, controlled loopback model responses.
 import {_electron as electron} from 'playwright';
+import {applyDesktopTestWindow,navigateDesktop} from './desktop-navigation.mjs';
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
@@ -33,7 +34,7 @@ const snapshot=()=>api('workspace.snapshot');
 const session=async()=>(await snapshot()).sessions.find(s=>s.id==='sample-reasoning-session');
 async function launch(){
  app=await electron.launch({executablePath:executable||require('electron'),args:executable?[]:['.'],cwd:root,env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>key!=='ELECTRON_RUN_AS_NODE')),RECLIMB_DATA_DIR:dataDirectory,RECLIMB_DEV_URL:''},timeout:45000});
- page=await app.firstWindow();page.setDefaultTimeout(22000);page.on('pageerror',error=>rendererErrors.push(error.message));page.on('request',request=>{if(/^https?:/.test(request.url()))externalRequests.push(new URL(request.url()).origin);});await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();
+ page=await app.firstWindow();page.setDefaultTimeout(22000);await applyDesktopTestWindow(app,page);page.on('pageerror',error=>rendererErrors.push(error.message));page.on('request',request=>{if(/^https?:/.test(request.url()))externalRequests.push(new URL(request.url()).origin);});await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();
 }
 async function desk(){await page.getByRole('button',{name:'继续上次学习',exact:true}).click();await page.getByLabel('当前学习项目').selectOption('sample-reasoning');await page.getByRole('region',{name:'iPad 手写原稿'}).waitFor();}
 async function view(n=0){await page.getByRole('button',{name:'查看原稿',exact:true}).nth(n).click();await page.getByRole('dialog',{name:'手写原稿',exact:true}).waitFor();await page.getByLabel('手写核对文本',{exact:true}).waitFor();}
@@ -77,7 +78,7 @@ try{
  const other=(await api('handwriting.list',{sessionId:'sample-reasoning-session'}))[0].record;assert.equal((await api('handwriting.responses',{handwritingId:other.id})).length,0);assert.equal((await api('handwriting.transcriptions',{handwritingId:other.id})).filter(v=>v.status==='machine').length,1);record('保存的笔迹经过真实本机PNG生成送入模拟视觉接口，机器文字待核对不自动评价');
 
  await region().getByText('已保存的机器识别结果',{exact:true}).click();await region().getByText('末尾符号需要对照原稿',{exact:true}).waitFor();await editor().fill('我仍在核对 $g(x)=x^2$，尚未确认。');
- await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('button',{name:'深色',exact:true}).click();await page.getByRole('button',{name:'学习桌',exact:true}).click();await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1040,800));await view(1);
+ await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();await navigateDesktop(page,'设置');await page.getByRole('button',{name:'深色',exact:true}).click();await navigateDesktop(page,'学习桌');await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1040,800));await view(1);
  assert.equal(await editor().inputValue(),'我仍在核对 $g(x)=x^2$，尚未确认。');await editor().scrollIntoViewIfNeeded();assert.ok(await region().evaluate(el=>el.scrollWidth<=el.clientWidth+1));await page.getByRole('dialog',{name:'手写原稿',exact:true}).screenshot({path:join(artifacts,'recognition-dark-narrow.png')});
  assert.ok((await page.locator('.handwriting-original').getAttribute('src')).includes('data:image/svg'));assert.deepEqual(externalRequests,[]);assert.deepEqual(rendererErrors,[]);record('深色窄窗口下核对区与原稿可用，修改未确认文字可恢复，全部模型流量仅回环模拟');
  const tail='我仍在核对 $g(x)=x^2$，尚未确认。最后补写：立即关窗的尾字。',beforeCloseCalls=calls.length;

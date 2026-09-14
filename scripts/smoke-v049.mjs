@@ -1,5 +1,6 @@
 // Focused handwriting delivery checks. Only built-in original fixtures and loopback traffic.
 import {_electron as electron,chromium} from 'playwright';
+import {applyDesktopTestWindow,navigateDesktop} from './desktop-navigation.mjs';
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync,existsSync,readFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
@@ -19,6 +20,7 @@ const originalSession='sample-reasoning-session',otherSession='sample-argument-s
 async function launch(){
  app=await electron.launch({executablePath:executable||require('electron'),args:executable?[]:['.'],cwd:root,env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>key!=='ELECTRON_RUN_AS_NODE')),RECLIMB_DATA_DIR:dataDirectory,RECLIMB_DEV_URL:''},timeout:45000});
  page=await app.firstWindow();page.setDefaultTimeout(25000);page.on('pageerror',error=>rendererErrors.push(error.message));
+ await applyDesktopTestWindow(app,page);
  page.on('console',entry=>{if(entry.type()==='error')consoleErrors.push({surface:'desktop',text:entry.text().slice(0,1500)});});
  page.on('request',request=>{if(/^https?:/.test(request.url()))externalRequests.push(new URL(request.url()).origin);});
  await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();
@@ -76,7 +78,7 @@ try{
 
  await page.getByLabel('当前学习项目').selectOption('sample-reasoning');await page.getByRole('button',{name:'查看原稿',exact:true}).first().click();await page.getByRole('dialog',{name:'手写原稿',exact:true}).waitFor();await page.locator('.handwriting-original').waitFor();
  const svg=await page.locator('.handwriting-original').getAttribute('src');assert.ok(decodeURIComponent(svg).includes('fill="white"'));await page.getByRole('dialog',{name:'手写原稿',exact:true}).screenshot({path:join(artifacts,'desktop-ink-light.png')});await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();
- await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('button',{name:'深色',exact:true}).click();await page.getByRole('button',{name:'学习桌',exact:true}).click();await page.getByRole('button',{name:'查看原稿',exact:true}).first().click();
+ await navigateDesktop(page,'设置');await page.getByRole('button',{name:'深色',exact:true}).click();await navigateDesktop(page,'学习桌');await page.getByRole('button',{name:'查看原稿',exact:true}).first().click();
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1040,800));assert.equal(await page.locator('.handwriting-original').evaluate(img=>getComputedStyle(img).filter),'none');await page.getByRole('dialog',{name:'手写原稿',exact:true}).screenshot({path:join(artifacts,'desktop-ink-dark-narrow.png')});await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();
  await pad.locator('#ink-canvas').scrollIntoViewIfNeeded();await pad.screenshot({path:join(artifacts,'companion-tablet.png'),fullPage:true});await pad.setViewportSize({width:390,height:844});assert.ok(await pad.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await pad.screenshot({path:join(artifacts,'companion-narrow.png'),fullPage:true});record('桌面原稿可查看，深浅与窄窗口保留白纸，平板页面无横向溢出');
 

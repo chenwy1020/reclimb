@@ -9,7 +9,7 @@ const scripts=['smoke-storage-v050.mjs','smoke-v050.mjs','smoke-pen-v050.mjs','s
 export function sourceFiles(root=process.cwd()){
  const files=[];
  function add(name){const absolute=resolve(root,name);if(relative(root,absolute).startsWith('..'))throw new Error('Source path escaped workspace');if(!existsSync(absolute))return;const stat=lstatSync(absolute);if(stat.isSymbolicLink())throw new Error('Source links are not included: '+name);if(stat.isDirectory()){for(const entry of readdirSync(absolute).sort())add(join(name,entry));}else files.push(name.replaceAll('\\','/'));}
- for(const name of [...roots,...directories,...documents.map(n=>'docs/'+n),...plans.map(n=>'docs/plans/'+n),...scripts.map(n=>'scripts/'+n)])add(name);
+ for(const name of [...roots,...directories,...documents.map(n=>'docs/'+n),...plans.map(n=>'docs/plans/'+n),...scripts.map(n=>'scripts/'+n),'scripts/desktop-navigation.mjs'])add(name);
  return [...new Set(files)].sort();
 }
 export const forbiddenSourcePath=/(?:^|\/)(?:output|release|node_modules|\.test-data|\.local-test-data|\.builder-cache|credentials\.json|vision-credentials\.json)(?:\/|$)|\.(?:sqlite(?:-\w+)?|reclimb|docx|pdf|log)$/i;

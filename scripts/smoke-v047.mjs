@@ -1,5 +1,6 @@
 // Focused 0.4.7 desktop regression. No private data, real model, or broad PDF suite.
 import {_electron as electron} from 'playwright';
+import {applyDesktopTestWindow,navigateDesktop} from './desktop-navigation.mjs';
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync,existsSync} from 'node:fs';
 import {resolve,join} from 'node:path';
@@ -60,6 +61,7 @@ async function launch(){
  app=await electron.launch({executablePath:executable||require('electron'),args:executable?[]:['.'],cwd:root,env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>key!=='ELECTRON_RUN_AS_NODE')),RECLIMB_DATA_DIR:dataDirectory,RECLIMB_DEV_URL:''},timeout:45000});
  app.process().stderr.on('data',data=>{if(/error/i.test(data.toString()))stderr.push(data.toString().slice(0,1600));});
  page=await app.firstWindow();page.setDefaultTimeout(30000);
+ await applyDesktopTestWindow(app,page);
  page.on('pageerror',error=>rendererErrors.push(error.message));
  page.on('request',request=>{if(/^https?:/.test(request.url())&&!request.url().startsWith(baseUrl))externalRequests.push(request.url());});
  await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();
@@ -123,7 +125,7 @@ try{
  await page.locator('.textbook-guide > summary').click();assert.ok(await page.getByText('先读一小段原文。',{exact:true}).isVisible());assert.ok(await page.getByText('合上解释再试。',{exact:true}).isVisible());record('教材旁可查看阅读、尝试、求助和独立回访的使用方法');
  await page.locator('.input-record').first().screenshot({path:join(artifacts,'followup-record.png')});await page.locator('.reader-panel').screenshot({path:join(artifacts,'textbook-reading.png')});
  s=await snapshot();const measured=s.usage.filter(item=>item.cacheHitTokens!==undefined);assert.ok(measured.length>=5);assert.ok(measured.every(item=>item.cacheHitTokens===60&&item.cacheMissTokens===20&&item.durationMs>=0));assert.ok(s.usage.some(item=>item.status==='completed'&&item.cacheHitTokens===undefined));
- await page.getByRole('button',{name:'设置',exact:true}).click();await page.mouse.move(900,100);await settle();assert.ok(await page.locator('.cache-usage').isVisible());assert.ok((await page.locator('.cache-usage').innerText()).includes('75'));record('设置展示服务商报告的缓存样本和耗时，未知历史不当成零命中');
+ await navigateDesktop(page,'设置');await settle();assert.ok(await page.locator('.cache-usage').isVisible());assert.ok((await page.locator('.cache-usage').innerText()).includes('75'));record('设置展示服务商报告的缓存样本和耗时，未知历史不当成零命中');
  const beforeAppearance=calls.length;
  await page.getByRole('button',{name:'深色',exact:true}).click();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
  await setRange('阅读字号',20);await setRange('阅读行距',2.2);await setRange('材料区比例',55);
@@ -136,7 +138,7 @@ try{
  const pdfPath=join(dataDirectory,'original-appearance.pdf');writeFileSync(pdfPath,fixturePdf({pages:1}));await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},pdfPath);await api('material.importFiles',{projectId});await page.reload();await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();await enterDesk();
  const pdf=(await snapshot()).materials.find(m=>m.kind==='pdf');await page.getByLabel('阅读材料',{exact:true}).selectOption(pdf.id);await page.locator('.pdf-canvas-wrap canvas').waitFor();await page.waitForFunction(()=>{const c=document.querySelector('.pdf-canvas-wrap canvas');return c&&c.width>100;});
  const pdfPixels=await page.locator('.pdf-canvas-wrap canvas').evaluate(c=>Array.from(c.getContext('2d').getImageData(2,2,1,1).data));assert.ok(pdfPixels[0]>200&&pdfPixels[1]>200);assert.equal(await page.locator('.pdf-canvas-wrap canvas').evaluate(c=>getComputedStyle(c).filter),'none');await page.locator('.reader-panel').screenshot({path:join(artifacts,'pdf-original-dark.png')});record('深色阅读容器保留原创 PDF 的明亮原页像素');
- await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('button',{name:'恢复默认外观',exact:true}).click();await page.emulateMedia({colorScheme:'light'});await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');assert.equal(await page.locator('html').getAttribute('data-theme'),'light');assert.equal(await page.getByRole('slider',{name:'阅读字号',exact:true}).inputValue(),'16');record('恢复默认外观正常，偏好不进入学习设置');
+ await navigateDesktop(page,'设置');await page.getByRole('button',{name:'恢复默认外观',exact:true}).click();await page.emulateMedia({colorScheme:'light'});await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');assert.equal(await page.locator('html').getAttribute('data-theme'),'light');assert.equal(await page.getByRole('slider',{name:'阅读字号',exact:true}).inputValue(),'16');record('恢复默认外观正常，偏好不进入学习设置');
  assert.deepEqual(target(await session()),expected);assert.equal((await snapshot()).evidence.length,0);record('整个追问流程保留主线位置和长草稿，不生成掌握记录');
  await page.screenshot({path:join(artifacts,'context-followups.png'),fullPage:true});await close();assert.deepEqual(rendererErrors,[]);assert.deepEqual(externalRequests,[]);record('桌面无渲染异常，全部模型请求仅访问本机模拟服务');
  const report={at:new Date().toISOString(),executable:executable||'development-electron',passed:results.length,results,localMockRequests:calls.length,externalRequests,stderr,network:'仅127.0.0.1模拟服务，无真实AI调用或个人数据',limitations:['仅验证本次锚定追问与缓存报告及相邻保存流程，不是全量验收。','模拟缓存数据只检验统计接线，不证明真实命中率或教学有效性。'],artifacts};
