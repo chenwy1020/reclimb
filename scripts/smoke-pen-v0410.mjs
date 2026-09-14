@@ -3,7 +3,7 @@ import {chromium} from 'playwright';
 import {createServer} from 'node:http';
 import {readFileSync,mkdirSync,writeFileSync,existsSync} from 'node:fs';
 import {resolve,join,dirname} from 'node:path';
-import {extractFile} from '@electron/asar';
+import {extractFile,listPackage} from '@electron/asar';
 import assert from 'node:assert/strict';
 
 const artifacts=resolve(process.env.RECLIMB_TEST_ARTIFACT_DIR?.trim()||process.env.RECLIMB_PEN_ARTIFACT_DIR?.trim()||'output/playwright/v0410-pen');mkdirSync(artifacts,{recursive:true});
@@ -13,6 +13,7 @@ if(executable){
  const archive=join(dirname(resolve(executable)),'resources','app.asar');assert.ok(existsSync(executable),'packaged test executable is missing');assert.ok(existsSync(archive),'packaged app.asar is missing');
  staticRoot=join(artifacts,'companion');mkdirSync(staticRoot,{recursive:true});
  for(const name of ['index.html','app.js','style.css'])writeFileSync(join(staticRoot,name),extractFile(archive,join('dist','companion',name)));
+ for(const entry of listPackage(archive)){const path=entry.replaceAll('\\','/').replace(/^\//,'');if(!/^dist\/companion\/(?:app\.css|assets\/KaTeX_[A-Za-z0-9_-]+\.(?:woff2?|ttf))$/.test(path))continue;const destination=join(staticRoot,path.slice('dist/companion/'.length));mkdirSync(dirname(destination),{recursive:true});writeFileSync(destination,extractFile(archive,join(...path.split('/'))));}
  companionSource={kind:'packaged-asar',path:archive};
 }
 const target={id:'pen-task',projectId:'pen-project',projectTitle:'原创笔迹验证',sessionId:'pen-session',taskId:'pen-original',title:'连接这些点，写下自己的理由',instruction:'笔迹只保存在本次隔离测试中。',sourceIds:[],helpLevel:0,mode:'practice',createdAt:'2026-09-14T00:00:00.000Z'};
@@ -22,7 +23,7 @@ const server=createServer((req,res)=>{const path=new URL(req.url,'http://localho
  if(path==='/api/state'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({workspaceId:'pen-workspace',target:null}));return;}
  if(path==='/api/submit'){let body='';req.on('data',part=>body+=part);req.on('end',()=>{const data=JSON.parse(body);submissions.push(data);res.setHeader('Content-Type','application/json');res.end(JSON.stringify({id:'saved-'+submissions.length,requestId:data.requestId,targetId:data.targetId,savedAt:new Date().toISOString(),status:'saved_unassessed'}));});return;}
  if(path==='/seed'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body>isolated fixture</body></html>');return;}
- const files={'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css']};const file=files[path];if(!file){res.writeHead(404).end();return;}res.setHeader('Content-Type',file[1]);res.end(readFileSync(join(staticRoot,file[0])));
+ const files={'/':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/style.css':['style.css','text/css'],'/app.css':['app.css','text/css']};const file=files[path]??(/^\/assets\/KaTeX_[A-Za-z0-9_-]+\.(?:woff2?|ttf)$/.test(path)?[path.slice(1),path.endsWith('.woff2')?'font/woff2':path.endsWith('.woff')?'font/woff':'font/ttf']:undefined);if(!file){res.writeHead(404).end();return;}res.setHeader('Content-Type',file[1]);res.end(readFileSync(join(staticRoot,file[0])));
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
 let browser,page;const record=name=>{results.push(name);console.log('PASS '+name);};

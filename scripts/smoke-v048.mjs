@@ -27,7 +27,7 @@ async function checkLayout(name){
  });
  measurements.push({name,...layout});
  await page.screenshot({path:join(artifacts,name+'.png'),scale:'css'});
- assert.equal(layout.bounds.length,7,'All settings cards must remain accessible');
+ assert.equal(layout.bounds.length,8,'All seven original settings cards plus the new sync card must remain accessible');
  assert.ok(layout.gaps.every(gap=>gap>=16),name+': card separation must remain visible: '+JSON.stringify(layout.gaps));
  assert.ok(layout.bounds.every(card=>card.left>=0&&card.right<=layout.viewport+1),name+': cards must stay inside the window');
  assert.ok(layout.scrollWidth<=layout.viewport+1,name+': no page-wide horizontal overflow');

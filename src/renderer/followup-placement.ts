@@ -14,6 +14,6 @@ export function hasInlineHome(message:SessionMessage,session:Session,snapshot:Wo
  if(anchor.kind==='step')return [...(session.teaching?.history??[]),...(session.teaching?[session.teaching.current]:[])].some(step=>step.id===anchor.id&&(step.teachingVersionId??step.activity?.teachingVersionId??(step===session.teaching?.current?session.teachingVersionId:undefined))===anchor.teachingVersionId);
  const target=session.messages.find(m=>m.id===anchor.id&&m.role==='assistant');
  if(!target)return false;
- if(target.inputId){const owner=session.messages.find(m=>m.role==='user'&&m.inputId===target.inputId);return !!owner&&!owner.followup&&!(owner.attemptId&&(snapshot.attempts??[]).some(a=>a.id===owner.attemptId&&a.assessment));}
+ if(target.inputId){const owner=session.messages.find(m=>m.role==='user'&&m.inputId===target.inputId);if(owner?.handwritingId)return !owner.followup&&target.handwritingId===owner.handwritingId&&target.handwritingTranscriptionId===owner.handwritingTranscriptionId;return !!owner&&!owner.followup&&!(owner.attemptId&&(snapshot.attempts??[]).some(a=>a.id===owner.attemptId&&a.assessment));}
  return !['assessment','feedback','attempt','orientation','review_solution'].includes(target.kind??'')&&(!session.teaching||target.kind!=='teaching');
 }

@@ -1,0 +1,9 @@
+{
+  "version": "0.5.0",
+  "suiteTag": "v050",
+  "expectedChecks": 11,
+  "smokeScript": "smoke-v050.mjs",
+  "desktopReportName": "desktop-verification-v050.json",
+  "testScope": "full",
+  "targetTests": []
+}

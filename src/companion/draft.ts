@@ -4,6 +4,7 @@ import type {HandwritingReceipt,HandwritingSubmit,HandwritingTarget,InkPage,InkP
 export interface LocalDraft {
  key:string;workspaceId:string;target:HandwritingTarget;pages:InkPage[];note:string;
  pageId:string;revision:number;updatedAt:string;pending?:HandwritingSubmit;receipts:HandwritingReceipt[];
+ conflict?:{ofKey:string;createdAt:string};
 }
 export function newId(){const bytes=new Uint8Array(16);globalThis.crypto.getRandomValues(bytes);return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}
 export function clone<T>(value:T):T{return JSON.parse(JSON.stringify(value)) as T;}

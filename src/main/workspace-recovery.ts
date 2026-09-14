@@ -22,8 +22,10 @@ export async function recoverFailedRestoreSafely(options:FailedRestoreRecovery):
 
 export class WorkspaceTransitionGate {
  private transitioning=false;
+ private operations=0;
  private blockedReason='';
  assertAvailable():void{if(this.blockedReason)throw new Error(this.blockedReason);if(this.transitioning)throw new Error('学习档案正在备份恢复或切换，请等待当前操作结束。');}
- begin():()=>void{this.assertAvailable();this.transitioning=true;let finished=false;return()=>{if(finished)return;finished=true;if(!this.blockedReason)this.transitioning=false;};}
+ enterOperation():()=>void{this.assertAvailable();this.operations++;let done=false;return()=>{if(!done){done=true;this.operations--;}};}
+ begin():()=>void{this.assertAvailable();if(this.operations)throw new Error('本机仍有保存、导入或请求正在进行，请等待结束后再切换学习档案。');this.transitioning=true;let finished=false;return()=>{if(finished)return;finished=true;if(!this.blockedReason)this.transitioning=false;};}
  block(reason:string):void{this.blockedReason=reason;this.transitioning=true;}
 }

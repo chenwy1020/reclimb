@@ -3,14 +3,14 @@ import { mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'n
 import { join } from 'node:path';import { tmpdir } from 'node:os';import initSqlJs from 'sql.js';
 import { LearningStore } from '../src/main/store';
 describe('0.1 archive upgrade',()=>{
-  it('backs up a version 5 database before upgrading it to version 7',async()=>{
+  it('backs up a version 5 database before upgrading it to version 9',async()=>{
   const dir=mkdtempSync(join(tmpdir(),'reclimb-v5-migration-'));let store:LearningStore|undefined;
   try{
    store=await LearningStore.open(dir);store.put('projects',{id:'p',title:'保留的项目',goal:'继续学习',status:'active',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});store.close();store=undefined;
    const SQL=await initSqlJs();const oldDb=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));oldDb.run('PRAGMA user_version=5');const original=Buffer.from(oldDb.export());oldDb.close();writeFileSync(join(dir,'learning.sqlite'),original);
    store=await LearningStore.open(dir);expect(store.get('projects','p')?.title).toBe('保留的项目');store.close();store=undefined;
    const backups=readdirSync(join(dir,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.4\.1-/);expect(readFileSync(join(dir,'upgrade-backups',backups[0]))).toEqual(original);
-   const upgraded=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(Number(upgraded.exec('PRAGMA user_version')[0].values[0][0])).toBe(7);upgraded.close();
+   const upgraded=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(Number(upgraded.exec('PRAGMA user_version')[0].values[0][0])).toBe(9);upgraded.close();
    store=await LearningStore.open(dir);store.close();store=undefined;expect(readdirSync(join(dir,'upgrade-backups'))).toHaveLength(1);
   }finally{store?.close();rmSync(dir,{recursive:true,force:true});}
  });

@@ -1,20 +1,50 @@
 import {describe,it,expect,vi} from 'vitest';
-import {attachPenInput} from '../src/companion/pen-input';
+import {attachPenInput,type PenSample} from '../src/companion/pen-input';
 import {createDraft,normalizePoint,snapshotDraft} from '../src/companion/draft';
 import {inkLineWidth,inkPageSvg} from '../src/shared/ink-svg';
 
 function fixture(){
  const classes=new Set<string>(),selection={removeAllRanges:vi.fn()};
  const win=Object.assign(new EventTarget(),{HTMLElement:class{}});
- const doc=Object.assign(new EventTarget(),{defaultView:win,activeElement:null,body:{classList:{add:(s:string)=>classes.add(s),remove:(s:string)=>classes.delete(s)}},getSelection:()=>selection});
+ const doc=Object.assign(new EventTarget(),{defaultView:win,activeElement:null,body:{classList:{add:(s:string)=>classes.add(s),remove:(s:string)=>classes.delete(s),contains:(s:string)=>classes.has(s)}},getSelection:()=>selection});
  let captured=false,clock=0;
  const canvas=Object.assign(new EventTarget(),{ownerDocument:doc,setPointerCapture:vi.fn(()=>{captured=true;}),hasPointerCapture:()=>captured,releasePointerCapture:vi.fn(()=>{captured=false;})});
- const handlers={start:vi.fn(()=>true),move:vi.fn(),finish:vi.fn(),allowFinger:vi.fn(()=>false)};
+ const handlers={start:vi.fn((_event:PenSample)=>true),move:vi.fn(),finish:vi.fn(),allowFinger:vi.fn(()=>false)};
  const input=attachPenInput(canvas as unknown as HTMLCanvasElement,handlers);
  function send(to:EventTarget,type:string,options:Record<string,unknown>={}){const event=new Event(type,{bubbles:true,cancelable:true});for(const [key,value] of Object.entries({pointerId:4,pointerType:'pen',button:0,timeStamp:++clock,clientX:20,clientY:30,pressure:.001,...options}))Object.defineProperty(event,key,{value});to.dispatchEvent(event);return event;}
  return{input,canvas,doc,win,handlers,classes,selection,send};
 }
 describe('continuous pen lifecycle',()=>{
+ it('records native stylus touch strokes when Safari omits pointerdown, while direct touch remains opt-in',()=>{
+  const f=fixture(),touch=(x:number)=>({identifier:17,target:f.canvas,touchType:'stylus',clientX:x,clientY:40,force:.006});
+  for(let i=0;i<3;i++){f.send(f.canvas,'touchstart',{changedTouches:[touch(20)],touches:[touch(20)]});f.send(f.win,'touchmove',{changedTouches:[touch(40)],touches:[touch(40)]});f.send(f.win,'touchend',{changedTouches:[touch(60)],touches:[]});}
+  expect(f.handlers.start).toHaveBeenCalledTimes(3);expect(f.handlers.move).toHaveBeenCalledTimes(6);expect(f.handlers.finish).toHaveBeenCalledTimes(3);
+  expect(f.handlers.start.mock.calls[0][0]).toMatchObject({pointerType:'pen',pressure:.006});
+  f.send(f.canvas,'touchstart',{changedTouches:[{...touch(20),touchType:'direct'}]});expect(f.handlers.start).toHaveBeenCalledTimes(3);
+ });
+ it('hands one physical stroke from PointerEvents to stylus TouchEvents without duplicating or ending it',()=>{
+  const f=fixture(),touch=(x:number)=>({identifier:17,target:f.canvas,touchType:'stylus',clientX:x,clientY:40,force:.008});
+  f.send(f.canvas,'pointerdown');f.send(f.canvas,'touchstart',{changedTouches:[touch(20)]});
+  f.send(f.win,'pointercancel');f.send(f.win,'pointermove');f.send(f.canvas,'lostpointercapture');
+  f.send(f.win,'touchmove',{changedTouches:[touch(50)]});f.send(f.win,'pointerup');expect(f.handlers.finish).not.toHaveBeenCalled();
+  f.send(f.win,'touchend',{changedTouches:[touch(70)]});expect(f.handlers.start).toHaveBeenCalledTimes(1);expect(f.handlers.finish).toHaveBeenCalledTimes(1);
+  expect(f.handlers.move.mock.calls.flat()[0][0]).toMatchObject({clientX:50,pointerType:'pen',pressure:.008});
+ });
+ it('ignores duplicate pointerdown after native touchstart and accepts the next native stroke immediately',()=>{
+  const f=fixture(),touch=(identifier:number)=>({identifier,target:f.canvas,touchType:'stylus',clientX:20,clientY:40,force:.006});
+  for(let i=0;i<3;i++){f.send(f.canvas,'touchstart',{changedTouches:[touch(i)]});f.send(f.canvas,'pointerdown',{pointerId:4});f.send(f.win,'touchmove',{changedTouches:[{...touch(i),clientX:70}]});f.send(f.win,'touchend',{changedTouches:[{...touch(i),clientX:80}]});f.send(f.win,'pointerup',{pointerId:4});}
+  expect(f.handlers.start).toHaveBeenCalledTimes(3);expect(f.handlers.finish).toHaveBeenCalledTimes(3);expect(f.handlers.move).toHaveBeenCalledTimes(6);
+ });
+ it('keeps a Pencil stroke when a palm ends and terminates only the matching native touch',()=>{
+  const f=fixture(),touch={identifier:17,target:f.canvas,touchType:'stylus',clientX:20,clientY:40,force:0};
+  f.send(f.canvas,'touchstart',{changedTouches:[touch]});f.send(f.win,'touchend',{changedTouches:[{...touch,identifier:99,touchType:'direct'}]});expect(f.handlers.finish).not.toHaveBeenCalled();
+  f.send(f.win,'touchcancel',{changedTouches:[touch]});expect(f.handlers.finish).toHaveBeenCalledTimes(1);expect(f.handlers.start.mock.calls[0][0]).toMatchObject({pressure:0});
+ });
+ it('does not apply stale native samples or an old native end to a reused contact identifier',()=>{
+  const f=fixture(),touch={identifier:17,target:f.canvas,touchType:'stylus',clientX:20,clientY:40,force:.01};
+  f.send(f.canvas,'touchstart',{changedTouches:[touch],timeStamp:100});f.send(f.win,'touchmove',{changedTouches:[touch],timeStamp:80});f.send(f.win,'touchend',{changedTouches:[touch],timeStamp:90});expect(f.handlers.move).not.toHaveBeenCalled();expect(f.handlers.finish).not.toHaveBeenCalled();
+  f.send(f.win,'touchcancel',{changedTouches:[touch],timeStamp:110});f.send(f.canvas,'touchstart',{changedTouches:[touch],timeStamp:111});f.send(f.win,'touchend',{changedTouches:[touch],timeStamp:120});expect(f.handlers.start).toHaveBeenCalledTimes(2);expect(f.handlers.finish).toHaveBeenCalledTimes(2);
+ });
  it('keeps adjacent strokes with a reused pointer ID after a delayed capture loss',()=>{
   const f=fixture();for(let i=0;i<50;i++){f.send(f.canvas,'pointerdown');f.send(f.canvas,'lostpointercapture');f.send(f.win,'pointermove');f.send(f.win,'pointerup');}
   expect(f.handlers.start).toHaveBeenCalledTimes(50);expect(f.handlers.move).toHaveBeenCalledTimes(100);expect(f.handlers.finish).toHaveBeenCalledTimes(50);expect(f.input.diagnostics.captureLosses).toBe(50);expect(f.classes.has('inking')).toBe(false);

@@ -49,7 +49,7 @@ describe('large model output capacity',()=>{
   const root=mkdtempSync(join(tmpdir(),'reclimb-capacity-budget-')),store=await LearningStore.open(root),sent:{tokens:number;reserved:number;inputCharacters:number}[]=[];
   store.updateSettings({modelProfiles:[profile(393216)],activeModelProfileId:'flash',monthlyBudgetCny:.1});
   const runner=new CallRunner(store,()=> 'test-key',()=>({complete:async request=>{
-   sent.push({tokens:request.maxOutputTokens!,reserved:store.list('usage').find(row=>row.status==='reserved')!.estimatedCny,inputCharacters:request.system.length+request.user.length});
+   sent.push({tokens:request.maxOutputTokens!,reserved:store.list('usage').find(row=>row.status==='reserved')!.estimatedCny,inputCharacters:request.messages!.reduce((sum,message)=>sum+message.content.length+32,0)+(request.schema?JSON.stringify(request.schema).length:0)});
    return{text:sent.length===1?'unfinished':'{"ok":true}',finishReason:sent.length===1?'length':'stop',inputTokens:10,outputTokens:10,usageKnown:true};
   }}));
   try{

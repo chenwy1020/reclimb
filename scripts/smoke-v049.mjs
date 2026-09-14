@@ -11,7 +11,7 @@ const dataDirectory=resolve('.test-data/desktop-v049-'+Date.now());
 mkdirSync(artifacts,{recursive:true});mkdirSync(dataDirectory,{recursive:true});
 if(executable)assert.ok(existsSync(executable));
 const results=[],externalRequests=[],rendererErrors=[],submitRequests=[],consoleErrors=[];
-let app,page,browser,context,pad,origin='',loseReceipt=false,delayReceipt=false,releaseReceipt;
+let app,page,browser,context,pad,origin='',originalDraftKey='',originalTargetId='',loseReceipt=false,delayReceipt=false,releaseReceipt;
 const record=name=>{results.push(name);console.log('PASS '+name);};
 const api=(action,payload={})=>page.evaluate(({action,payload})=>window.learning.request(action,payload),{action,payload});
 const snapshot=()=>api('workspace.snapshot');
@@ -36,7 +36,12 @@ async function pair(link){
 }
 async function saved(){await pad.locator('#save-status').filter({hasText:'✓ 已保存在本机'}).waitFor();}
 async function draw(){const canvas=pad.getByRole('img',{name:'手写草稿画布'});await canvas.scrollIntoViewIfNeeded();const r=await canvas.boundingBox();const y=Math.max(170,Math.min(700,r.y+r.height*.4));await pad.mouse.move(r.x+100,y);await pad.mouse.down();await pad.mouse.move(r.x+260,y+100,{steps:18});await pad.mouse.up();await saved();}
-async function chooseOriginalDraft(){await pad.getByLabel('切换本机草稿').selectOption({label:'从现象到函数 · 识别线性关系及其边界'});await pad.locator('#task-title').filter({hasText:'识别线性关系及其边界'}).waitFor();await saved();}
+async function chooseOriginalDraft(){
+ assert.ok(originalDraftKey&&originalTargetId,'Capture the immutable original before selecting another task');
+ await pad.getByLabel('切换本机草稿').selectOption(originalDraftKey);await pad.locator('#task-title').filter({hasText:'识别线性关系及其边界'}).waitFor();await saved();
+ const restored=await pad.evaluate(key=>new Promise((resolve,reject)=>{const open=indexedDB.open('reclimb-handwriting',1);open.onsuccess=()=>{const db=open.result,read=db.transaction('drafts','readonly').objectStore('drafts').get(key);read.onsuccess=()=>{db.close();resolve(read.result)};read.onerror=()=>reject(read.error)}}),originalDraftKey);
+ assert.equal(restored.key,originalDraftKey);assert.equal(restored.target.id,originalTargetId);assert.equal(restored.target.sessionId,originalSession);assert.equal(restored.conflict,undefined,'Selecting the original must not silently choose a conflict copy');assert.ok(restored.receipts.length>=2,'Both confirmed submissions must remain attached to the original');
+}
 try{
  await launch();let s=await snapshot();assert.equal(s.projects.length,0);assert.equal(s.settings.hasApiKey,false);assert.equal(s.usage.length,0);
  await api('sample.seed');await page.reload();await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();await desk();
@@ -54,7 +59,7 @@ try{
 
  await page.getByRole('button',{name:'发送当前任务到 iPad',exact:true}).click();await pad.getByRole('button',{name:'重新查看电脑任务',exact:true}).click();
  await pad.getByRole('button',{name:'采用这个任务',exact:true}).waitFor();assert.equal(await pad.locator('#workbench').isVisible(),false);await pad.getByRole('button',{name:'采用这个任务',exact:true}).click();await saved();
- assert.equal(await pad.locator('#task-title').textContent(),'识别线性关系及其边界');record('任务来自电脑原版本，学习者明确采用后才打开草稿');
+ originalDraftKey=await pad.getByLabel('切换本机草稿').inputValue();originalTargetId=(await api('handwriting.status')).target.id;assert.equal(JSON.parse(originalDraftKey)[1],originalTargetId);assert.equal(await pad.locator('#task-title').textContent(),'识别线性关系及其边界');record('任务来自电脑原版本，学习者明确采用后才打开草稿');
 
  await draw();await pad.getByRole('button',{name:'撤销笔画',exact:true}).click();await pad.getByRole('button',{name:'重做笔画',exact:true}).click();await pad.getByRole('button',{name:'加一页',exact:true}).click();await draw();
  const note=pad.getByLabel('补充说明或疑问（选填）');await note.fill('两页原创手写推导');await saved();await pad.reload();await pad.locator('#workbench').waitFor();await saved();assert.equal(await note.inputValue(),'两页原创手写推导');assert.equal(await pad.locator('#page-label').textContent(),'2 / 2 页');
