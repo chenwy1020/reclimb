@@ -1,4 +1,4 @@
-import {clone,type LocalDraft} from './draft';
+import {snapshotDraft,type LocalDraft} from './draft';
 export interface PairCredentials {token:string;workspaceId:string;}
 let opening:Promise<IDBDatabase>|undefined;
 function open(){return opening??=new Promise<IDBDatabase>((resolve,reject)=>{
@@ -10,7 +10,7 @@ function open(){return opening??=new Promise<IDBDatabase>((resolve,reject)=>{
  });}
 async function read<T>(store:string,key:IDBValidKey):Promise<T|undefined>{const db=await open();return new Promise((resolve,reject)=>{const request=db.transaction(store,'readonly').objectStore(store).get(key);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
 async function write(store:string,value:unknown,key?:IDBValidKey):Promise<void>{const db=await open();return new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.oncomplete=()=>resolve();tx.onabort=tx.onerror=()=>reject(tx.error??new Error('本机保存没有完成，请下载原稿。'));tx.objectStore(store).put(value,key);});}
-export async function saveDraft(draft:LocalDraft){await write('drafts',clone(draft));}
+export async function saveDraft(draft:LocalDraft){await write('drafts',snapshotDraft(draft));}
 export async function loadDraft(key:string){return read<LocalDraft>('drafts',key);}
 export async function listDrafts(workspaceId:string){const db=await open();return new Promise<LocalDraft[]>((resolve,reject)=>{const request=db.transaction('drafts','readonly').objectStore('drafts').getAll();request.onsuccess=()=>resolve((request.result as LocalDraft[]).filter(draft=>draft.workspaceId===workspaceId).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)));request.onerror=()=>reject(request.error);});}
 export const loadCredentials=()=>read<PairCredentials>('connection','credentials');

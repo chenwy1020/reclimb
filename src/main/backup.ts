@@ -3,7 +3,7 @@ import {LearningStore,normalizeSettings} from './store';import {safeMaterialFile
 import {teachingVersionSchema,taskReviewSchema,disputeSchema,correctionSchema,answerExposureSchema} from './reliability-record-schemas';
 import {teachingContentHash} from './verification-service';
 import {derivesFromDispute} from '../shared/reliability-state';
-import {handwritingTargetSchema,handwritingSubmissionSchema,handwritingSubmitSchema,inkPagesSchema} from '../shared/handwriting';
+import {handwritingTargetSchema,handwritingSubmissionSchema,handwritingSubmitSchema,handwritingTranscriptionSchema,inkPagesSchema} from '../shared/handwriting';
 const id=z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/),txt=z.string().max(200000),date=z.string().refine(v=>Number.isFinite(Date.parse(v)),'日期无效'),refs=z.array(id).max(100),bookRefs=z.array(id).max(100000);
 const project=z.object({id,title:txt,goal:txt,status:z.enum(['active','paused']),createdAt:date,updatedAt:date,trashedAt:date.optional(),statusBeforeTrash:z.enum(['active','paused']).optional(),routeSummary:txt.optional(),startingPoint:startingPointSchema.optional(),learningScope:learningScopeSchema.optional(),nearSteps:z.array(nearStepSchema).max(4).optional(),activeRouteVersionId:id.optional(),pendingRouteVersionId:id.optional(),learningPositionId:id.optional()});
 const capability=z.object({id,projectId:id,title:txt,description:txt,prerequisites:refs,sourceIds:refs,order:z.number().int(),archived:z.boolean().optional(),goalContext:txt.optional()});
@@ -15,12 +15,12 @@ const fragment=z.object({id,materialId:id,projectId:id,locator:txt,text:txt,ordi
 const followup=z.object({kind:z.enum(['step','message','source']),id,intent:z.enum(['question','example']),title:txt,text:txt,sourceIds:refs,sources:teachingVersionSchema.shape.sources,rootInputId:id,parentMessageId:id.optional(),taskId:id.optional(),stepId:id.optional(),teachingVersionId:id.optional(),contextWarning:txt.optional(),historyIndex:z.number().int().nonnegative().optional()});
 const sessionMessage=z.object({
  id,role:z.enum(['user','assistant','system']),text:txt,createdAt:date,kind:txt.optional(),sourceIds:refs.optional(),taskId:id.optional(),stepId:id.optional(),scope:supportScopeSchema.optional(),
- inputId:id.optional(),requestId:id.optional(),attemptId:id.optional(),teachingVersionId:id.optional(),
+ inputId:id.optional(),requestId:id.optional(),attemptId:id.optional(),teachingVersionId:id.optional(),handwritingId:id.optional(),handwritingTranscriptionId:id.optional(),
  responseState:z.enum(['pending','running','completed','failed']).optional(),responseMode:z.enum(['assessment','discussion']).optional(),responseError:txt.optional(),responseUpdatedAt:date.optional(),
  activitySnapshot:activitySchema.optional(),stepSnapshot:teachingStepSchema.optional(),helpLevel:z.number().int().min(0).max(4).optional(),followup:followup.optional(),
 });
-const session=z.object({id,projectId:id,capabilityId:id,unitId:id.optional(),routeVersionId:id.optional(),activity:activitySchema,mode:z.enum(['practice','delayed','transfer','diagnosis','selection']),status:z.enum(['active','paused','completed']),createdAt:date,updatedAt:date,draft:txt,helpLevel:z.number().int().min(0).max(4),helpEvents:z.array(z.object({id,kind:z.enum(['hint','confused','example','answer','explore']),level:z.number().int().min(0).max(4),createdAt:date,taskId:id.optional(),scope:supportScopeSchema.optional()})),messages:z.array(sessionMessage),checkpoint:txt,nextStep:txt,dueReviewId:id.optional(),teaching:teachingStateSchema.optional(),taskDrafts:z.record(id,txt).optional()});
-const attempt=z.object({id,projectId:id,sessionId:id,text:txt,submittedAt:date,helpLevel:z.number().int().min(0).max(4),requestId:id,assessment:assessmentSchema.optional(),activitySnapshot:activitySchema.optional(),taskId:id.optional(),stepId:id.optional(),mode:z.enum(['practice','delayed','transfer','diagnosis','selection']).optional(),reviewId:id.optional()});
+const session=z.object({id,projectId:id,capabilityId:id,unitId:id.optional(),routeVersionId:id.optional(),activity:activitySchema,mode:z.enum(['practice','delayed','transfer','diagnosis','selection']),status:z.enum(['active','paused','completed']),createdAt:date,updatedAt:date,draft:txt,helpLevel:z.number().int().min(0).max(4),helpEvents:z.array(z.object({id,kind:z.enum(['hint','confused','example','answer','explore']),level:z.number().int().min(0).max(4),createdAt:date,taskId:id.optional(),scope:supportScopeSchema.optional()})),messages:z.array(sessionMessage),checkpoint:txt,nextStep:txt,dueReviewId:id.optional(),teaching:teachingStateSchema.optional(),taskDrafts:z.record(id,txt).optional(),handwritingDrafts:z.record(id,z.object({text:z.string().max(100000),parentId:id.optional(),unresolved:z.boolean(),updatedAt:date}).strict()).optional()});
+const attempt=z.object({id,projectId:id,sessionId:id,handwritingId:id.optional(),handwritingTranscriptionId:id.optional(),text:txt,submittedAt:date,helpLevel:z.number().int().min(0).max(4),requestId:id,assessment:assessmentSchema.optional(),activitySnapshot:activitySchema.optional(),taskId:id.optional(),stepId:id.optional(),mode:z.enum(['practice','delayed','transfer','diagnosis','selection']).optional(),reviewId:id.optional()});
 const evidence=z.object({id,projectId:id,capabilityId:id,sessionId:id,attemptId:id,status:z.enum(['assisted','independent','delayed','transfer','needs_review']),helpLevel:z.number().int().min(0).max(4),assessment:assessmentSchema,createdAt:date,activitySnapshot:activitySchema.optional(),taskId:id.optional(),stepId:id.optional(),reviewId:id.optional()});
 const review=z.object({id,projectId:id,capabilityId:id,fromSessionId:id,kind:z.enum(['delayed','transfer']),dueAt:date,status:z.enum(['pending','done','snoozed']),completedSessionId:id.optional(),fromTaskId:id.optional(),fromActivity:activitySchema.optional(),completedEvidenceId:id.optional(),completedTaskId:id.optional()});
 const usage=z.object({id,createdAt:date,requestId:id,kind:txt,model:txt,inputTokens:z.number().nonnegative(),outputTokens:z.number().nonnegative(),estimatedCny:z.number().nonnegative(),status:z.enum(['reserved','completed','uncertain','failed']),operationId:id.optional(),reasoningTokens:z.number().nonnegative().optional(),finishReason:txt.optional(),providerRequestId:txt.optional(),validationStatus:z.enum(['pending','valid','invalid','not_received']).optional(),publicationStatus:z.enum(['pending','published','discarded']).optional(),modelProfileId:id.optional(),profileName:txt.optional(),providerName:txt.optional(),requestedModel:txt.optional(),reportedModel:txt.optional(),cacheHitTokens:z.number().int().nonnegative().optional(),cacheMissTokens:z.number().int().nonnegative().optional(),durationMs:z.number().int().nonnegative().optional(),requestPhase:z.enum(['initial','repair']).optional(),threadId:id.optional(),promptLayout:txt.optional(),promptPrefixHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),promptPrefixCharacters:z.number().int().nonnegative().optional(),requestCharacters:z.number().int().nonnegative().optional()});
@@ -37,7 +37,7 @@ const understandingDraft=z.object({id,projectId:id,routeVersionId:id,unitId:id.o
 const readingLayout=z.object({id,projectId:id,materialId:id,fragmentId:id,pageNumber:z.number().int().positive().optional(),version:z.number().int().positive(),blocks:z.array(z.object({id,order:z.number().int().nonnegative(),kind:z.enum(['prose','source_image']),text:txt.optional(),region:region.optional(),reason:txt.optional(),source:z.enum(['extracted','confirmed_transcription','original_page']),transcriptionId:id.optional()})).max(10000),status:z.enum(['current','superseded']),createdAt:date});
 const handwritingTarget=handwritingTargetSchema.extend({id,projectId:id,sessionId:id,taskId:id,stepId:id.optional(),teachingVersionId:id.optional()});
 const handwriting=handwritingSubmissionSchema.extend({id,projectId:id,sessionId:id,targetId:id});
-const entities={projects:project,capabilities:capability,materials:material,fragments:fragment,sessions:session.extend({teachingVersionId:id.optional()}),attempts:attempt.extend({teachingVersionId:id.optional()}),evidence:evidence.extend({teachingVersionId:id.optional()}),reviews:review,usage:usage.extend({entryType:z.enum(['call','hold']).optional()}),sourceTranscriptions:transcription.extend({origin:z.enum(['manual','machine']).optional()}),teachingVersions:teachingVersionSchema,taskReviews:taskReviewSchema,disputes:disputeSchema,corrections:correctionSchema,answerExposures:answerExposureSchema,routeVersions:routeVersion,learningUnits:learningUnit,learningPositions:learningPosition,teachingObservations:teachingObservation,understandingDrafts:understandingDraft,readingLayouts:readingLayout,handwritingTargets:handwritingTarget,handwritings:handwriting};
+const entities={projects:project,capabilities:capability,materials:material,fragments:fragment,sessions:session.extend({teachingVersionId:id.optional()}),attempts:attempt.extend({teachingVersionId:id.optional()}),evidence:evidence.extend({teachingVersionId:id.optional()}),reviews:review,usage:usage.extend({entryType:z.enum(['call','hold']).optional()}),sourceTranscriptions:transcription.extend({origin:z.enum(['manual','machine']).optional()}),teachingVersions:teachingVersionSchema,taskReviews:taskReviewSchema,disputes:disputeSchema,corrections:correctionSchema,answerExposures:answerExposureSchema,routeVersions:routeVersion,learningUnits:learningUnit,learningPositions:learningPosition,teachingObservations:teachingObservation,understandingDrafts:understandingDraft,readingLayouts:readingLayout,handwritingTargets:handwritingTarget,handwritings:handwriting,handwritingTranscriptions:handwritingTranscriptionSchema};
 const handwritingFileSchema=z.object({handwritingId:id,entry:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 const MAX_INK_BYTES=16*1024*1024;
 export function within(root:string,target:string):boolean{const rel=relative(resolve(root),resolve(target));return rel===''||(!rel.startsWith('..')&&!isAbsolute(rel));}
@@ -54,7 +54,7 @@ export function writeBackup(store:LearningStore,target:string):void{
   if(bytes.length>MAX_INK_BYTES)throw new Error('手写原稿过大，无法生成完整备份');
   zip.addFile(entry,bytes);handwritingFiles.push({handwritingId:metadata.id,entry,sha256:sha(bytes)});return metadata;
  });
- zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:8,createdAt:new Date().toISOString(),records:{...records,handwritingTargets:records.handwritingTargets??[],handwritings,settings:safeSettings},files,handwritingFiles},null,2),'utf8'));
+ zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:9,createdAt:new Date().toISOString(),records:{...records,handwritingTranscriptions:records.handwritingTranscriptions??[],handwritingTargets:records.handwritingTargets??[],handwritings,settings:safeSettings},files,handwritingFiles},null,2),'utf8'));
  const tmp=target+'.partial';
  try{
   writeFileSync(tmp,zip.toBuffer());
@@ -74,8 +74,9 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  const manifest=zip.getEntry('manifest.json');if(!manifest||manifest.header.size>30*1024*1024)throw new Error('备份清单缺失或过大');
  let raw:any;try{raw=JSON.parse(zip.readAsText(manifest));}catch{throw new Error('备份清单无法解析');}
  if(raw?.format!=='reclimb.backup'||!raw.records)throw new Error('这不是受支持的重登备份文件');
- if(typeof raw.version==='number'&&raw.version>8)throw new Error('此备份由更新版本创建，请先升级应用。');
- if(![1,2,3,4,5,6,7,8].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
+ if(typeof raw.version==='number'&&raw.version>9)throw new Error('此备份由更新版本创建，请先升级应用。');
+ if(![1,2,3,4,5,6,7,8,9].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
+ if(raw.version<9)raw.records.handwritingTranscriptions=[];
  if(raw.version<8){raw.records.handwritingTargets=[];raw.records.handwritings=[];}
  else{
   // Large vector pages stay outside the manifest. Validate paths, lengths and hashes before parsing ink.
@@ -227,6 +228,7 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  for(const e of records.answerExposures){const s=match('sessions',e.sessionId,e.projectId);match('capabilities',e.capabilityId,e.projectId);if(s.capabilityId!==e.capabilityId)throw new Error('答案暴露与能力关联不一致');if(e.teachingVersionId){const v=match('teachingVersions',e.teachingVersionId,e.projectId);if(v.taskId!==e.taskId||v.capabilityId!==e.capabilityId)throw new Error('答案暴露与教学版本关联不一致');}}
  for(const target of records.handwritingTargets){
   const s=match('sessions',target.sessionId,target.projectId);
+  if(target.reviewId){const review=match('reviews',target.reviewId,target.projectId);if(review.capabilityId!==s.capabilityId||review.kind!==target.mode)throw new Error('手写任务与原回访关联不一致');}
   const version=target.teachingVersionId?match('teachingVersions',target.teachingVersionId,target.projectId):undefined;
   if(version&&(version.taskId!==target.taskId||version.capabilityId!==s.capabilityId))throw new Error('手写任务与冻结教学版本关联不一致');
   const sessionSteps=s.teaching?[s.teaching.current,...s.teaching.history,...s.teaching.upcoming,...(s.teaching.returnStep?[s.teaching.returnStep]:[]),...(s.teaching.returnUpcoming??[])]:[];
@@ -261,6 +263,34 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
   for(const event of s.helpEvents)if((event.taskId??target.taskId)===target.taskId&&Date.parse(event.createdAt)<=Date.parse(original.submittedAt))minimumHelp=Math.max(minimumHelp,event.level);
   if(records.answerExposures.some((exposure:any)=>exposure.sessionId===s.id&&exposure.taskId===target.taskId&&Date.parse(exposure.createdAt)<=Date.parse(original.submittedAt)))minimumHelp=4;
   if(original.helpLevel<minimumHelp)throw new Error('手写原稿丢失了提交时的帮助条件');
+ }
+ const transcriptionRequests=new Set<string>();
+ for(const transcription of records.handwritingTranscriptions){
+  const original=match('handwritings',transcription.handwritingId,transcription.projectId),target=match('handwritingTargets',transcription.targetId,transcription.projectId),s=match('sessions',transcription.sessionId,transcription.projectId);
+  if(transcription.contentHash!==original.contentHash||transcription.targetId!==original.targetId||transcription.sessionId!==original.sessionId||target.sessionId!==s.id||Date.parse(transcription.createdAt)<Date.parse(original.submittedAt))throw new Error('手写转录与原稿或时间关联不一致');
+  if(transcriptionRequests.has(transcription.requestId))throw new Error('手写转录包含重复操作编号');transcriptionRequests.add(transcription.requestId);
+  if(transcription.parentId){const parent=match('handwritingTranscriptions',transcription.parentId,transcription.projectId);if(parent.handwritingId!==original.id||parent.contentHash!==original.contentHash||parent.id===transcription.id||Date.parse(parent.createdAt)>Date.parse(transcription.createdAt))throw new Error('手写转录的原版本关联不一致');}
+  if(transcription.status==='machine'){
+   if(transcription.inputId||!transcription.callId||!transcription.model)throw new Error('机器转录不能冒充已确认输入');
+   if(!records.usage.some((usage:any)=>(usage.id===transcription.callId||usage.operationId===transcription.callId)&&usage.validationStatus==='valid'&&usage.publicationStatus==='published'))throw new Error('机器转录缺少对应的有效识别调用');
+  }else{
+   const input=s.messages.find((message:any)=>message.role==='user'&&message.inputId===transcription.inputId);
+   if(!transcription.text.trim()||!input||input.handwritingId!==original.id||input.handwritingTranscriptionId!==transcription.id||input.text!==transcription.text||input.requestId!==transcription.requestId||input.taskId!==target.taskId||input.stepId!==target.stepId||input.createdAt!==transcription.createdAt||input.helpLevel<original.helpLevel)throw new Error('确认转录与原任务输入或帮助关联不一致');
+   if(transcription.unresolved&&input.responseMode!=='discussion')throw new Error('存在转录疑点时不能恢复为能力评价');
+   if(!target.teachingVersionId&&input.responseMode!=='discussion')throw new Error('缺少原教学版本的手写输入只能保留为共同探讨');
+   if(input.teachingVersionId!==target.teachingVersionId)throw new Error('确认转录改绑了原教学版本');
+  }
+ }
+ for(const s of records.sessions){
+  for(const [handwritingId,draft] of Object.entries(s.handwritingDrafts??{}) as [string,any][]){const original=match('handwritings',handwritingId,s.projectId);if(original.sessionId!==s.id)throw new Error('手写文字草稿关联了另一会话');if(draft.parentId){const parent=match('handwritingTranscriptions',draft.parentId,s.projectId);if(parent.handwritingId!==original.id)throw new Error('手写文字草稿转录来源不一致');}}
+  for(const message of s.messages)if(message.handwritingId||message.handwritingTranscriptionId){
+   const original=match('handwritings',message.handwritingId,s.projectId),transcription=match('handwritingTranscriptions',message.handwritingTranscriptionId,s.projectId),target=maps.handwritingTargets.get(original.targetId);
+   if(original.sessionId!==s.id||transcription.handwritingId!==original.id||transcription.status!=='confirmed'||transcription.inputId!==message.inputId||message.taskId!==target.taskId||message.stepId!==target.stepId||message.teachingVersionId!==target.teachingVersionId)throw new Error('手写回应与确认文本或原任务关联不一致');
+  }
+ }
+ for(const attempt of records.attempts)if(attempt.handwritingId||attempt.handwritingTranscriptionId){
+  const original=match('handwritings',attempt.handwritingId,attempt.projectId),transcription=match('handwritingTranscriptions',attempt.handwritingTranscriptionId,attempt.projectId),s=maps.sessions.get(attempt.sessionId),input=s.messages.find((message:any)=>message.role==='user'&&message.inputId===transcription.inputId);
+  if(original.sessionId!==attempt.sessionId||transcription.status!=='confirmed'||transcription.handwritingId!==original.id||input?.attemptId!==attempt.id||input.handwritingId!==original.id||input.handwritingTranscriptionId!==transcription.id||attempt.text!==transcription.text)throw new Error('手写作答与确认文本关联不一致');
  }
  if(!Array.isArray(raw.files))throw new Error('备份原件清单无效');
  for(const f of raw.files){if(!maps.materials.has(f.materialId)||typeof f.entry!=='string'||!f.entry.startsWith('materials/'+f.materialId+'/')||files.has(f.materialId))throw new Error('备份原件关联无效');const entry=zip.getEntry(f.entry);if(!entry||entry.header.size>50*1024*1024)throw new Error('备份原件缺失或过大');const bytes=entry.getData();if(sha(bytes)!==f.sha256)throw new Error('备份原件校验失败，未更改现有档案');files.set(f.materialId,{name:safeMaterialFilename(basename(f.entry)),bytes});}

@@ -29,7 +29,7 @@ export function readableExport(snapshot:WorkspaceSnapshot,projectId?:string):str
    for(const attempt of snapshot.attempts.filter(a=>a.sessionId===session.id))body.push('#### 作答 '+attempt.id,attempt.submittedAt+'；任务：'+(attempt.taskId??'旧任务')+'；提交时帮助：'+attempt.helpLevel,attempt.text);
    for(const original of (snapshot.handwritings??[]).filter(item=>item.projectId===project.id&&item.sessionId===session.id)){
     const target=snapshot.handwritingTargets?.find(item=>item.id===original.targetId&&item.projectId===project.id&&item.sessionId===session.id);
-    body.push('#### 学习者手写原稿：'+(target?.title??original.id),'未识别、未评价；手写保存本身不构成独立完成或其他能力证据。',original.submittedAt+'；原稿编号：'+original.id+'；提交编号：'+original.requestId,'原任务：'+(target?.taskId??'关联未知')+'；原步骤：'+(target?.stepId??'未指定')+'；教学版本：'+(target?.teachingVersionId??'历史任务未保存版本')+'；手写目标：'+original.targetId,'提交时帮助：'+original.helpLevel+'；内容校验：'+original.contentHash);
+    body.push('#### 学习者手写原稿：'+(target?.title??original.id),'原稿保存时未识别、未评价；后续转录、确认与反馈另列。手写保存本身不构成独立完成或其他能力证据。',original.submittedAt+'；原稿编号：'+original.id+'；提交编号：'+original.requestId,'原任务：'+(target?.taskId??'关联未知')+'；原步骤：'+(target?.stepId??'未指定')+'；教学版本：'+(target?.teachingVersionId??'历史任务未保存版本')+'；手写目标：'+original.targetId,'提交时帮助：'+original.helpLevel+'；内容校验：'+original.contentHash);
     if(target){
      body.push('提交时的题目：',target.instruction);
      for(const sourceId of target.sourceIds){const source=snapshot.fragments.find(fragment=>fragment.id===sourceId&&fragment.projectId===project.id),versions=target.sourceVersions?.find(item=>item.fragmentId===sourceId)?.transcriptionIds??[];body.push('原题来源：'+(source?.locator??'未知位置')+'（'+sourceId+'）；转写版本：'+(versions.join('、')||'原始提取文本'));}
@@ -37,6 +37,8 @@ export function readableExport(snapshot:WorkspaceSnapshot,projectId?:string):str
     if(original.note)body.push('学习者补充文字：',original.note);
     body.push('以下内嵌图片保留原始笔迹，不是识别后的公式。若查看器不显示内嵌 SVG，请使用完整备份在重登恢复查看。');
     original.pages.forEach((page,index)=>body.push('![学习者手写原稿，第 '+(index+1)+' 页]('+inkPageDataUrl(page)+')'));
+    for(const transcription of (snapshot.handwritingTranscriptions??[]).filter(item=>item.handwritingId===original.id))body.push('##### '+(transcription.status==='machine'?'机器识别候选，尚未核对':'学习者核对后的转录'),transcription.createdAt+'；转录编号：'+transcription.id+(transcription.parentId?'；基于版本：'+transcription.parentId:'')+(transcription.inputId?'；关联输入：'+transcription.inputId:''),transcription.text,'仍有识别疑点：'+(transcription.unresolved?'是；'+transcription.uncertainties.join('；'):'用户已核对；这不代表推理正确。'));
+    const draft=session.handwritingDrafts?.[original.id];if(draft)body.push('##### 尚未确认的转录文字草稿',draft.text,'尚未提交确认，不作为能力评价依据。');
    }
   }
   for(const review of snapshot.taskReviews.filter(r=>r.projectId===project.id)){

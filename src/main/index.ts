@@ -1,4 +1,5 @@
 import {HandwritingService} from './handwriting-service';
+import {HandwritingFeedbackService} from './handwriting-recognition';
 import {HandwritingServer,getHandwritingAddresses} from './handwriting-server';
 import {readableExport} from './readable-export';
 import {app,BrowserWindow,ipcMain,dialog,safeStorage,shell} from 'electron';
@@ -21,13 +22,13 @@ if(process.env.RECLIMB_DATA_DIR)app.setPath('userData',resolve(process.env.RECLI
 if(!app.requestSingleInstanceLock()){app.quit();}
 let win:BrowserWindow|undefined,store:LearningStore,service:LearningService,trashService:ProjectTrashService,modelProfiles:ModelProfileManager,workspaceDir:string,credentialFile:string,visionCredentialFile:string,wasmPath:string;
 const workspaceGate=new WorkspaceTransitionGate();
-let handwriting:HandwritingService,handwritingServer:HandwritingServer|undefined;
+let handwritingFeedback:HandwritingFeedbackService,handwriting:HandwritingService,handwritingServer:HandwritingServer|undefined;
 let handwritingControlBusy=false;
 const timestamp=()=>new Date().toISOString();
 let credentials:CredentialsStore,visionCredentials:CredentialsStore,visionRunner:CallRunner;
 function keyRead(settings=store.getSettings()):string{return store&&credentials?credentials.read(settings.activeModelProfileId??'default-model',settings.baseUrl):'';}
 function visionKeyRead():string{const v=store?.getSettings().vision;return v?.baseUrl&&visionCredentials?visionCredentials.read(v.baseUrl):'';}
-function makeService(){handwriting=new HandwritingService(store);store.transaction(()=>{for(const u of store.list('usage'))if(u.status==='reserved')store.put('usage',u.entryType==='hold'?{...u,status:'failed',estimatedCny:0}:{...u,status:'uncertain'});});applyKnownIncidentCorrections(store);visionRunner=new CallRunner(store,visionKeyRead);trashService=new ProjectTrashService(store,workspaceDir,visionRunner.diagnostics);try{trashService.cleanStaging();}catch{/* A locked cleanup directory must not block access to learning records. */}for(const failure of trashService.purgeExpired())try{visionRunner.diagnostics.record({operationId:failure.projectId,kind:'project_purge',model:'local',status:'transport_error',error:failure.error});}catch{/* A locked diagnostic file must not block application startup. */}service=new LearningService(store,keyRead);modelProfiles=new ModelProfileManager(store,credentials,()=>service.isBusy||visionRunner.isBusy);}
+function makeService(){handwriting=new HandwritingService(store);store.transaction(()=>{for(const u of store.list('usage'))if(u.status==='reserved')store.put('usage',u.entryType==='hold'?{...u,status:'failed',estimatedCny:0}:{...u,status:'uncertain'});});applyKnownIncidentCorrections(store);visionRunner=new CallRunner(store,visionKeyRead);trashService=new ProjectTrashService(store,workspaceDir,visionRunner.diagnostics);try{trashService.cleanStaging();}catch{/* A locked cleanup directory must not block access to learning records. */}for(const failure of trashService.purgeExpired())try{visionRunner.diagnostics.record({operationId:failure.projectId,kind:'project_purge',model:'local',status:'transport_error',error:failure.error});}catch{/* A locked diagnostic file must not block application startup. */}service=new LearningService(store,keyRead);handwritingFeedback=new HandwritingFeedbackService(store,service,visionRunner,visionKeyRead);service.setResponseGate(()=>visionRunner.isBusy||handwritingFeedback.isBusy);modelProfiles=new ModelProfileManager(store,credentials,()=>service.isBusy||visionRunner.isBusy||handwritingFeedback?.isBusy);}
 function snapshot():WorkspaceSnapshot{const s=store.snapshot({includeHandwriting:false}),profiles=s.settings.modelProfiles??[],configured=credentials.configured(profiles);s.settings.modelProfiles=profiles.map(profile=>({...profile,hasApiKey:configured.has(profile.id)}));s.settings.hasApiKey=!!s.settings.modelProfiles.find(profile=>profile.id===s.settings.activeModelProfileId)?.hasApiKey;if(s.settings.vision)s.settings.vision.hasApiKey=!!visionKeyRead();return publicSnapshot(s);}
 function getId(p:any,key='id'):string{const value=p?.[key];if(typeof value!=='string'||!value||value.length>120)throw new Error('缺少有效的记录编号');return value;}
 function requireProject(id:string){const p=store.get('projects',id);if(!p)throw new Error('学习项目不存在');if(p.trashedAt)throw new Error('这个项目在最近删除中，请先恢复后继续学习。');return p;}
@@ -42,7 +43,7 @@ async function saveParsed(projectId:string,parsed:ParsedMaterial,original:{file?
 }
 async function prepareSources(projectId:string){requireProject(projectId);for(const material of store.list('materials',projectId))if(material.kind==='pdf'&&!material.pdfMetadata)await analyzePdfMaterial(store,material.id);}
 async function restore(file:string){
- if(service.isBusy||visionRunner.isBusy)throw new Error('请等待当前AI请求结束后再恢复备份。');
+ if(service.isBusy||visionRunner.isBusy||handwritingFeedback?.isBusy)throw new Error('请等待当前AI请求结束后再恢复备份。');
  const finishTransition=workspaceGate.begin();
  try{
  await handwritingServer?.stop();handwritingServer=undefined;
@@ -69,6 +70,7 @@ async function restore(file:string){
 async function handle(action:DesktopAction,p:any={}):Promise<unknown>{
  workspaceGate.assertAvailable();
  if(!p||typeof p!=='object'||Array.isArray(p))throw new Error('请求内容无效');
+ if((visionRunner.isBusy||handwritingFeedback?.isBusy)&&(['route.generate','lesson.start','session.nextStep','session.verify','dispute.review','understanding.suggest','material.transcribe','settings.test','settings.modelProfile.test'].includes(action)||(action==='session.help'&&p.kind!=='explore')))throw new Error('图像识别正在进行，请稍后继续。文字和手写草稿仍可保存。');
  switch(action){
  case 'workspace.snapshot':return snapshot();
  case 'handwriting.addresses':return getHandwritingAddresses();
@@ -108,7 +110,7 @@ async function handle(action:DesktopAction,p:any={}):Promise<unknown>{
  }
  case 'project.create':{const value=z.object({title:z.string().max(120).default(''),goal:z.string().trim().min(1).max(10000),startingPoint:z.object({familiarity:z.enum(['new','some','experienced']),background:z.string().max(10000)}).optional()}).parse(p);const now=timestamp();store.put('projects',{id:randomUUID(),title:value.title.trim()||value.goal.slice(0,24),goal:value.goal,status:'active',createdAt:now,updatedAt:now,...(value.startingPoint?{startingPoint:{...value.startingPoint,updatedAt:now}}:{})});break;}
  case 'project.update':{const id=getId(p),old=requireProject(id);const update=z.object({title:z.string().trim().min(1).max(120).optional(),goal:z.string().trim().min(1).max(10000).optional(),status:z.enum(['active','paused']).optional(),startingPoint:z.object({familiarity:z.enum(['new','some','experienced']),background:z.string().max(10000)}).optional()}).parse(p);const {startingPoint,...fields}=update;store.put('projects',{...old,...fields,...(startingPoint?{startingPoint:{...startingPoint,updatedAt:timestamp()}}:{}),...(update.goal&&update.goal!==old.goal?{learningScope:undefined,nearSteps:undefined}:{}),updatedAt:timestamp()});break;}
- case 'project.trash':case 'project.restore':case 'project.purge':handleProjectTrashAction(trashService,action,p,service.isBusy||visionRunner.isBusy);break;
+ case 'project.trash':case 'project.restore':case 'project.purge':handleProjectTrashAction(trashService,action,p,service.isBusy||visionRunner.isBusy||handwritingFeedback?.isBusy);break;
  case 'project.startingPoint':service.saveStartingPoint(getId(p,'projectId'),z.object({familiarity:z.enum(['new','some','experienced']),background:z.string().max(10000)}).parse(p));break;
  case 'project.confirmScope':service.confirmScope(getId(p,'projectId'));break;
  case 'route.generate':await prepareSources(getId(p,'projectId'));await service.generateRoute(getId(p,'projectId'));break;
@@ -119,6 +121,13 @@ async function handle(action:DesktopAction,p:any={}):Promise<unknown>{
  case 'material.importUrl':{const projectId=getId(p,'projectId');requireProject(projectId);const input=z.string().url().max(3000).parse(p.url),article=await fetchPublicArticle(input),parsed=await parseArticle(article.html,article.url);await saveParsed(projectId,parsed,{bytes:Buffer.from(article.html,'utf8'),name:'article.html',url:article.url});break;}
  case 'material.openOriginal':{const material=store.get('materials',getId(p,'materialId'));if(!material||!within(workspaceDir,material.storedPath)||!existsSync(material.storedPath))throw new Error('原件不存在或路径异常');requireProject(material.projectId);if(!canOpenOriginal(material.storedPath))return {message:'为避免执行网页脚本，导入文章请在学习桌的原文栏阅读已提取内容。'};const result=await shell.openPath(material.storedPath);if(result)throw new Error('无法打开原件，请确认已安装对应阅读软件。');return {message:'已用本机默认软件打开原件'};}
  case 'material.pdfBytes':{const materialId=getId(p,'materialId'),material=store.get('materials',materialId);if(!material)throw new Error('学习材料不存在');requireProject(material.projectId);return {data:getPdfBytes(store,materialId)};}
+ case 'handwriting.recognize':return handwritingFeedback.recognize(getId(p,'handwritingId'),getId(p,'requestId'));
+ case 'handwriting.confirm':return handwritingFeedback.confirm(p);
+ case 'handwriting.transcriptions':return handwritingFeedback.transcriptions(getId(p,'handwritingId'));
+ case 'handwriting.respond':return handwritingFeedback.respond(getId(p,'handwritingId'),getId(p,'inputId'));
+ case 'handwriting.responses':return handwritingFeedback.responses(getId(p,'handwritingId'));
+ case 'handwriting.draft':return handwritingFeedback.draft(getId(p,'handwritingId'));
+ case 'handwriting.saveDraft':return handwritingFeedback.saveDraft(p);
  case 'material.analyzePdf':{const materialId=getId(p,'materialId'),material=store.get('materials',materialId);if(!material)throw new Error('学习材料不存在');requireProject(material.projectId);await analyzePdfMaterial(store,materialId);break;}
  case 'material.transcribe':{
   const input=z.object({fragmentId:z.string().min(1).max(120),pageNumber:z.number().int().positive(),region:z.object({x:z.number(),y:z.number(),width:z.number(),height:z.number()}).optional(),imageDataUrl:z.string().max(16_000_000).optional()}).parse(p);

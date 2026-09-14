@@ -11,7 +11,7 @@ export class HandwritingService {
   const project=this.store.get('projects',session.projectId);if(!project||project.trashedAt)throw new Error('项目已删除，请先恢复后发送到 iPad。');
   const step=session.teaching?.current,activity=step?.activity??session.activity;
   if(expected&&(expected.taskId!==(step?.taskId??activity.id??session.id)||expected.stepId!==step?.id||expected.teachingVersionId!==(activity.teachingVersionId??session.teachingVersionId)))throw new Error('题目已经更新，请查看当前任务后重新发送；没有替换 iPad 的原草稿。');
-  const target=handwritingTargetSchema.parse({id:randomUUID(),projectId:project.id,projectTitle:project.title,sessionId:session.id,taskId:step?.taskId??activity.id??session.id,stepId:step?.id,teachingVersionId:activity.teachingVersionId??session.teachingVersionId,title:step?.title??activity.title,instruction:[step?.content,activity.instruction].filter((text,i,all)=>text&&all.indexOf(text)===i).join('\n\n'),sourceIds:activity.sourceIds,sourceVersions:activity.sourceVersions,helpLevel:session.helpLevel,mode:session.mode,createdAt:new Date().toISOString()});
+  const target=handwritingTargetSchema.parse({id:randomUUID(),projectId:project.id,projectTitle:project.title,sessionId:session.id,taskId:step?.taskId??activity.id??session.id,stepId:step?.id,teachingVersionId:activity.teachingVersionId??session.teachingVersionId,title:step?.title??activity.title,instruction:[step?.content,activity.instruction].filter((text,i,all)=>text&&all.indexOf(text)===i).join('\n\n'),sourceIds:activity.sourceIds,sourceVersions:activity.sourceVersions,helpLevel:session.helpLevel,mode:session.mode,reviewId:session.dueReviewId,createdAt:new Date().toISOString()});
   this.store.put('handwritingTargets',target);return target;
  }
  getTarget(id:string):HandwritingTarget|undefined{

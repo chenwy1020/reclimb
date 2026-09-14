@@ -1,0 +1,8 @@
+.handwriting-feedback{margin-top:24px;padding-top:20px;border-top:1px solid var(--border);min-width:0}
+.handwriting-feedback p{line-height:1.8}.handwriting-feedback h3{margin-top:0}
+.handwriting-transcript-label{display:grid;gap:8px;margin:18px 0 12px}
+.handwriting-transcript-label textarea{box-sizing:border-box;width:100%;min-height:220px;resize:vertical;line-height:1.8;white-space:pre-wrap}
+.handwriting-check{display:flex;align-items:flex-start;gap:10px;line-height:1.7;margin:12px 0}
+.handwriting-check input{flex:0 0 auto;width:17px;height:17px;margin:5px 0 0}
+.handwriting-versions article{padding:12px 0;border-top:1px solid var(--border)}
+.handwriting-replies{margin-top:24px}.handwriting-feedback .input-record{margin:12px 0;min-width:0}

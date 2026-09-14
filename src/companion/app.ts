@@ -1,16 +1,18 @@
 import {handwritingTargetSchema} from '../shared/handwriting';
 import type {HandwritingClientState,HandwritingReceipt,InkPage,InkStroke} from '../shared/handwriting';
-import {acknowledgeSubmission,clone,createDraft,draftKey,exportDraft,freezeSubmission,newId,newPage,normalizePoint,parsePairingLink,strokeNear,type LocalDraft} from './draft';
+import {acknowledgeSubmission,snapshotDraft,createDraft,draftKey,exportDraft,freezeSubmission,newId,newPage,normalizePoint,parsePairingLink,strokeNear,type LocalDraft} from './draft';
 import {listDrafts,loadCredentials,loadDraft,loadSelection,saveCredentials,saveDraft,saveSelection,type PairCredentials} from './storage';
 import {importDraft,MAX_IMPORT_BYTES} from './import-draft';
+import {attachPenInput} from './pen-input';
+import {inkLineWidth} from '../shared/ink-svg';
 
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const canvas=$<HTMLCanvasElement>('ink-canvas'),ctx=canvas.getContext('2d')!;
 const cache=new Map<string,LocalDraft>(),undo=new Map<string,InkStroke[][]>(),redo=new Map<string,InkStroke[][]>();
 let credentials:PairCredentials|undefined,current:LocalDraft|undefined,remote:HandwritingClientState|undefined;
-let tool:'pen'|'eraser'='pen',activePointer:number|undefined,activeStroke:InkStroke|undefined,beforeStroke:InkStroke[]|undefined;
-let saving:Promise<void>=Promise.resolve(),saveTimer:ReturnType<typeof setTimeout>|undefined,polling=false,pairing=false,pairTicket='',pairGeneration=0;
-let sending:string|undefined,switching=false,localFailure=false,connected=false,lastInkSave=0;
+let tool:'pen'|'eraser'='pen',activeStroke:InkStroke|undefined,beforeStroke:InkStroke[]|undefined;
+let saving:Promise<void>=Promise.resolve(),saveTimer:ReturnType<typeof setTimeout>|undefined,saveDeadline:ReturnType<typeof setTimeout>|undefined,polling=false,pairing=false,pairTicket='',pairGeneration=0;
+let sending:string|undefined,switching=false,localFailure=false,connected=false;
 let initialized=false,latestTicket:string|undefined;
 const submitErrors=new Map<string,string>();
 const message=(error:unknown)=>error instanceof Error?error.message:'这一步没有完成，请重试。';
@@ -18,26 +20,40 @@ function error(text:string){$('global-error').hidden=!text;$('global-error').tex
 function connection(text:string){$('connection-status').textContent=text;}
 function page(){return current?.pages.find(item=>item.id===current!.pageId)??current?.pages[0];}
 function persist(draft=current):Promise<void>{
- if(!draft)return Promise.resolve();const snapshot=clone(draft);
+ if(!draft)return Promise.resolve();if(draft===current){clearTimeout(saveTimer);clearTimeout(saveDeadline);saveTimer=saveDeadline=undefined;}const snapshot=snapshotDraft(draft);
  if(current?.key===draft.key){$('save-status').textContent='正在保存到本机…';$('save-status').classList.remove('failed');}
  const operation=saving.catch(()=>{}).then(()=>saveDraft(snapshot));saving=operation;
  return operation.then(()=>{localFailure=false;$('retry-save').hidden=true;if(current?.key===snapshot.key&&current.revision===snapshot.revision){$('save-status').textContent='✓ 已保存在本机';$('save-status').classList.remove('failed');}}).catch(reason=>{localFailure=true;if(current?.key===snapshot.key){$('save-status').textContent='本机保存未完成，请下载原稿备份，再重试保存。';$('save-status').classList.add('failed');$('retry-save').hidden=false;}throw reason;});
 }
-function changed(immediate=false){const draft=current;if(!draft)return;draft.revision++;draft.updatedAt=new Date().toISOString();$('save-status').textContent='尚有笔迹正在保存…';clearTimeout(saveTimer);if(immediate){void persist(draft).catch(()=>{});}else saveTimer=setTimeout(()=>void persist(draft).catch(()=>{}),350);}
+function changed(immediate=false){const draft=current;if(!draft)return;draft.revision++;draft.updatedAt=new Date().toISOString();$('save-status').textContent='尚有笔迹正在保存…';clearTimeout(saveTimer);
+ const flush=()=>{clearTimeout(saveTimer);clearTimeout(saveDeadline);saveTimer=saveDeadline=undefined;void persist(draft).catch(()=>{});};
+ // A short pause saves a burst of strokes together. Continuous writing still
+ // checkpoints at most 1.2 seconds apart; pen-down never serializes a page.
+ if(immediate)flush();else{saveTimer=setTimeout(flush,180);saveDeadline??=setTimeout(flush,1200);}
+}
 async function api<T>(path:string,body?:unknown,token=credentials?.token):Promise<T>{
  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
  try{const result=await fetch(path,{method:body===undefined?'GET':'POST',headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal,cache:'no-store',credentials:'omit',redirect:'error'});const data=await result.json();if(!result.ok)throw new Error(typeof data.error==='string'?data.error:'电脑暂时无法处理这次请求。');return data as T;
  }catch(reason){if(reason instanceof DOMException&&reason.name==='AbortError')throw new Error('连接超时。原稿仍留在本机，可以主动重试。');throw reason;}finally{clearTimeout(timeout);}
 }
-function paint(){
+let paintFrame=0,fullPaint=true,renderFrames=0,fullRepaints=0;
+const dirtyStrokes=new Set<InkStroke>(),paintedPoints=new Map<string,number>();
+function requestPaint(stroke?:InkStroke){if(stroke)dirtyStrokes.add(stroke);else fullPaint=true;if(!paintFrame)paintFrame=requestAnimationFrame(drawFrame);}
+function paint(){fullPaint=true;requestPaint();}
+function drawStroke(stroke:InkStroke,start=0){
+ ctx.strokeStyle=stroke.color;ctx.fillStyle=stroke.color;const points=stroke.points;if(!points.length)return;
+ if(!start&&points.length===1){ctx.beginPath();ctx.arc(points[0].x*768,points[0].y*1024,stroke.width/2,0,Math.PI*2);ctx.fill();}
+ for(let i=Math.max(1,start);i<points.length;i++){const previous=points[i-1],point=points[i];ctx.lineWidth=inkLineWidth(stroke.width,previous.pressure,point.pressure);ctx.beginPath();ctx.moveTo(previous.x*768,previous.y*1024);ctx.lineTo(point.x*768,point.y*1024);ctx.stroke();}
+ paintedPoints.set(stroke.id,points.length);
+}
+function drawFrame(){
+ paintFrame=0;renderFrames++;
  const bounds=canvas.getBoundingClientRect(),ratio=Math.min(window.devicePixelRatio||1,2),width=Math.max(1,Math.round(bounds.width*ratio));
- if(canvas.width!==width){canvas.width=width;canvas.height=Math.round(width*4/3);}
- ctx.setTransform(canvas.width/768,0,0,canvas.height/1024,0,0);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,768,1024);ctx.lineCap='round';ctx.lineJoin='round';
- for(const stroke of page()?.strokes??[]){ctx.strokeStyle=stroke.color;ctx.fillStyle=stroke.color;let previous=stroke.points[0];if(!previous)continue;
-  if(stroke.points.length===1){ctx.beginPath();ctx.arc(previous.x*768,previous.y*1024,stroke.width/2,0,Math.PI*2);ctx.fill();continue;}
-  // Keep pressure and dot widths identical to the desktop's inert SVG renderer.
-  for(const point of stroke.points.slice(1)){ctx.lineWidth=stroke.width*(.45+.8*(previous.pressure+point.pressure)/2);ctx.beginPath();ctx.moveTo(previous.x*768,previous.y*1024);ctx.lineTo(point.x*768,point.y*1024);ctx.stroke();previous=point;}
- }
+ if(canvas.width!==width){canvas.width=width;canvas.height=Math.round(width*4/3);fullPaint=true;}
+ ctx.setTransform(canvas.width/768,0,0,canvas.height/1024,0,0);ctx.lineCap='round';ctx.lineJoin='round';
+ if(fullPaint){fullRepaints++;ctx.fillStyle='#ffffff';ctx.fillRect(0,0,768,1024);paintedPoints.clear();for(const stroke of page()?.strokes??[])drawStroke(stroke);}
+ else for(const stroke of dirtyStrokes)drawStroke(stroke,paintedPoints.get(stroke.id)??0);
+ fullPaint=false;dirtyStrokes.clear();
 }
 function updateActions(){const p=page(),index=current?.pages.findIndex(item=>item.id===p?.id)??0;
  $<HTMLButtonElement>('undo').disabled=switching||!p||!(undo.get(p.id)?.length);$<HTMLButtonElement>('redo').disabled=switching||!p||!(redo.get(p.id)?.length);
@@ -67,16 +83,26 @@ async function beginPair(ticket:string){if(pairing&&pairTicket===ticket)return;p
    $('pair-status').textContent='✓ 配对完成';error('');await refreshPicker();if(isCurrent())await refreshState(true);return;
   }throw new Error('等待确认已超时，请在电脑上重新打开配对入口。');
  }catch(reason){if(isCurrent()){$('pair-status').textContent=message(reason);$('pair-retry').hidden=false;}}finally{if(isCurrent())pairing=false;}}
-function finishStroke(){if(activePointer===undefined)return;const pointer=activePointer;activePointer=undefined;const p=page();if(p&&beforeStroke){const history=undo.get(p.id)??[];history.push(beforeStroke);undo.set(p.id,history.slice(-50));redo.delete(p.id);}try{canvas.releasePointerCapture(pointer);}catch{}activeStroke=undefined;beforeStroke=undefined;changed(true);updateActions();}
-function writePoint(event:PointerEvent){const p=page();if(!p)return;const point=normalizePoint(event.clientX,event.clientY,canvas.getBoundingClientRect(),event.pressure);
- if(tool==='eraser')p.strokes=p.strokes.filter(stroke=>!strokeNear(stroke,point,12));else if(activeStroke&&activeStroke.points.length<12000){const previous=activeStroke.points.at(-1);if(!previous||Math.hypot((point.x-previous.x)*768,(point.y-previous.y)*1024)>.4)activeStroke.points.push(point);}
- paint();if(Date.now()-lastInkSave>800){lastInkSave=Date.now();changed(true);}
+function finishStroke(){penInput.finish();}
+function writePoints(events:PointerEvent[]){const p=page();if(!p)return;const bounds=canvas.getBoundingClientRect();let modified=false;
+ for(const event of events){const point=normalizePoint(event.clientX,event.clientY,bounds,event.pressure,event.pointerType);
+  if(tool==='eraser'){const kept=p.strokes.filter(stroke=>!strokeNear(stroke,point,12));if(kept.length!==p.strokes.length){p.strokes=kept;modified=true;}}
+  else if(activeStroke&&activeStroke.points.length<12000){const previous=activeStroke.points.at(-1);if(!previous||Math.hypot((point.x-previous.x)*768,(point.y-previous.y)*1024)>.4){activeStroke.points.push(point);modified=true;}}
+ }
+ if(modified){requestPaint(tool==='pen'?activeStroke:undefined);changed();}
 }
-canvas.addEventListener('pointerdown',event=>{if(switching||!current||activePointer!==undefined||event.button>0||(event.pointerType==='touch'&&!$<HTMLInputElement>('finger-mode').checked))return;const p=page()!;if(tool==='pen'&&p.strokes.length>=1500){error('这一页笔画较多，请加一页继续书写。');return;}event.preventDefault();beforeStroke=clone(p.strokes);activePointer=event.pointerId;canvas.setPointerCapture(event.pointerId);if(tool==='pen'){activeStroke={id:newId(),color:$<HTMLSelectElement>('pen-color').value as InkStroke['color'],width:Number($<HTMLSelectElement>('pen-width').value),points:[normalizePoint(event.clientX,event.clientY,canvas.getBoundingClientRect(),event.pressure)]};p.strokes.push(activeStroke);}writePoint(event);});
-canvas.addEventListener('pointermove',event=>{if(event.pointerId!==activePointer)return;event.preventDefault();const points=typeof event.getCoalescedEvents==='function'?event.getCoalescedEvents():[event];for(const point of points.length?points:[event])writePoint(point);});
-canvas.addEventListener('pointerup',event=>{if(event.pointerId!==activePointer)return;writePoint(event);finishStroke();});canvas.addEventListener('pointercancel',event=>{if(event.pointerId===activePointer)finishStroke();});canvas.addEventListener('lostpointercapture',event=>{if(event.pointerId===activePointer)finishStroke();});
+const penInput=attachPenInput(canvas,{
+ allowFinger:()=>$<HTMLInputElement>('finger-mode').checked,
+ start(event){if(switching||!current)return false;const p=page()!;if(tool==='pen'&&p.strokes.length>=1500){error('这一页笔画较多，请加一页继续书写。');return false;}
+  beforeStroke=p.strokes.slice();
+  if(tool==='pen'){activeStroke={id:newId(),color:$<HTMLSelectElement>('pen-color').value as InkStroke['color'],width:Number($<HTMLSelectElement>('pen-width').value),points:[normalizePoint(event.clientX,event.clientY,canvas.getBoundingClientRect(),event.pressure,event.pointerType)]};p.strokes.push(activeStroke);requestPaint(activeStroke);changed();}
+  else writePoints([event]);return true;
+ },
+ move:writePoints,
+ finish(){const p=page();if(p&&beforeStroke){const history=undo.get(p.id)??[];history.push(beforeStroke);undo.set(p.id,history.slice(-50));redo.delete(p.id);}activeStroke=undefined;beforeStroke=undefined;changed();updateActions();}
+});
 for(const selected of ['pen','eraser'] as const)$(selected+'-tool').addEventListener('click',()=>{finishStroke();tool=selected;$('pen-tool').setAttribute('aria-pressed',String(tool==='pen'));$('eraser-tool').setAttribute('aria-pressed',String(tool==='eraser'));});
-for(const [button,from,to] of [['undo',undo,redo],['redo',redo,undo]] as const)$(button).addEventListener('click',()=>{finishStroke();const p=page();if(!p)return;const value=from.get(p.id)?.pop();if(!value)return;const history=to.get(p.id)??[];history.push(clone(p.strokes));to.set(p.id,history);p.strokes=value;changed(true);paint();updateActions();});
+for(const [button,from,to] of [['undo',undo,redo],['redo',redo,undo]] as const)$(button).addEventListener('click',()=>{finishStroke();const p=page();if(!p)return;const value=from.get(p.id)?.pop();if(!value)return;const history=to.get(p.id)??[];history.push(p.strokes.slice());to.set(p.id,history);p.strokes=value;changed(true);paint();updateActions();});
 for(const [button,direction] of [['prev-page',-1],['next-page',1]] as const)$(button).addEventListener('click',()=>{finishStroke();if(!current)return;const next=current.pages[current.pages.findIndex(p=>p.id===current!.pageId)+direction];if(next){current.pageId=next.id;changed(true);paint();updateActions();}});
 $('add-page').addEventListener('click',()=>{finishStroke();if(!current||current.pages.length>=12)return;const next=newPage();current.pages.push(next);current.pageId=next.id;changed(true);paint();updateActions();});
 $('draft-note').addEventListener('input',()=>{if(!current)return;current.note=$<HTMLTextAreaElement>('draft-note').value;changed();});
@@ -86,6 +112,7 @@ $('submit-ink').addEventListener('click',()=>void(async()=>{finishStroke();const
  try{const frozen=freezeSubmission(draft,undefined,$<HTMLSelectElement>('submit-range').value==='current'?'current':'all');draft.revision++;await persist(draft);updateActions();if(!auth||auth.workspaceId!==draft.workspaceId)throw new Error('原稿已保存，请连接原来的学习空间后再重试发送。');const receipt=await api<HandwritingReceipt>('/api/submit',frozen,auth.token);if(!acknowledgeSubmission(draft,receipt))throw new Error('电脑返回的记录不对应本次原稿，请保留原稿并重试。');draft.revision++;await persist(draft);}
  catch(reason){submitErrors.set(draft.key,message(reason));}finally{sending=undefined;updateActions();await refreshPicker();}})());
 $('download-draft').addEventListener('click',()=>{finishStroke();if(!current)return;const blob=new Blob([exportDraft(current)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`重登手写-${current.target.id.slice(0,12)}-${Date.now()}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);});
+$('download-pen-diagnostics').addEventListener('click',()=>{const report={format:'reclimb-pen-diagnostics',version:2,at:new Date().toISOString(),events:{...penInput.diagnostics},render:{frames:renderFrames,fullRepaints},screen:{width:innerWidth,height:innerHeight,pixelRatio:devicePixelRatio}};const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='重登书写诊断-'+Date.now()+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);});
 $('import-draft').addEventListener('change',()=>void(async()=>{const input=$<HTMLInputElement>('import-draft'),file=input.files?.[0],auth=credentials;input.value='';if(!file||!auth)return;if(file.size>MAX_IMPORT_BYTES){error('这份备份过大，请选择重登导出的原稿 JSON 文件。');return;}
  try{await switchDraft(async()=>{const draft=importDraft(await file.text(),auth.workspaceId);if(cache.has(draft.key)||await loadDraft(draft.key))throw new Error('本机已经有这份任务的草稿，未覆盖它。请在“本机保留的草稿”中切换查看。');await persist(current);await saveDraft(draft);return draft;});error('');$('submission-status').hidden=false;$('submission-status').classList.remove('error');$('submission-status').textContent='已恢复本机草稿；电脑保存状态需重新核对。待发送的原稿会保留原提交编号。';}catch(reason){error(message(reason));}
 })());

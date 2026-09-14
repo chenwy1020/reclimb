@@ -52,7 +52,7 @@ it('keeps pages out of the manifest and restores originals, frozen sources, help
  t.store.put('answerExposures',{id:'later-answer',projectId:'p',sessionId:'s',capabilityId:'p-c',taskId:'task',teachingVersionId:t.version.id,kind:'answer',text:'后来才查看的答案',createdAt:'2099-01-01T00:00:00.000Z'});
  writeBackup(t.store,t.archive);
  const zip=new AdmZip(t.archive),manifestText=zip.readAsText('manifest.json'),manifest=JSON.parse(manifestText);
- expect(manifest.version).toBe(8);expect(manifest.records.handwritings[0].pages).toBeUndefined();expect(manifestText).not.toContain('"points"');expect(manifest.handwritingFiles).toHaveLength(1);
+ expect(manifest.version).toBe(9);expect(manifest.records.handwritings[0].pages).toBeUndefined();expect(manifestText).not.toContain('"points"');expect(manifest.handwritingFiles).toHaveLength(1);
  expect(JSON.parse(zip.readAsText(manifest.handwritingFiles[0].entry))).toEqual(pages);
  expect(manifestText).not.toMatch(/pollToken|pairingTicket|Bearer|hasApiKey/);
  const destination=join(t.root,'restored');await prepareRestore(t.archive,destination);const restored=await LearningStore.open(destination);cleanups.push(()=>restored.close());
