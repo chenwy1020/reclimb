@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="referrer" content="no-referrer"><meta name="theme-color" content="#315942"><title>重登 · 手写草稿纸</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body>
+ <header class="masthead"><span class="brand" aria-hidden="true">△</span><div><strong>重登 · 手写草稿纸</strong><p>电脑读材料，在这里写下你的思考。</p></div><span id="connection-status" class="status" role="status">正在连接…</span></header>
+ <main>
+  <section id="pairing" class="card"><h1>连接电脑上的学习桌</h1><p>请让 iPad 与电脑连接同一局域网，在电脑上开启手写板并扫码。只有你在电脑确认后，才能发送作答。</p><form id="pair-form"><label for="pair-link">配对链接</label><div class="row"><input id="pair-link" type="url" autocomplete="off" placeholder="粘贴电脑上的配对链接"><button type="submit">使用配对链接</button></div></form><div id="pair-status" class="notice" role="status" hidden></div><button id="pair-retry" hidden>重新申请配对</button><p class="quiet">手写板通过当前局域网连接，请在可信网络中使用。这里不会自动调用 AI。</p></section>
+  <div id="global-error" class="notice error" role="alert" hidden></div>
+  <section id="target-offer" class="card notice" hidden><h2>电脑上准备了新的任务</h2><p id="offered-title"></p><p>采用后打开另一份草稿；当前笔迹仍保留在本机。</p><button id="adopt-target">采用这个任务</button></section>
+  <section id="waiting-target" class="card" hidden><h2>先在电脑上选择任务</h2><p>打开学习桌，点击“用 iPad 手写”。任务到达后，你可以在这里选择开始书写。</p><button id="refresh-state">重新查看电脑任务</button></section>
+  <section id="draft-picker-section" class="card compact" hidden><label for="draft-picker">本机保留的草稿</label><select id="draft-picker" aria-label="切换本机草稿"></select><button id="refresh-connection">重新连接电脑</button></section>
+  <section id="draft-recovery" class="card compact" hidden><label for="import-draft">导入原稿备份</label><input id="import-draft" type="file" accept=".json,application/json"><p class="quiet">电脑地址变化或更换浏览器后，可在配对同一学习空间后恢复下载的 JSON 原稿。同一份草稿已经存在时，不会覆盖它。</p></section>
+  <section id="workbench" hidden>
+   <section class="card task-card"><p id="project-title" class="eyebrow"></p><h1 id="task-title"></h1><details><summary>查看这次任务的原文</summary><div id="task-instruction" class="task-instruction"></div></details><p class="quiet">这份草稿始终关联这里显示的任务。电脑切换任务不会更改它。</p></section>
+   <div class="toolbar" role="group" aria-label="手写工具">
+    <button id="pen-tool" aria-pressed="true">笔</button><button id="eraser-tool" aria-pressed="false">橡皮</button><button id="undo" aria-label="撤销笔画">撤销</button><button id="redo" aria-label="重做笔画">重做</button>
+    <label>笔宽 <select id="pen-width" aria-label="笔宽"><option value="1.5">细</option><option value="2.5" selected>中</option><option value="4">粗</option></select></label>
+    <label>颜色 <select id="pen-color" aria-label="笔迹颜色"><option value="#253e31">墨绿</option><option value="#245b96">蓝色</option><option value="#a33e36">红色</option></select></label>
+    <label class="check"><input id="finger-mode" type="checkbox">手指书写</label>
+   </div>
+   <div class="page-controls"><button id="prev-page" aria-label="上一页草稿">上一页</button><span id="page-label"></span><button id="next-page" aria-label="下一页草稿">下一页</button><button id="add-page">加一页</button></div>
+   <p class="quiet ink-guide">默认用 Apple Pencil 书写，手指可以在纸张外滚动页面。橡皮擦除整条笔画，可撤销。</p>
+   <div class="paper-shell"><canvas id="ink-canvas" width="768" height="1024" aria-label="手写草稿画布" role="img">浏览器不支持画布，请更新 Safari 后再试。</canvas></div>
+   <section class="card submit-card"><label for="draft-note">补充说明或疑问（选填）</label><textarea id="draft-note" rows="3" maxlength="10000" placeholder="也可以在这里留下文字说明。"></textarea><p id="save-status" role="status">尚未书写</p><div class="row"><label for="submit-range">提交范围</label><select id="submit-range"><option value="all">全部页面</option><option value="current">当前页</option></select><button id="submit-ink" class="primary">提交这份手写</button><button id="download-draft">下载原稿备份</button><button id="retry-save" hidden>重试本机保存</button></div><div id="submission-status" class="notice" role="status" hidden></div><p class="quiet">提交会先冻结并保存一份原稿，再发送到电脑。本版保留笔迹，不自动识别、评分或调用 AI。提交后的继续书写不会改动已发送的原稿。</p></section>
+  </section>
+  <footer>草稿保存在这台 iPad 的当前浏览器中，请勿清除网站数据或使用无痕浏览。重要原稿可下载备份。页面已打开时，断网仍能书写；断网后重新打开网址尚不受支持。</footer>
+ </main>
+</body></html>

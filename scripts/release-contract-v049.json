@@ -1,0 +1,33 @@
+{
+  "version": "0.4.9",
+  "suiteTag": "v049",
+  "smokeScript": "smoke-v049.mjs",
+  "desktopReportName": "desktop-verification-v049.json",
+  "expectedChecks": 8,
+  "targetTests": [
+    "tests/handwriting-service.test.ts",
+    "tests/handwriting-server.test.ts",
+    "tests/handwriting-backup.test.ts",
+    "tests/companion-draft.test.ts",
+    "tests/companion-import.test.ts",
+    "tests/backup.test.ts",
+    "tests/backup-v2.test.ts",
+    "tests/backup-v4.test.ts",
+    "tests/backup-v5.test.ts",
+    "tests/backup-v6.test.ts",
+    "tests/readable-export.test.ts",
+    "tests/public-snapshot.test.ts",
+    "tests/evidence.test.ts",
+    "tests/budget.test.ts",
+    "tests/reliability-store.test.ts",
+    "tests/reliability-state.test.ts",
+    "tests/reliability-integration.test.ts",
+    "tests/renderer-reliability.test.ts",
+    "tests/workspace-recovery.test.ts",
+    "tests/model-profiles.test.ts",
+    "tests/model-profile-manager.test.ts",
+    "tests/test-profile.test.ts",
+    "tests/delivery-v049.test.ts",
+    "tests/handwriting-migration.test.ts"
+  ]
+}

@@ -18,6 +18,6 @@ describe('archive adoption',()=>{
    for(const collection of ['teachingVersions','taskReviews','disputes','corrections','answerExposures'])expect(store.list(collection as never)).toEqual([]);
   }finally{store.close();}
   const next=await LearningStore.open(dir);next.close();expect(readdirSync(join(dir,'upgrade-backups'))).toHaveLength(1);
-  const check=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(check.exec('PRAGMA user_version')[0].values[0][0]).toBe(7);check.close();
+  const check=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(check.exec('PRAGMA user_version')[0].values[0][0]).toBe(8);check.close();
  });
 });

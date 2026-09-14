@@ -3,6 +3,7 @@ import {LearningStore,normalizeSettings} from './store';import {safeMaterialFile
 import {teachingVersionSchema,taskReviewSchema,disputeSchema,correctionSchema,answerExposureSchema} from './reliability-record-schemas';
 import {teachingContentHash} from './verification-service';
 import {derivesFromDispute} from '../shared/reliability-state';
+import {handwritingTargetSchema,handwritingSubmissionSchema,handwritingSubmitSchema,inkPagesSchema} from '../shared/handwriting';
 const id=z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/),txt=z.string().max(200000),date=z.string().refine(v=>Number.isFinite(Date.parse(v)),'日期无效'),refs=z.array(id).max(100),bookRefs=z.array(id).max(100000);
 const project=z.object({id,title:txt,goal:txt,status:z.enum(['active','paused']),createdAt:date,updatedAt:date,trashedAt:date.optional(),statusBeforeTrash:z.enum(['active','paused']).optional(),routeSummary:txt.optional(),startingPoint:startingPointSchema.optional(),learningScope:learningScopeSchema.optional(),nearSteps:z.array(nearStepSchema).max(4).optional(),activeRouteVersionId:id.optional(),pendingRouteVersionId:id.optional(),learningPositionId:id.optional()});
 const capability=z.object({id,projectId:id,title:txt,description:txt,prerequisites:refs,sourceIds:refs,order:z.number().int(),archived:z.boolean().optional(),goalContext:txt.optional()});
@@ -34,7 +35,11 @@ const learningPosition=z.object({id,projectId:id,routeVersionId:id,unitId:id,ses
 const teachingObservation=z.object({id,projectId:id,unitId:id.optional(),sessionId:id, inputId:id.optional(),attemptId:id.optional(),evidenceId:id.optional(),taskId:id.optional(),teachingVersionId:id.optional(),kind:z.enum(['learner_work','learner_report','verified_performance','content_problem']),scope:txt,summary:txt,taskFamily:txt.optional(),demand:taskDemandSchema.optional(),helpLevel:z.number().int().min(0).max(4),certainty:z.enum(['verified','unverified','disputed']),outcome:z.enum(['met','partial','not_yet','uncertain']).optional(),progressionEligible:z.boolean().optional(),status:z.enum(['active','suspended']),createdAt:date});
 const understandingDraft=z.object({id,projectId:id,routeVersionId:id,unitId:id.optional(),version:z.number().int().positive(),phase:z.enum(['expand','synthesize']),title:txt,blocks:z.array(z.object({id,author:z.enum(['learner','ai','learner_edited_ai']),text:txt,sourceIds:refs,sourceInputIds:refs})).min(1).max(10000),status:z.enum(['working','superseded']),basedOnDraftId:id.optional(),createdAt:date});
 const readingLayout=z.object({id,projectId:id,materialId:id,fragmentId:id,pageNumber:z.number().int().positive().optional(),version:z.number().int().positive(),blocks:z.array(z.object({id,order:z.number().int().nonnegative(),kind:z.enum(['prose','source_image']),text:txt.optional(),region:region.optional(),reason:txt.optional(),source:z.enum(['extracted','confirmed_transcription','original_page']),transcriptionId:id.optional()})).max(10000),status:z.enum(['current','superseded']),createdAt:date});
-const entities={projects:project,capabilities:capability,materials:material,fragments:fragment,sessions:session.extend({teachingVersionId:id.optional()}),attempts:attempt.extend({teachingVersionId:id.optional()}),evidence:evidence.extend({teachingVersionId:id.optional()}),reviews:review,usage:usage.extend({entryType:z.enum(['call','hold']).optional()}),sourceTranscriptions:transcription.extend({origin:z.enum(['manual','machine']).optional()}),teachingVersions:teachingVersionSchema,taskReviews:taskReviewSchema,disputes:disputeSchema,corrections:correctionSchema,answerExposures:answerExposureSchema,routeVersions:routeVersion,learningUnits:learningUnit,learningPositions:learningPosition,teachingObservations:teachingObservation,understandingDrafts:understandingDraft,readingLayouts:readingLayout};
+const handwritingTarget=handwritingTargetSchema.extend({id,projectId:id,sessionId:id,taskId:id,stepId:id.optional(),teachingVersionId:id.optional()});
+const handwriting=handwritingSubmissionSchema.extend({id,projectId:id,sessionId:id,targetId:id});
+const entities={projects:project,capabilities:capability,materials:material,fragments:fragment,sessions:session.extend({teachingVersionId:id.optional()}),attempts:attempt.extend({teachingVersionId:id.optional()}),evidence:evidence.extend({teachingVersionId:id.optional()}),reviews:review,usage:usage.extend({entryType:z.enum(['call','hold']).optional()}),sourceTranscriptions:transcription.extend({origin:z.enum(['manual','machine']).optional()}),teachingVersions:teachingVersionSchema,taskReviews:taskReviewSchema,disputes:disputeSchema,corrections:correctionSchema,answerExposures:answerExposureSchema,routeVersions:routeVersion,learningUnits:learningUnit,learningPositions:learningPosition,teachingObservations:teachingObservation,understandingDrafts:understandingDraft,readingLayouts:readingLayout,handwritingTargets:handwritingTarget,handwritings:handwriting};
+const handwritingFileSchema=z.object({handwritingId:id,entry:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+const MAX_INK_BYTES=16*1024*1024;
 export function within(root:string,target:string):boolean{const rel=relative(resolve(root),resolve(target));return rel===''||(!rel.startsWith('..')&&!isAbsolute(rel));}
 const sha=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 export function writeBackup(store:LearningStore,target:string):void{
@@ -43,7 +48,13 @@ export function writeBackup(store:LearningStore,target:string):void{
  if(safeSettings.vision){const {hasApiKey:visionKey,...safeVision}=safeSettings.vision;safeSettings.vision=safeVision;}
  const files:{materialId:string;entry:string;sha256:string}[]=[];const zip=new AdmZip();
  for(const m of records.materials){if(!within(dataDirectory,m.storedPath)||!existsSync(m.storedPath))throw new Error('原始材料缺失或路径异常，无法生成完整备份：'+m.title);const bytes=readFileSync(m.storedPath);const entry='materials/'+m.id+'/'+basename(m.originalName).replace(/[^\p{L}\p{N}._ -]/gu,'_');zip.addFile(entry,bytes);files.push({materialId:m.id,entry,sha256:sha(bytes)});m.storedPath=entry;}
- zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:7,createdAt:new Date().toISOString(),records:{...records,settings:safeSettings},files},null,2),'utf8'));
+ const handwritingFiles:z.infer<typeof handwritingFileSchema>[]=[];
+ const handwritings=(records.handwritings??[]).map(record=>{
+  const {pages,...metadata}=handwriting.parse(record),entry='handwriting/'+metadata.id+'.json',bytes=Buffer.from(JSON.stringify(pages),'utf8');
+  if(bytes.length>MAX_INK_BYTES)throw new Error('手写原稿过大，无法生成完整备份');
+  zip.addFile(entry,bytes);handwritingFiles.push({handwritingId:metadata.id,entry,sha256:sha(bytes)});return metadata;
+ });
+ zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:8,createdAt:new Date().toISOString(),records:{...records,handwritingTargets:records.handwritingTargets??[],handwritings,settings:safeSettings},files,handwritingFiles},null,2),'utf8'));
  const tmp=target+'.partial';
  try{
   writeFileSync(tmp,zip.toBuffer());
@@ -63,8 +74,24 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  const manifest=zip.getEntry('manifest.json');if(!manifest||manifest.header.size>30*1024*1024)throw new Error('备份清单缺失或过大');
  let raw:any;try{raw=JSON.parse(zip.readAsText(manifest));}catch{throw new Error('备份清单无法解析');}
  if(raw?.format!=='reclimb.backup'||!raw.records)throw new Error('这不是受支持的重登备份文件');
- if(typeof raw.version==='number'&&raw.version>7)throw new Error('此备份由更新版本创建，请先升级应用。');
- if(![1,2,3,4,5,6,7].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
+ if(typeof raw.version==='number'&&raw.version>8)throw new Error('此备份由更新版本创建，请先升级应用。');
+ if(![1,2,3,4,5,6,7,8].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
+ if(raw.version<8){raw.records.handwritingTargets=[];raw.records.handwritings=[];}
+ else{
+  // Large vector pages stay outside the manifest. Validate paths, lengths and hashes before parsing ink.
+  const metadata=z.array(handwriting.omit({pages:true})).max(100000).parse(raw.records.handwritings),inkFiles=z.array(handwritingFileSchema).max(100000).parse(raw.handwritingFiles);
+  const originals=new Map<string,unknown>(),metadataIds=new Set(metadata.map(record=>record.id));
+  for(const file of inkFiles){
+   if(!metadataIds.has(file.handwritingId)||originals.has(file.handwritingId)||file.entry!=='handwriting/'+file.handwritingId+'.json')throw new Error('手写原稿清单关联或路径无效');
+   const entry=zip.getEntry(file.entry);if(!entry||entry.header.size>MAX_INK_BYTES)throw new Error('手写原稿缺失或过大');
+   const bytes=entry.getData();if(bytes.length>MAX_INK_BYTES||sha(bytes)!==file.sha256)throw new Error('手写原稿校验失败，未更改现有档案');
+   let pages:unknown;try{pages=JSON.parse(bytes.toString('utf8'));}catch{throw new Error('手写原稿无法解析');}
+   originals.set(file.handwritingId,inkPagesSchema.parse(pages));
+  }
+  if(originals.size!==metadata.length)throw new Error('备份未包含全部手写原稿');
+  if(entries.some(entry=>entry.entryName.startsWith('handwriting/')&&!entry.isDirectory&&!inkFiles.some(file=>file.entry===entry.entryName)))throw new Error('备份包含未关联的手写原稿');
+  raw.records.handwritings=metadata.map(record=>({...record,pages:originals.get(record.id)}));
+ }
  const records:any={};
  const introduced:Record<string,number>={sourceTranscriptions:2,teachingVersions:3,taskReviews:3,disputes:3,corrections:3,answerExposures:3,routeVersions:5,learningUnits:5,learningPositions:5,teachingObservations:5,understandingDrafts:5,readingLayouts:5};
  for(const [key,schema] of Object.entries(entities)){records[key]=z.array(schema).max(100000).parse(raw.version<(introduced[key]??1)?raw.records[key]??[]:raw.records[key]);const ids=new Set<string>();for(const r of records[key]){if(ids.has(r.id))throw new Error('备份包含重复记录');ids.add(r.id);}}
@@ -198,6 +225,43 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  for(const d of records.disputes){const v=match('teachingVersions',d.teachingVersionId,d.projectId),s=match('sessions',d.sessionId,d.projectId);if(v.taskId!==d.taskId||v.contentHash!==d.contentHash||s.capabilityId!==v.capabilityId)throw new Error('质疑没有绑定原任务版本');if(d.replacementVersionId){const replacement=match('teachingVersions',d.replacementVersionId,d.projectId);if(replacement.replacesVersionId!==v.id)throw new Error('议题修订版本未派生自原题');}if(d.reviewId){const r=match('taskReviews',d.reviewId,d.projectId);if(r.teachingVersionId!==v.id&&r.teachingVersionId!==d.replacementVersionId)throw new Error('争议核验版本不一致');}}
  for(const c of records.corrections){const v=match('teachingVersions',c.teachingVersionId,c.projectId);if(c.evidenceId){const e=match('evidence',c.evidenceId,c.projectId);if(e.taskId&&e.taskId!==v.taskId)throw new Error('纠正未关联原任务评价');}if(c.disputeId){const d=match('disputes',c.disputeId,c.projectId);if(d.teachingVersionId!==v.id)throw new Error('纠正与质疑版本不一致');}if(c.reviewId){const r=match('taskReviews',c.reviewId,c.projectId);let reviewed=match('teachingVersions',r.teachingVersionId,c.projectId);const visited=new Set<string>();while(reviewed.id!==v.id&&reviewed.replacesVersionId&&!visited.has(reviewed.id)){visited.add(reviewed.id);reviewed=match('teachingVersions',reviewed.replacesVersionId,c.projectId);}if(reviewed.id!==v.id)throw new Error('纠正核验没有关联原题或其修订版本');}if(c.replacementVersionId){const replacement=match('teachingVersions',c.replacementVersionId,c.projectId);if(replacement.replacesVersionId!==v.id)throw new Error('纠正的替代版本未派生自原题');}}
  for(const e of records.answerExposures){const s=match('sessions',e.sessionId,e.projectId);match('capabilities',e.capabilityId,e.projectId);if(s.capabilityId!==e.capabilityId)throw new Error('答案暴露与能力关联不一致');if(e.teachingVersionId){const v=match('teachingVersions',e.teachingVersionId,e.projectId);if(v.taskId!==e.taskId||v.capabilityId!==e.capabilityId)throw new Error('答案暴露与教学版本关联不一致');}}
+ for(const target of records.handwritingTargets){
+  const s=match('sessions',target.sessionId,target.projectId);
+  const version=target.teachingVersionId?match('teachingVersions',target.teachingVersionId,target.projectId):undefined;
+  if(version&&(version.taskId!==target.taskId||version.capabilityId!==s.capabilityId))throw new Error('手写任务与冻结教学版本关联不一致');
+  const sessionSteps=s.teaching?[s.teaching.current,...s.teaching.history,...s.teaching.upcoming,...(s.teaching.returnStep?[s.teaching.returnStep]:[]),...(s.teaching.returnUpcoming??[])]:[];
+  const step=target.stepId?[...(version?.steps??[]),...sessionSteps,...s.messages.map((m:any)=>m.stepSnapshot).filter(Boolean)].find((step:any)=>step.id===target.stepId&&step.taskId===target.taskId):undefined;
+  if(version&&target.stepId&&!step)throw new Error('手写任务与原教学步骤关联不一致');
+  const activities=[version?.activity,step?.activity,s.activity,...sessionSteps.map((step:any)=>step.activity),...s.messages.map((m:any)=>m.activitySnapshot),...records.attempts.filter((a:any)=>a.sessionId===s.id).map((a:any)=>a.activitySnapshot)].filter(Boolean);
+  const activity=activities.find((activity:any)=>(activity.id??s.id)===target.taskId);
+  if(version&&!activity)throw new Error('手写原稿没有可核对的原任务');
+  if(activity?.teachingVersionId&&activity.teachingVersionId!==target.teachingVersionId)throw new Error('手写任务丢失或改绑了原教学版本');
+  // Legacy tasks may have advanced without leaving a version or historical activity.
+  // In that case the immutable public target is the original snapshot; never infer it from the new task.
+  // Restoring this snapshot does not verify the exercise or assess the learner's ink.
+  if(activity&&(!target.stepId||step)){
+   const instruction=[step?.content,activity.instruction].filter((text,index,all)=>text&&all.indexOf(text)===index).join('\n\n');
+   if(target.title!==(step?.title??activity.title)||target.instruction!==instruction||JSON.stringify(target.sourceIds)!==JSON.stringify(activity.sourceIds)||JSON.stringify(target.sourceVersions??[])!==JSON.stringify(activity.sourceVersions??[]))throw new Error('手写任务未保留原题目内容或来源版本');
+  }
+  for(const key of target.sourceIds)match('fragments',key,target.projectId);
+  for(const source of target.sourceVersions??[]){
+   if(!target.sourceIds.includes(source.fragmentId))throw new Error('手写任务来源版本不属于原题引用');
+   for(const key of source.transcriptionIds){const t=match('sourceTranscriptions',key,target.projectId);if(t.fragmentId!==source.fragmentId||t.status!=='confirmed')throw new Error('手写任务来源转写版本关联不一致');}
+  }
+ }
+ const handwritingRequests=new Set<string>();
+ for(const original of records.handwritings){
+  const target=match('handwritingTargets',original.targetId,original.projectId),s=match('sessions',original.sessionId,original.projectId);
+  if(target.sessionId!==original.sessionId||Date.parse(original.submittedAt)<Date.parse(target.createdAt))throw new Error('手写原稿与发起时的会话或时间关联不一致');
+  if(handwritingRequests.has(original.requestId))throw new Error('手写原稿包含重复提交编号');handwritingRequests.add(original.requestId);
+  const request=handwritingSubmitSchema.parse({requestId:original.requestId,targetId:original.targetId,pages:original.pages,note:original.note});
+  if(sha(Buffer.from(JSON.stringify(request),'utf8'))!==original.contentHash)throw new Error('手写原稿内容或提交关联校验失败');
+  if(!original.pages.some((page:any)=>page.strokes.length)&&!original.note.trim())throw new Error('手写原稿没有笔迹或文字');
+  let minimumHelp=target.helpLevel;
+  for(const event of s.helpEvents)if((event.taskId??target.taskId)===target.taskId&&Date.parse(event.createdAt)<=Date.parse(original.submittedAt))minimumHelp=Math.max(minimumHelp,event.level);
+  if(records.answerExposures.some((exposure:any)=>exposure.sessionId===s.id&&exposure.taskId===target.taskId&&Date.parse(exposure.createdAt)<=Date.parse(original.submittedAt)))minimumHelp=4;
+  if(original.helpLevel<minimumHelp)throw new Error('手写原稿丢失了提交时的帮助条件');
+ }
  if(!Array.isArray(raw.files))throw new Error('备份原件清单无效');
  for(const f of raw.files){if(!maps.materials.has(f.materialId)||typeof f.entry!=='string'||!f.entry.startsWith('materials/'+f.materialId+'/')||files.has(f.materialId))throw new Error('备份原件关联无效');const entry=zip.getEntry(f.entry);if(!entry||entry.header.size>50*1024*1024)throw new Error('备份原件缺失或过大');const bytes=entry.getData();if(sha(bytes)!==f.sha256)throw new Error('备份原件校验失败，未更改现有档案');files.set(f.materialId,{name:safeMaterialFilename(basename(f.entry)),bytes});}
  if(files.size!==records.materials.length)throw new Error('备份未包含全部材料原件');
@@ -209,5 +273,5 @@ export async function prepareRestore(file:string,stagingDirectory:string,wasmPat
  mkdirSync(stagingDirectory,{recursive:true});
  for(const m of records.materials){const f=files.get(m.id)!;const folder=join(stagingDirectory,'materials',m.id);mkdirSync(folder,{recursive:true});m.storedPath=join(folder,f.name);writeFileSync(m.storedPath,f.bytes);}
  const store=await LearningStore.open(stagingDirectory,wasmPath);
- try{store.transaction(()=>{for(const collection of Object.keys(entities) as Collection[])for(const entity of records[collection])store.put(collection,entity as any);store.updateSettings(records.settings);});}finally{store.close();}
+ try{store.transaction(()=>{for(const collection of Object.keys(entities) as Collection[])for(const entity of records[collection]??[])store.put(collection,entity as any);store.updateSettings(records.settings);});}finally{store.close();}
 }
