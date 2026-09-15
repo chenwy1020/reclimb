@@ -5,12 +5,14 @@ import type {RecordedInputReceipt,Session,SessionMessage,WorkspaceSnapshot} from
 import {Button,timeLabel,type Run} from './ui';
 import {RichText} from './RichText';
 import {InputRecord} from './InputRecord';
+import {FollowupBox} from './FollowupBox';
+import type {RecordLocalInput} from './InputStatus';
 import {AssessmentView} from './EvidencePage';
 import {EvidenceCorrection} from './Reliability';
 import {responseAvailability} from './InputStatus';
 import './handwriting-feedback.css';
 
-export function HandwritingFeedback({record,session,snapshot,busy,run,onSettings,onSource}:{record:HandwritingSubmission;session:Session;snapshot:WorkspaceSnapshot;busy:boolean;run:Run;onSettings:()=>void;onSource:(id:string)=>void}){
+export function HandwritingFeedback({record,session,snapshot,busy,run,onSettings,onSource,onRecord}:{record:HandwritingSubmission;session:Session;snapshot:WorkspaceSnapshot;busy:boolean;run:Run;onSettings:()=>void;onSource:(id:string)=>void;onRecord:RecordLocalInput}){
  const [versions,setVersions]=useState<HandwritingTranscription[]>([]),[messages,setMessages]=useState<SessionMessage[]>([]);
  const [text,setText]=useState(''),[parentId,setParentId]=useState<string>(),[unresolved,setUnresolved]=useState(true),[checked,setChecked]=useState(false);
  const [loading,setLoading]=useState(true),[recording,setRecording]=useState(false),[working,setWorking]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState('');
@@ -31,6 +33,7 @@ export function HandwritingFeedback({record,session,snapshot,busy,run,onSettings
  useEffect(()=>{if(!editGeneration.current)return;const value={text,parentId,unresolved};draftToSave.current=value;draftTimer.current=setTimeout(()=>void saveDraft(value).catch(()=>{}),150);return()=>{if(draftTimer.current)clearTimeout(draftTimer.current)}},[text,parentId,unresolved]);
  useEffect(()=>registerLocalDraftFlush(async()=>{if(draftTimer.current)clearTimeout(draftTimer.current);while(draftToSave.current)await saveDraft(draftToSave.current);await draftSave.current}),[record.id]);
  useEffect(()=>{const timer=setInterval(()=>{if(alive.current)void load().catch(e=>{if(alive.current)setError(e.message)})},2500);return()=>clearInterval(timer)},[record.id]);
+ useEffect(()=>{if(alive.current)void load().catch(e=>{if(alive.current)setError(e.message)})},[session.messages]);
  async function recognize(){
   if(lock.current)return;lock.current=true;setWorking('recognize');setError('');const edit=editGeneration.current;
   try{const result=await window.learning.request<HandwritingTranscription>('handwriting.recognize',{handwritingId:record.id,requestId:recognitionId.current});
@@ -55,7 +58,10 @@ export function HandwritingFeedback({record,session,snapshot,busy,run,onSettings
  }
  async function settings(){try{await flushAdditionalLocalDrafts();onSettings()}catch(e){setError('核对草稿尚未保存：'+(e as Error).message)}}
  const savedMatching=versions.some(v=>v.status==='confirmed'&&v.text===text&&v.unresolved===unresolved);
- const effectiveSession={...session,messages},inputs=messages.filter(m=>m.role==='user'&&m.inputId);
+ const effectiveSession={...session,messages},inputs=messages.filter(m=>m.role==='user'&&m.inputId&&!m.followup);
+ const followupSnapshot={...snapshot,sessions:snapshot.sessions.map(item=>item.id===session.id?effectiveSession:item)};
+ const recordFollowup:RecordLocalInput=async(id,input)=>{await flushAdditionalLocalDrafts();const result=await onRecord(id,input);if(alive.current)await load();return result;};
+ const followup=(reply:SessionMessage)=><FollowupBox sessionId={session.id} anchor={{kind:'message',id:reply.id}} title={reply.text.slice(0,70)} snapshot={followupSnapshot} busy={busy||!!working} onRecord={recordFollowup} onRespond={async(_id,inputId)=>respond(inputId)} onSettings={()=>void settings()} onSource={onSource} allowExample/>;
  return <section className="handwriting-feedback" aria-label="手写识别与反馈">
   <h3>让这份推导进入学习</h3><p>先识别原稿，再核对文字与公式，最后按当时的题目回应。确认转写不等于证明推理正确。</p>
   <div className="handwriting-controls"><Button disabled={!!working||busy||!vision?.enabled||!vision.hasApiKey||loading} onClick={()=>void recognize()}>{working==='recognize'?'正在识别原稿…':versions.some(v=>v.status==='machine')?'再次识别（新版本，计费）':'识别这份原稿（计费）'}</Button>{(!vision?.enabled||!vision.hasApiKey)&&<Button onClick={()=>void settings()}>配置视觉服务</Button>}</div>
@@ -70,7 +76,7 @@ export function HandwritingFeedback({record,session,snapshot,busy,run,onSettings
    <Button variant="primary" disabled={!text.trim()||!checked||recording||loading||savedMatching} onClick={()=>void confirm()}>{recording?'正在本地保存…':savedMatching?'这份文字已保存，可在下方获取回应':'保存确认文本并获取反馈'}</Button>
    {availability&&<p className="quiet-note">{availability}</p>}
    <p className="quiet-note">原始笔迹与识别版本分别保留。这里的反馈不会切换当前任务或替换作答框草稿。</p>
-   {inputs.length>0&&<div className="handwriting-replies"><h4>这份原稿的已保存表达与回应</h4>{inputs.map(m=><div key={m.id}><InputRecord message={m} session={effectiveSession} snapshot={snapshot} busy={busy||!!working} onRespond={async(_sessionId,inputId)=>respond(inputId)} onSettings={()=>void settings()} onSource={onSource}/>{snapshot.evidence.filter(e=>e.attemptId===m.attemptId).map(e=><EvidenceCorrection key={e.id} snapshot={snapshot} evidence={e}/>)}{snapshot.attempts.filter(a=>a.id===m.attemptId&&a.assessment).map(a=><details key={a.id}><summary>查看本次评价依据与限制</summary><AssessmentView assessment={a.assessment!} snapshot={snapshot} onSource={onSource}/></details>)}</div>)}</div>}
+   {inputs.length>0&&<div className="handwriting-replies"><h4>这份原稿的已保存表达与回应</h4>{inputs.map(m=><div key={m.id}><InputRecord message={m} session={effectiveSession} snapshot={snapshot} busy={busy||!!working} onRespond={async(_sessionId,inputId)=>respond(inputId)} onSettings={()=>void settings()} onSource={onSource} renderFollowup={followup}/>{snapshot.evidence.filter(e=>e.attemptId===m.attemptId).map(e=><EvidenceCorrection key={e.id} snapshot={snapshot} evidence={e}/>)}{snapshot.attempts.filter(a=>a.id===m.attemptId&&a.assessment).map(a=><details key={a.id}><summary>查看本次评价依据与限制</summary><AssessmentView assessment={a.assessment!} snapshot={snapshot} onSource={onSource}/></details>)}</div>)}</div>}
   </>}
  </section>;
 }

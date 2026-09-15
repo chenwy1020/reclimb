@@ -6,7 +6,7 @@ export const RESTORE_JOURNAL_FILENAME='restore-journal.json';
 export interface RestoreExpectedPaths {workspace:string;teachingCredential:string;visionCredential:string}
 interface CredentialMove {active:string;detached:string}
 export interface RestoreJournalRecord {
- version:1;operationId:string;phase:'rollback'|'commit';workspace:string;stage:string;previous:string;
+ version:1;credentialMode?:'preserve-local';operationId:string;phase:'rollback'|'commit';workspace:string;stage:string;previous:string;
  credentials:{teaching:CredentialMove;vision:CredentialMove};
 }
 export interface RestoreRecovery {recovered:boolean;phase?:RestoreJournalRecord['phase'];failedWorkspace?:string}
@@ -26,6 +26,7 @@ export function createRestoreJournalRecord(root:string,paths:RestoreExpectedPath
 
 function validateRecord(root:string,value:unknown,expected:RestoreExpectedPaths):RestoreJournalRecord{
  if(!value||typeof value!=='object')throw new Error('恢复日志格式无效，未改动任何文件。');const record=value as RestoreJournalRecord;
+ if(record.credentialMode!==undefined&&record.credentialMode!=='preserve-local')throw new Error('恢复凭据模式无效。');
  if(record.version!==1||!OPERATION_ID.test(record.operationId)||!['rollback','commit'].includes(record.phase)||!record.credentials?.teaching||!record.credentials?.vision)throw new Error('恢复日志格式无效，未改动任何文件。');
  const paths=[record.workspace,record.stage,record.previous,record.credentials.teaching.active,record.credentials.teaching.detached,record.credentials.vision.active,record.credentials.vision.detached];
  if(paths.some(path=>typeof path!=='string'||!isAbsolute(path)||!inside(root,path)))throw new Error('恢复日志包含数据目录以外的路径，未改动任何文件。');
@@ -56,7 +57,8 @@ export function recoverInterruptedRestore(root:string,expected:RestoreExpectedPa
  const removeJournal=options.removeJournal??unlinkSync;
  requireFile(file,'恢复日志');if(lstatSync(file).size>65536)throw new Error('恢复日志过大或已经损坏，未改动任何文件。');
  let parsed:unknown;try{parsed=JSON.parse(readFileSync(file,'utf8'));}catch{throw new Error('恢复日志无法读取，未改动任何文件。');}
- const record=validateRecord(base,parsed,expected),moves=[record.credentials.teaching,record.credentials.vision];
+ const record=validateRecord(base,parsed,expected),moves=record.credentialMode==='preserve-local'?[]:[record.credentials.teaching,record.credentials.vision];
+ if(record.credentialMode==='preserve-local'&&[record.credentials.teaching,record.credentials.vision].some(item=>existsSync(item.detached)))throw new Error('保留本机凭据的恢复出现意外分离文件，已停止。');
  requireDirectory(record.workspace,'当前工作区');requireDirectory(record.previous,'恢复前工作区');requireDirectory(record.stage,'暂存工作区');for(const item of moves){requireFile(item.active,'当前凭据');requireFile(item.detached,'分离凭据');}
  if(record.phase==='commit'){
   if(!existsSync(record.workspace)||!existsSync(record.previous)||existsSync(record.stage))throw new Error('已提交的恢复工作区状态不完整，未删除任何凭据文件。');

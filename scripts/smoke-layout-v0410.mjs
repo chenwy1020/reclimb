@@ -1,5 +1,6 @@
 // Focused desktop handwriting layout regression. Only built-in fixtures and loopback transport.
 import {_electron as electron} from 'playwright';
+import {applyDesktopTestWindow,navigateDesktop} from './desktop-navigation.mjs';
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
@@ -42,6 +43,7 @@ async function checkLayout(name){
 try{
  app=await electron.launch({executablePath:executable||require('electron'),args:executable?[]:['.'],cwd:root,env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>key!=='ELECTRON_RUN_AS_NODE')),RECLIMB_DATA_DIR:dataDirectory,RECLIMB_DEV_URL:''},timeout:45000});
  page=await app.firstWindow();page.setDefaultTimeout(20000);page.on('pageerror',error=>rendererErrors.push(error.message));
+ await applyDesktopTestWindow(app,page);
  page.on('request',request=>{if(/^https?:/.test(request.url()))externalRequests.push(new URL(request.url()).origin);});
  await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();await api('sample.seed');await page.reload();
  await page.getByRole('button',{name:'继续上次学习',exact:true}).click();await page.getByLabel('当前学习项目').selectOption('sample-reasoning');
@@ -54,14 +56,14 @@ try{
  for(let i=0;i<3;i++)await json('/api/submit',{requestId:'layout-ink-'+i,targetId:target.id,pages:[{id:'layout-page-'+i,width:768,height:1024,strokes:[{id:'layout-stroke-'+i,color:'#253e31',width:3,points:[{x:.2,y:.2,pressure:.6},{x:.3,y:.4,pressure:.7}]}]}],note:'原创手写布局检查 '+i},approved.token);
  await page.getByRole('button',{name:'查看原稿',exact:true}).nth(2).waitFor();
  for(const mode of ['浅色','深色']){
-  await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('button',{name:mode,exact:true}).click();
-  await page.getByRole('button',{name:'学习桌',exact:true}).click();await openPanel();
+  await navigateDesktop(page,'设置');await page.getByRole('button',{name:mode,exact:true}).click();
+  await navigateDesktop(page,'学习桌');await openPanel();
   for(const width of [1540,1180,1040]){await app.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,900),width);await page.waitForFunction(width=>innerWidth<=width,width);await checkLayout((mode==='浅色'?'light':'dark')+'-'+width);}
  }
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1180,900));
- await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByLabel('材料区比例',{exact:true}).focus();await page.keyboard.press('End');
+ await navigateDesktop(page,'设置');await page.getByLabel('材料区比例',{exact:true}).focus();await page.keyboard.press('End');
  assert.equal(await page.getByLabel('材料区比例',{exact:true}).inputValue(),'65');
- await page.getByRole('button',{name:'学习桌',exact:true}).click();await openPanel();await checkLayout('dark-narrow-learning-column');
+ await navigateDesktop(page,'学习桌');await openPanel();await checkLayout('dark-narrow-learning-column');
  // The previous screenshot's second button border was a keyboard-focus indicator; keep it.
  const focusButton=page.getByRole('button',{name:'查看原稿',exact:true}).first();await focusButton.scrollIntoViewIfNeeded();await page.keyboard.press('Tab');await focusButton.focus();
  const focus=await focusButton.evaluate(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect(),p=el.closest('.handwriting-panel').getBoundingClientRect();return {focused:el===document.activeElement,visible:el.matches(':focus-visible'),outline:parseFloat(s.outlineWidth),outlineOffset:parseFloat(s.outlineOffset),inset:Math.min(r.left-p.left,p.right-r.right,r.top-p.top,p.bottom-r.bottom)};});

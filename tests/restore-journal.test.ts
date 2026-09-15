@@ -28,6 +28,18 @@ function fixture(){
 function put(path:string,value:string){mkdirSync(path.substring(0,path.lastIndexOf('\\'))||path.substring(0,path.lastIndexOf('/')),{recursive:true});writeFileSync(path,value,'utf8');}
 
 describe('restore journal',()=>{
+  for(const phase of ['commit','rollback'] as const)it('preserves local credentials in sync '+phase,()=>{
+    const {root,record,expected,previous,stage}=fixture();
+    mkdirSync(record.workspace,{recursive:true});mkdirSync(previous,{recursive:true});
+    writeFileSync(join(record.workspace,'marker'),'remote');writeFileSync(join(previous,'marker'),'local');
+    writeFileSync(expected.teachingCredential,'protected-local-key');writeFileSync(expected.visionCredential,'protected-vision-key');
+    writeRestoreJournal(root,{...record,credentialMode:'preserve-local',phase});
+    const recovery=recoverInterruptedRestore(root,expected);
+    expect(recovery.phase).toBe(phase);expect(readFileSync(expected.teachingCredential,'utf8')).toBe('protected-local-key');
+    expect(readFileSync(expected.visionCredential,'utf8')).toBe('protected-vision-key');
+    expect(readFileSync(join(record.workspace,'marker'),'utf8')).toBe(phase==='commit'?'remote':'local');
+    if(phase==='rollback')expect(readFileSync(join(stage,'marker'),'utf8')).toBe('remote');
+  });
   it('creates predictable detached credential paths and writes the journal atomically',()=>{
     const {root,record,journal}=fixture();
     expect(record.credentials.teaching.detached).toBe(join(root,'restore-teaching-credential-operation-1.detached'));

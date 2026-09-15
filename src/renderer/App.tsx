@@ -25,7 +25,8 @@ export default function App(){
 const sidebar=useSidebar();
 const[snapshot,setSnapshot]=useState<WorkspaceSnapshot|null>(null);const[page,setPage]=useState<Page>('home');const[projectId,setProjectId]=useState('');const[sessionId,setSessionId]=useState('');const[busy,setBusy]=useState('');const[error,setError]=useState('');const[notice,setNotice]=useState('');const[modal,setModal]=useState<Modal>(null);const[sourceId,setSourceId]=useState<string|null>(null);const[deleteOpen,setDeleteOpen]=useState(false);
 const draftTimer=useRef<ReturnType<typeof setTimeout>|null>(null);const[restoreVersion,setRestoreVersion]=useState(0);const[draftStatus,setDraftStatus]=useState('');const[draft,setDraft]=useState('');const operationLock=useRef(false);const pendingRecords=useRef(new Set<Promise<RecordedInputReceipt|undefined>>());
-const refresh=useCallback(async()=>{const next=await window.learning.request<WorkspaceSnapshot>('workspace.snapshot');setSnapshot(next);return next},[]);
+const workspaceEpoch=useRef(0);
+const refresh=useCallback(async()=>{const epoch=workspaceEpoch.current;const next=await window.learning.request<WorkspaceSnapshot>('workspace.snapshot');if(epoch!==workspaceEpoch.current)throw new Error('档案已经切换，旧的读取结果未采用。');setSnapshot(next);return next},[]);
 useEffect(()=>{if(!window.learning){setError('桌面连接未就绪，请通过“重登”应用打开此页面。');return}void refresh().catch(e=>setError(String(e.message||e)))},[refresh]);
 useEffect(()=>{if(notice){const t=setTimeout(()=>setNotice(''),6500);return()=>clearTimeout(t)}},[notice]);
 useEffect(()=>{if(!snapshot)return;const projects=visibleProjects(snapshot.projects);if(!projects.some(p=>p.id===projectId))setProjectId(projects[0]?.id||'');if(sessionId&&!snapshot.sessions.some(s=>s.id===sessionId&&projects.some(project=>project.id===s.projectId)))setSessionId('')},[snapshot,projectId,sessionId]);
@@ -34,7 +35,20 @@ const[drafts]=useState(()=>createDraftStore(async captured=>{
  setSnapshot(current=>current?{...current,sessions:current.sessions.map(s=>s.id===captured.id?{...s,taskDrafts:captured.taskId?{...s.taskDrafts,[captured.taskId]:captured.text}:s.taskDrafts,...(!captured.taskId||captured.taskId===(s.teaching?.current.taskId||s.activity.id||s.id)?{draft:captured.text}:{})}:s)}:current);
 }));
 const flushDraft=useCallback(async()=>{if(draftTimer.current)clearTimeout(draftTimer.current);if(drafts.hasDirty())setDraftStatus('正在保存…');try{await drafts.flush();setDraftStatus('已保存到本机')}catch(e){setDraftStatus('保存失败，请重试');throw e}},[drafts]);
-const run:Run=useCallback(async(action,payload,success)=>{if(operationLock.current)return null;operationLock.current=true;setBusy(action);setError('');setNotice('');try{await flushDraft();const result=await window.learning.request<WorkspaceSnapshot|{message:string;restored?:boolean}>(action,payload);const next=isSnapshot(result)?result:await refresh();setSnapshot(next);if(action==='backup.restore'&&!isSnapshot(result)&&result.restored===true){drafts.clear();setSessionId('');setProjectId(visibleProjects(next.projects)[0]?.id||'');setSourceId(null);setRestoreVersion(v=>v+1)}if(success)setNotice(success);else if(!isSnapshot(result)&&result?.message)setNotice(result.message);return next}catch(e){if(action!=='session.respondInput')setError(String((e as Error).message||e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/,''));try{await refresh()}catch{}return null}finally{operationLock.current=false;setBusy('')}},[flushDraft,refresh]);
+const run:Run=useCallback(async(action,payload,success)=>{
+ if(operationLock.current)return null;operationLock.current=true;setBusy(action);setError('');setNotice('');
+ try{
+  await flushDraft();if(action.startsWith('sync.')||action==='backup.restore'){await flushAdditionalLocalDrafts();await Promise.all([...pendingRecords.current]);}
+  const result=await window.learning.request<WorkspaceSnapshot|{message:string;restored?:boolean}>(action,payload);
+  const restored=(action==='backup.restore'||action==='sync.adopt')&&!isSnapshot(result)&&result.restored===true;
+  // The workspace has committed. Discard old bindings before any fallible refresh.
+  if(restored){workspaceEpoch.current++;if(draftTimer.current)clearTimeout(draftTimer.current);drafts.clear();setDraft('');setDraftStatus('');setSessionId('');setProjectId('');setSourceId(null);setModal(null);setDeleteOpen(false);setSnapshot(null);setRestoreVersion(v=>v+1);}
+  const next=isSnapshot(result)?result:await refresh();setSnapshot(next);
+  if(restored)setProjectId(visibleProjects(next.projects)[0]?.id||'');
+  if(success)setNotice(success);else if(!isSnapshot(result)&&result?.message)setNotice(result.message);return next;
+ }catch(e){if(action!=='session.respondInput')setError(String((e as Error).message||e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/,''));try{await refresh()}catch{}return null}
+ finally{operationLock.current=false;setBusy('')}
+},[flushDraft,refresh]);
 useEffect(()=>{if(!modal&&!sourceId&&!deleteOpen)return;const timer=setTimeout(()=>document.querySelector<HTMLElement>('.modal input:not([disabled]),.modal textarea:not([disabled]),.modal button:not([disabled])')?.focus(),0);const onKey=(event:KeyboardEvent)=>{if(event.key==='Escape'&&!operationLock.current){setModal(null);setSourceId(null);setDeleteOpen(false)}if(event.key==='Tab'){const items=[...document.querySelectorAll<HTMLElement>('.modal button:not([disabled]),.modal input:not([disabled]),.modal textarea:not([disabled]),.modal select:not([disabled]),.modal summary')].filter(el=>el.offsetParent!==null);if(!items.length)return;const first=items[0],last=items[items.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}};window.addEventListener('keydown',onKey);return()=>{clearTimeout(timer);window.removeEventListener('keydown',onKey)}},[modal,sourceId,deleteOpen]);
 const availableProjects=snapshot?visibleProjects(snapshot.projects):[];
 const project=availableProjects.find(p=>p.id===projectId);
@@ -76,7 +90,7 @@ return <div className="app-shell" style={sidebar.style}><Sidebar snapshot={snaps
 {page==='desk'&&project&&<DeskPage snapshot={snapshot} project={project} session={currentSession} onRecord={recordInput} onRespond={respondInput} onSolution={reviewSolution} draft={draft} draftStatus={draftStatus} busy={!!busy} onDraft={changeDraft} onSave={()=>void flushDraft().catch(e=>setError(e.message))} onSelectSession={id=>void navigate('desk',projectId,id)} onStart={startLesson} onSource={setSourceId} run={run} onSettings={()=>void navigate('settings')}/>}
 {page==='evidence'&&project&&<EvidencePage snapshot={snapshot} project={project} evidence={snapshot.evidence.filter(e=>e.projectId===projectId)} busy={!!busy} onSource={setSourceId} onSession={id=>void navigate('desk',projectId,id)} onReview={reviewLesson} run={run}/>}
 {page==='settings'&&<SettingsPage key={'settings-'+restoreVersion} snapshot={snapshot} used={budgetUsed(snapshot)} busy={!!busy} run={run} onRestore={()=>setModal('restore')}/>}
-<footer className="page-footer"><Mountain size={14}/> 每一次独立走过的路，都会留下来。<span>重登 · 0.4.8</span></footer>
+<footer className="page-footer"><Mountain size={14}/> 每一次独立走过的路，都会留下来。<span>重登 · 0.5.0</span></footer>
 </div></main>
 {modal&&<AppModal error={error} modal={modal} project={project} busy={!!busy} close={()=>setModal(null)} run={run} onCreated={id=>{setProjectId(id);setSessionId('');setPage('route')}}/>}
 {deleteOpen&&project&&<ProjectDeleteModal snapshot={snapshot} project={project} busy={!!busy} onCancel={()=>setDeleteOpen(false)} onConfirm={trashCurrentProject}/>}

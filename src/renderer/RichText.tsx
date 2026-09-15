@@ -3,16 +3,10 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import {normalizeMathDelimiters} from '../shared/math-text';
+export {normalizeMathDelimiters} from '../shared/math-text';
 
 /** Normalize common TeX delimiters and literal newlines only outside fenced and inline code. */
-export function normalizeMathDelimiters(text: string): string {
-  return text.split(/(\x60{3}[\s\S]*?\x60{3}|\x60[^\x60\n]*\x60)/g).map((piece, i) => i % 2 ? piece : piece
-    .replace(/\\r\\n/g, '\n')
-    .replace(/\\n(?![A-Za-z])/g, '\n')
-    .replace(/\\\[([\s\S]*?)\\\]/g, (_, math: string) => '\n$$\n' + math.trim() + '\n$$\n')
-    .replace(/\\\(([^\n]*?)\\\)/g, (_, math: string) => '$' + math + '$')).join('');
-}
-
 export function RichText({text, className=''}: {text?: string; className?: string}) {
   if (!text) return null;
   return <div className={'rich-text '+className}>

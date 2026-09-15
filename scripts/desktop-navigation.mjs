@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+
+// Keep CI's smaller desktop reproducible without adding production test hooks.
+export async function applyDesktopTestWindow(app,page){
+ const width=process.env.RECLIMB_TEST_WINDOW_WIDTH?Number(process.env.RECLIMB_TEST_WINDOW_WIDTH):undefined,height=process.env.RECLIMB_TEST_WINDOW_HEIGHT?Number(process.env.RECLIMB_TEST_WINDOW_HEIGHT):undefined;
+ if(width!==undefined)assert.ok(Number.isInteger(width)&&width>=1040&&width<=3840,'Test window width must be an integer between 1040 and 3840');
+ if(height!==undefined)assert.ok(Number.isInteger(height)&&height>=720&&height<=2160,'Test window height must be an integer between 720 and 2160');
+ if(width||height){const contentSize=await app.evaluate(({BrowserWindow},{width,height})=>{const window=BrowserWindow.getAllWindows()[0],[w,h]=window.getSize();window.setSize(width??w,height??h);return window.getContentSize()},{width,height});await page.waitForFunction(([width,height])=>Math.abs(innerWidth-width)<=1&&Math.abs(innerHeight-height)<=1,contentSize);}
+}
+
+export async function leaveDesktopNavigation(page){
+ assert.equal(await page.getByRole('dialog').count(),0,'Do not dismiss navigation through another open dialog');
+ const sidebar=page.locator('.sidebar');
+ const point=await page.evaluate(()=>({x:innerWidth-24,y:24}));await page.mouse.move(point.x,point.y);
+ if(await sidebar.evaluate(el=>el.classList.contains('is-pinned')))return;
+ // Moving the pointer alone deliberately does not release keyboard focus.
+ // Use the supported Escape interaction if navigation still holds that focus.
+ if(await sidebar.evaluate(el=>el.classList.contains('is-expanded')&&el.contains(document.activeElement)))await page.keyboard.press('Escape');
+ await page.locator('.sidebar.is-collapsed').waitFor();
+ await page.waitForFunction(()=>Math.abs(document.querySelector('.sidebar').getBoundingClientRect().width-64)<.05);
+ assert.equal(await page.getByRole('dialog').count(),0,'Navigation must not open or dismiss a dialog');
+}
+
+export async function navigateDesktop(page,name){
+ assert.equal(await page.getByRole('dialog').count(),0,'Close the current dialog through its real UI before navigating');
+ await page.getByRole('button',{name,exact:true}).click();
+ await leaveDesktopNavigation(page);
+}

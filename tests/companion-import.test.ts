@@ -35,3 +35,7 @@ it('accepts an unfinished empty local draft but rejects an impossible empty froz
  const draft=createDraft('workspace-a',target);expect(importDraft(exportDraft(draft),'workspace-a').pages[0].strokes).toEqual([]);
  const text=change(exportDraft(draft),e=>e.draft.pending={requestId:'empty',targetId:target.id,pages:e.draft.pages,note:''});expect(()=>importDraft(text,'workspace-a')).toThrow();
 });
+it('round-trips an explicitly linked local conflict copy without relinking its task',()=>{
+ const t=fixture(),originalKey=t.draft.key;t.draft.key+='\x23conflict-'+('a'.repeat(32));t.draft.conflict={ofKey:originalKey,createdAt:'2026-09-15T00:00:00.000Z'};freezeSubmission(t.draft,'copy-pending');const restored=importDraft(t.text(),'workspace-a');expect(restored.key).toBe(t.draft.key);expect(restored.conflict).toEqual(t.draft.conflict);expect(restored.target).toEqual(target);expect(restored.pages).toEqual(t.draft.pages);expect(restored.pending?.targetId).toBe(target.id);
+ for(const mutate of [(e:any)=>e.draft.conflict.ofKey='another-task',(e:any)=>delete e.draft.conflict,(e:any)=>e.draft.key=originalKey+'\x23conflict-not-random',(e:any)=>e.draft.conflict.extra='not-allowed'])expect(()=>importDraft(change(t.text(),mutate),'workspace-a')).toThrow();
+});

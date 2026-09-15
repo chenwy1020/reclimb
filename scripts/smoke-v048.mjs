@@ -1,5 +1,6 @@
 // Focused settings-card spacing check; isolated local data, no AI or private materials.
 import {_electron as electron} from 'playwright';
+import {applyDesktopTestWindow,navigateDesktop} from './desktop-navigation.mjs';
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {resolve, join} from 'node:path';
@@ -13,7 +14,7 @@ mkdirSync(artifacts,{recursive:true});mkdirSync(dataDirectory,{recursive:true});
 const results=[],measurements=[],externalRequests=[],rendererErrors=[];
 let app,page;
 const api=(action,payload={})=>page.evaluate(({action,payload})=>window.learning.request(action,payload),{action,payload});
-async function settings(){await page.getByRole('button',{name:'设置',exact:true}).click();await page.mouse.move(800,100);await page.getByRole('heading',{name:'让空间，适合你',exact:true}).waitFor();}
+async function settings(){await navigateDesktop(page,'设置');await page.getByRole('heading',{name:'让空间，适合你',exact:true}).waitFor();}
 async function checkLayout(name){
  await page.locator('.diagnostics-card').scrollIntoViewIfNeeded();
  await page.mouse.move(950,100);
@@ -27,7 +28,7 @@ async function checkLayout(name){
  });
  measurements.push({name,...layout});
  await page.screenshot({path:join(artifacts,name+'.png'),scale:'css'});
- assert.equal(layout.bounds.length,7,'All settings cards must remain accessible');
+ assert.equal(layout.bounds.length,8,'All seven original settings cards plus the new sync card must remain accessible');
  assert.ok(layout.gaps.every(gap=>gap>=16),name+': card separation must remain visible: '+JSON.stringify(layout.gaps));
  assert.ok(layout.bounds.every(card=>card.left>=0&&card.right<=layout.viewport+1),name+': cards must stay inside the window');
  assert.ok(layout.scrollWidth<=layout.viewport+1,name+': no page-wide horizontal overflow');
@@ -36,6 +37,7 @@ async function checkLayout(name){
 try{
  app=await electron.launch({executablePath:executable||require('electron'),args:executable?[]:['.'],cwd:root,env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>key!=='ELECTRON_RUN_AS_NODE')),RECLIMB_DATA_DIR:dataDirectory,RECLIMB_DEV_URL:''},timeout:45000});
  page=await app.firstWindow();page.setDefaultTimeout(20000);
+ await applyDesktopTestWindow(app,page);
  page.on('pageerror',error=>rendererErrors.push(error.message));
  page.on('request',request=>{if(/^https?:/.test(request.url()))externalRequests.push(request.url());});
  await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();

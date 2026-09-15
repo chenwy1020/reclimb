@@ -27,7 +27,7 @@ interface Device {id:string;name:string;token:string;}
 interface Options {staticDirectory:string;workspaceId:string;getTarget:(id:string)=>HandwritingTarget|undefined;save:(body:unknown)=>HandwritingReceipt;}
 const pairSchema=z.object({ticket:z.string().min(1).max(100),name:z.string().trim().min(1).max(80).transform(value=>value.replace(/[\u0000-\u001f\u007f]/g,'').trim())}).strict();
 const pollSchema=z.object({requestId:z.string().min(1).max(120),pollToken:z.string().min(1).max(100)}).strict();
-const contentTypes:Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon','.woff2':'font/woff2','.woff':'font/woff','.webp':'image/webp'};
+const contentTypes:Record<string,string>={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.webp':'image/webp'};
 
 /** An opt-in, narrowly scoped companion endpoint. It never exposes Electron IPC or model calls. */
 export class HandwritingServer{
@@ -165,7 +165,7 @@ export class HandwritingServer{
   let path:string;try{path=decodeURIComponent(url.pathname);}catch{throw new HttpFailure(400,'连接路径无效。');}
   if(path.includes('\\')||path.includes('\0')||path.split('/').includes('..'))throw new HttpFailure(404,'文件不存在。');
   const asset=path==='/'?'index.html':path.slice(1),mime=contentTypes[extname(asset)];
-  if(!mime||(!['index.html','app.js','style.css'].includes(asset)&&!asset.startsWith('assets/')))throw new HttpFailure(404,'文件不存在。');
+  if(!mime||(!['index.html','app.js','app.css','style.css'].includes(asset)&&!asset.startsWith('assets/')))throw new HttpFailure(404,'文件不存在。');
   try{
    const root=await realpath(this.options.staticDirectory),file=await realpath(resolve(root,asset)),inside=relative(root,file);
    if(!inside||isAbsolute(inside)||inside==='..'||inside.startsWith('..'+sep))throw new HttpFailure(404,'文件不存在。');

@@ -285,7 +285,16 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
   for(const [handwritingId,draft] of Object.entries(s.handwritingDrafts??{}) as [string,any][]){const original=match('handwritings',handwritingId,s.projectId);if(original.sessionId!==s.id)throw new Error('手写文字草稿关联了另一会话');if(draft.parentId){const parent=match('handwritingTranscriptions',draft.parentId,s.projectId);if(parent.handwritingId!==original.id)throw new Error('手写文字草稿转录来源不一致');}}
   for(const message of s.messages)if(message.handwritingId||message.handwritingTranscriptionId){
    const original=match('handwritings',message.handwritingId,s.projectId),transcription=match('handwritingTranscriptions',message.handwritingTranscriptionId,s.projectId),target=maps.handwritingTargets.get(original.targetId);
-   if(original.sessionId!==s.id||transcription.handwritingId!==original.id||transcription.status!=='confirmed'||transcription.inputId!==message.inputId||message.taskId!==target.taskId||message.stepId!==target.stepId||message.teachingVersionId!==target.teachingVersionId)throw new Error('手写回应与确认文本或原任务关联不一致');
+   if(original.sessionId!==s.id||transcription.handwritingId!==original.id||transcription.status!=='confirmed'||message.taskId!==target.taskId||message.stepId!==target.stepId||message.teachingVersionId!==target.teachingVersionId)throw new Error('手写回应与确认文本或原任务关联不一致');
+   if(message.followup){
+    const seen=new Set<string>();let current=message,matched=false;
+    while(current.followup&&!seen.has(current.id)){
+     seen.add(current.id);const parent=s.messages.find((m:any)=>m.role==='assistant'&&m.id===current.followup.parentMessageId),owner=parent?s.messages.find((m:any)=>m.role==='user'&&m.inputId===parent.inputId):undefined;
+     if(!parent||!owner||parent.handwritingId!==original.id||owner.handwritingId!==original.id||parent.handwritingTranscriptionId!==transcription.id||owner.handwritingTranscriptionId!==transcription.id)break;
+     if(owner.inputId===transcription.inputId&&!owner.followup){matched=true;break}current=owner;
+    }
+    if(!matched)throw new Error('手写追问的父链没有回到这份已确认原稿');
+   }else if(transcription.inputId!==message.inputId)throw new Error('手写回应与确认文本输入编号不一致');
   }
  }
  for(const attempt of records.attempts)if(attempt.handwritingId||attempt.handwritingTranscriptionId){

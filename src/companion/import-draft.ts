@@ -12,6 +12,7 @@ const draftSchema=z.object({
  key:z.string().min(1).max(1000),workspaceId:id,target,pages:inkPagesSchema,note,
  pageId:id,revision:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),updatedAt:date,
  pending:handwritingSubmitSchema.extend({note}).optional(),receipts:z.array(receipt).max(10000),
+ conflict:z.object({ofKey:z.string().min(1).max(1000),createdAt:date}).strict().optional(),
 }).strict();
 const envelope=z.object({format:z.literal('reclimb-handwriting-draft'),version:z.literal(1),exportedAt:date,draft:draftSchema}).strict();
 
@@ -22,7 +23,8 @@ export function importDraft(text:string,workspaceId:string):LocalDraft{
  const result=envelope.safeParse(input);if(!result.success)throw new Error('原稿格式、版本或笔迹数据不完整，未导入；现有草稿不会被替换。');
  const draft=result.data.draft;
  if(!workspaceId||draft.workspaceId!==workspaceId)throw new Error('这份原稿属于另一个学习空间。请连接原来的电脑空间后再导入。');
- if(draft.key!==draftKey(draft.workspaceId,draft.target.id)||!draft.pages.some(page=>page.id===draft.pageId))throw new Error('原稿的任务或当前页面关联不一致，未导入。');
+ const originalKey=draftKey(draft.workspaceId,draft.target.id),validKey=draft.conflict?draft.conflict.ofKey===originalKey&&draft.key.startsWith(originalKey+'#conflict-')&&/^[a-f0-9]{32}$/.test(draft.key.slice((originalKey+'#conflict-').length)):draft.key===originalKey;
+ if(!validKey||!draft.pages.some(page=>page.id===draft.pageId))throw new Error('原稿的任务或当前页面关联不一致，未导入。');
  if(draft.target.sourceVersions?.some(source=>!draft.target.sourceIds.includes(source.fragmentId)))throw new Error('原稿的来源版本关联不一致，未导入。');
  if(draft.pending){
   if(draft.pending.targetId!==draft.target.id)throw new Error('待发送原稿绑定了另一个任务，未导入。');
