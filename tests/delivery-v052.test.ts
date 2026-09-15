@@ -7,7 +7,7 @@ it('limits the patch to sync/settings checks and expires the exception at the ne
  const contract=JSON.parse(readFileSync('scripts/release-contract-v052.json','utf8'));
  expect(contract).toMatchObject({version:'0.5.2',testScope:'targeted',expectedChecks:6});
  expect(selectTestProfile('0.5.2').tests).toEqual(contract.targetTests);
- for(const version of ['0.5.3','0.6.0'])expect(selectTestProfile(version)).toEqual({scope:'full',tests:[]});
+ for(const version of ['0.5.4','0.6.0'])expect(selectTestProfile(version)).toEqual({scope:'full',tests:[]});
  expect(selectTestProfile('0.5.2','full')).toEqual({scope:'full',tests:[]});
  const sources=readFileSync('scripts/source-files.mjs','utf8');for(const file of ['smoke-v052.mjs','release-contract-v052.json','verify-package-v052.ps1']){expect(existsSync('scripts/'+file)).toBe(true);expect(sources).toContain(file);}
 });

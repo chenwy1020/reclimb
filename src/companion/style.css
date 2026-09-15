@@ -8,3 +8,5 @@ body.inking,body.inking *{-webkit-user-select:none!important;user-select:none!im
 .writing-focus .masthead,.writing-focus main>:not(#workbench),.writing-focus #workbench>:not(.toolbar):not(.page-controls):not(.ink-guide):not(.paper-shell):not(.focus-save-status){display:none!important}
 .writing-focus main{margin-top:10px}.writing-focus .toolbar{top:0}.focus-save-status{text-align:center;font-size:.88rem;color:#44653c;position:sticky;bottom:0;padding:8px;margin:0;background:#f3f5eef5;border-top:1px solid #c4d3bc}
 button[aria-pressed=true]:hover:not(:disabled),button.primary:hover:not(:disabled){background:#294c38;color:#fff}.focus-save-status.failed{color:#913e21;background:#fff2e9}
+
+[hidden]{display:none!important}#uploaded-image-preview{display:block;width:100%;height:auto;object-fit:contain;background:white}.image-upload-card input{max-width:100%}.image-upload-card{margin-bottom:16px}

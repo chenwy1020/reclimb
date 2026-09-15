@@ -14,15 +14,15 @@ export function snapshotDraft(draft:LocalDraft):LocalDraft{return{...draft,pages
 export function newPage():InkPage{return{id:newId(),width:768,height:1024,strokes:[]};}
 export function draftKey(workspaceId:string,targetId:string){return JSON.stringify([workspaceId,targetId]);}
 export function createDraft(workspaceId:string,target:HandwritingTarget):LocalDraft{const page=newPage();return{key:draftKey(workspaceId,target.id),workspaceId,target:clone(target),pages:[page],note:'',pageId:page.id,revision:0,updatedAt:new Date().toISOString(),receipts:[]};}
-export const MAX_SUBMISSION_BYTES=7.5*1024*1024;
+export const MAX_SUBMISSION_BYTES=23*1024*1024;
 export function freezeSubmission(draft:LocalDraft,requestId=newId(),range:'all'|'current'='all'):HandwritingSubmit{
  if(draft.pending)return clone(draft.pending);
  const pages=range==='current'?draft.pages.filter(page=>page.id===draft.pageId):draft.pages;
  const result=handwritingSubmitSchema.safeParse({requestId,targetId:draft.target.id,pages:clone(pages),note:draft.note});
  if(!result.success)throw new Error('原稿超过一次提交的容量，或有笔迹数据无法读取。请先下载原稿备份，再分次整理提交。');
  const frozen=result.data;
- if(!frozen.note.trim()&&!frozen.pages.some(page=>page.strokes.length))throw new Error('先写下一些笔迹或说明，再提交。');
- if(new TextEncoder().encode(JSON.stringify(frozen)).byteLength>MAX_SUBMISSION_BYTES)throw new Error('这份原稿超过一次传输容量，请改为“当前页”分次提交。原稿完整保留在本机，也可以下载备份。');
+ if(!frozen.note.trim()&&!frozen.pages.some(page=>page.image||page.strokes.length))throw new Error('先写下一些笔迹或说明，再提交。');
+ if(new TextEncoder().encode(JSON.stringify(frozen)).byteLength>(frozen.pages.some(page=>page.image)?MAX_SUBMISSION_BYTES:7.5*1024*1024))throw new Error('这份原稿超过一次传输容量，请改为“当前页”分次提交。原稿完整保留在本机，也可以下载备份。');
  draft.pending=clone(frozen);return frozen;
 }
 export function acknowledgeSubmission(draft:LocalDraft,receipt:HandwritingReceipt):boolean{
@@ -30,7 +30,7 @@ export function acknowledgeSubmission(draft:LocalDraft,receipt:HandwritingReceip
  if(!draft.receipts.some(item=>item.requestId===receipt.requestId))draft.receipts.push(clone(receipt));
  delete draft.pending;return true;
 }
-export function exportDraft(draft:LocalDraft){return JSON.stringify({format:'reclimb-handwriting-draft',version:1,exportedAt:new Date().toISOString(),draft:clone(draft)},null,2);}
+export function exportDraft(draft:LocalDraft){return JSON.stringify({format:'reclimb-handwriting-draft',version:1,exportedAt:new Date().toISOString(),draft});}
 export function parsePairingLink(text:string):{url:string;ticket:string}|null{
  try{const url=new URL(text);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return null;
   const ticket=new URLSearchParams(url.hash.slice(1)).get('ticket');if(!ticket||ticket.length>256)return null;

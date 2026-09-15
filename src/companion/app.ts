@@ -1,3 +1,4 @@
+import {appendImagePages,readImagePage} from './image-upload';
 import {renderTaskText} from './task-text';
 import {handwritingTargetSchema} from '../shared/handwriting';
 import type {HandwritingClientState,HandwritingReceipt,InkPage,InkStroke} from '../shared/handwriting';
@@ -62,6 +63,10 @@ function drawStroke(stroke:InkStroke,start=0){
 }
 function drawFrame(){
  paintFrame=0;renderFrames++;
+ const currentPage=page(),preview=$<HTMLImageElement>('uploaded-image-preview');
+ canvas.hidden=!!currentPage?.image;preview.hidden=!currentPage?.image;
+ if(currentPage?.image){if(preview.getAttribute('src')!==currentPage.image.dataUrl)preview.src=currentPage.image.dataUrl;fullPaint=false;dirtyStrokes.clear();return;}
+ preview.removeAttribute('src');
  const bounds=canvas.getBoundingClientRect(),ratio=Math.min(window.devicePixelRatio||1,2),width=Math.max(1,Math.round(bounds.width*ratio));
  if(canvas.width!==width){canvas.width=width;canvas.height=Math.round(width*4/3);fullPaint=true;}
  ctx.setTransform(canvas.width/768,0,0,canvas.height/1024,0,0);ctx.lineCap='round';ctx.lineJoin='round';
@@ -73,7 +78,11 @@ function updateActions(){const p=page(),index=current?.pages.findIndex(item=>ite
  $<HTMLButtonElement>('undo').disabled=switching||!p||!(undo.get(historyKey(p))?.length);$<HTMLButtonElement>('redo').disabled=switching||!p||!(redo.get(historyKey(p))?.length);
  $<HTMLButtonElement>('prev-page').disabled=switching||index<=0;$<HTMLButtonElement>('next-page').disabled=switching||!current||index>=current.pages.length-1;$<HTMLButtonElement>('add-page').disabled=switching||!current||current.pages.length>=12;
  $('page-label').textContent=current?`${index+1} / ${current.pages.length} 页`:'';
- const submit=$<HTMLButtonElement>('submit-ink');submit.disabled=switching||!current||sending===current.key;submit.textContent=current?.pending?'重试发送已保存的原稿':'提交这份手写';
+ for(const id of ['pen-tool','eraser-tool','undo','redo'])if(p?.image)$<HTMLButtonElement>(id).disabled=true;
+ for(const id of ['pen-tool','eraser-tool'])if(!p?.image)$<HTMLButtonElement>(id).disabled=switching;
+ $('remove-image').hidden=!p?.image;$<HTMLButtonElement>('remove-image').disabled=switching||!!current?.pending?.pages.some(item=>item.id===p?.id);
+ $<HTMLInputElement>('upload-images').disabled=switching||!current;
+ const submit=$<HTMLButtonElement>('submit-ink');submit.disabled=switching||!current||sending===current.key;submit.textContent=current?.pending?'重试发送已保存的原稿':'提交这份作答';
  $<HTMLSelectElement>('submit-range').disabled=!!current?.pending||switching;
  const notice=$('submission-status');notice.hidden=!current||(!current.pending&&!current.receipts.length&&!submitErrors.has(current.key));
  if(current){const receipt=current.receipts.at(-1);notice.textContent=sending===current.key?'原稿已在本机冻结保存，正在发送到电脑。你可以继续书写。':submitErrors.get(current.key)??(current.pending?'有一份原稿尚待电脑确认。重试会发送同一份记录，不会重复生成作答。':receipt?`✓ 电脑已保存原稿（${new Date(receipt.savedAt).toLocaleString()}）。当前未进行能力评价。`:'');notice.classList.toggle('error',submitErrors.has(current.key));}
@@ -84,7 +93,7 @@ async function refreshPicker(){$('draft-recovery').hidden=!credentials;if(!crede
 }
 function refreshOffer(){const target=remote?.target;$('target-offer').hidden=!target||target.id===current?.target.id;if(target)$('offered-title').textContent=`${target.projectTitle} · ${target.title}`;$('waiting-target').hidden=!!current||!!target||!credentials;}
 function setSwitching(value:boolean){switching=value;$<HTMLTextAreaElement>('draft-note').disabled=value;$<HTMLSelectElement>('draft-picker').disabled=value;$<HTMLButtonElement>('adopt-target').disabled=value;updateActions();}
-async function showDraft(draft:LocalDraft){finishStroke();current=draft;cache.set(draft.key,draft);$('workbench').hidden=false;$('project-title').textContent=draft.target.projectTitle;$('task-title').textContent=draft.target.title;renderTaskText($('task-instruction'),draft.target.instruction);$<HTMLTextAreaElement>('draft-note').value=draft.note;refreshOffer();updateActions();requestAnimationFrame(paint);await saveSelection(draft.key).catch(()=>{});await refreshPicker();await persist(draft).catch(()=>{});}
+async function showDraft(draft:LocalDraft){finishStroke();current=draft;cache.set(draft.key,draft);$('workbench').hidden=false;$('image-upload-status').textContent='';$('project-title').textContent=draft.target.projectTitle;$('task-title').textContent=draft.target.title;renderTaskText($('task-instruction'),draft.target.instruction);$<HTMLTextAreaElement>('draft-note').value=draft.note;refreshOffer();updateActions();requestAnimationFrame(paint);await saveSelection(draft.key).catch(()=>{});await refreshPicker();await persist(draft).catch(()=>{});}
 async function switchDraft(resolve:()=>Promise<LocalDraft|undefined>){if(switching)return;finishStroke();setSwitching(true);try{if(current)await persist(current);const draft=await resolve();if(draft)await showDraft(draft);}finally{setSwitching(false);}}
 async function refreshState(allowDuringPair=false){if(!credentials||polling||(pairing&&!allowDuringPair))return;polling=true;const auth=credentials,generation=pairGeneration;try{const state=await api<HandwritingClientState>('/api/state',undefined,auth.token);if(auth!==credentials||generation!==pairGeneration||(pairing&&!allowDuringPair))return;if(state.workspaceId!==auth.workspaceId)throw new Error('电脑学习空间已变化，请重新配对。当前草稿仍属于原任务。');remote={workspaceId:state.workspaceId,target:state.target?handwritingTargetSchema.parse(state.target):null};connected=true;connection('✓ 已连接电脑');$('pairing').hidden=true;refreshOffer();}
  catch(reason){if(auth!==credentials||generation!==pairGeneration)return;connected=false;connection('未连接 · 可继续书写');if(!current)error('暂时没有连接电脑。请保持同一局域网，或重新配对。'+message(reason));}finally{polling=false;}}
@@ -107,7 +116,7 @@ function writePoints(events:PenSample[]){const p=page();if(!p)return;const bound
 }
 const penInput=attachPenInput(canvas,{
  allowFinger:()=>$<HTMLInputElement>('finger-mode').checked,
- start(event){if(switching||!current)return false;const p=page()!;if(tool==='pen'&&p.strokes.length>=1500){error('这一页笔画较多，请加一页继续书写。');return false;}
+ start(event){if(switching||!current||page()?.image)return false;const p=page()!;if(tool==='pen'&&p.strokes.length>=1500){error('这一页笔画较多，请加一页继续书写。');return false;}
   beforeStroke=p.strokes.slice();
   if(tool==='pen'){activeStroke={id:newId(),color:$<HTMLSelectElement>('pen-color').value as InkStroke['color'],width:Number($<HTMLSelectElement>('pen-width').value),points:[normalizePoint(event.clientX,event.clientY,canvas.getBoundingClientRect(),event.pressure,event.pointerType)]};p.strokes.push(activeStroke);requestPaint(activeStroke);changed();}
   else writePoints([event]);return true;
@@ -120,6 +129,24 @@ for(const selected of ['pen','eraser'] as const)$(selected+'-tool').addEventList
 for(const [button,from,to] of [['undo',undo,redo],['redo',redo,undo]] as const)$(button).addEventListener('click',()=>{finishStroke();const p=page();if(!p)return;const value=from.get(historyKey(p))?.pop();if(!value)return;const history=to.get(historyKey(p))??[];history.push(p.strokes.slice());to.set(historyKey(p),history);p.strokes=value;changed(true);paint();updateActions();});
 for(const [button,direction] of [['prev-page',-1],['next-page',1]] as const)$(button).addEventListener('click',()=>{finishStroke();if(!current)return;const next=current.pages[current.pages.findIndex(p=>p.id===current!.pageId)+direction];if(next){current.pageId=next.id;changed(true);paint();updateActions();}});
 $('add-page').addEventListener('click',()=>{finishStroke();if(!current||current.pages.length>=12)return;const next=newPage();current.pages.push(next);current.pageId=next.id;changed(true);paint();updateActions();});
+let uploadTarget:LocalDraft|undefined;
+$('upload-images').addEventListener('click',()=>{uploadTarget=current;});
+$('upload-images').addEventListener('change',async()=>{
+ const input=$<HTMLInputElement>('upload-images'),files=Array.from(input.files??[]),draft=uploadTarget??current;uploadTarget=undefined;input.value='';
+ if(!files.length||!draft||switching)return;
+ finishStroke();setSwitching(true);$('image-upload-status').textContent='正在读取图片并保存到本机…';
+ try{
+  if(files.length>12)throw new Error('每份原稿最多 12 页，请分次选择图片。');
+  if(files.reduce((sum,file)=>sum+file.size,0)>16*1024*1024)throw new Error('图片合计不能超过 16 MB，请分次选择。');
+  const images:InkPage[]=[];for(const file of files)images.push(await readImagePage(file));
+  appendImagePages(draft,images);draft.revision++;draft.updatedAt=new Date().toISOString();
+  if(current===draft){paint();updateActions();}
+  await persist(draft);
+  if(current===draft)$('image-upload-status').textContent='✓ 已在本机保存 '+images.length+' 张图片；检查后点击“提交这份作答”。';
+ }catch(reason){if(current===draft)$('image-upload-status').textContent='图片尚未完成添加或保存：'+message(reason);}
+ finally{setSwitching(false);}
+});
+$('remove-image').addEventListener('click',()=>{const p=page();if(switching||!current||!p?.image||current.pending?.pages.some(item=>item.id===p.id))return;current.pages=current.pages.filter(item=>item.id!==p.id);if(!current.pages.length)current.pages=[newPage()];current.pageId=current.pages[0].id;changed(true);paint();updateActions();$('image-upload-status').textContent='图片已从当前草稿移除；已提交的原稿不受影响。';});
 $('draft-note').addEventListener('input',()=>{if(!current)return;current.note=$<HTMLTextAreaElement>('draft-note').value;changed();});
 $('adopt-target').addEventListener('click',()=>{const target=remote?.target,auth=credentials;if(!target||!auth)return;void switchDraft(async()=>{const key=draftKey(auth.workspaceId,target.id);return await loadDraft(key)??createDraft(auth.workspaceId,target);}).catch(reason=>error(message(reason)));});
 $('draft-picker').addEventListener('focus',()=>void refreshPicker());

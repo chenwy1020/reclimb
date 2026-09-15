@@ -41,7 +41,7 @@ export function HandwritingPanel({session,snapshot,busy,run,onSettings,onSource,
  function sendTarget(){const step=session.teaching?.current,activity=step?.activity??session.activity;void action('handwriting.target',{sessionId:session.id,expected:{taskId:step?.taskId??activity.id??session.id,stepId:step?.id,teachingVersionId:activity.teachingVersionId??session.teachingVersionId}});}
  const original=selected?records.find(item=>item.record.id===selected.id)?.target:undefined;
  return <section className="handwriting-panel" aria-label="iPad 手写原稿">
-  <div className="handwriting-heading"><div><h3><Tablet size={19}/>用 iPad 写下推导</h3><p>电脑读材料，平板写推导。原稿先保存，再识别、核对并获取反馈。</p></div><Button onClick={()=>setOpen(!open)} aria-expanded={open}>iPad 手写</Button></div>
+  <div className="handwriting-heading"><div><h3><Tablet size={19}/>用 iPad 写下推导</h3><p>电脑读材料，平板写推导或上传截图。原稿先保存，再识别、核对并获取反馈。</p></div><Button onClick={()=>setOpen(!open)} aria-expanded={open}>iPad 手写</Button></div>
   {error&&<p className="handwriting-error" role="alert">{error}</p>}
   {open&&<div className="handwriting-pairing">
    <p className="handwriting-network-note">仅在可信的同一局域网使用。此连接不加密；开启期间只向确认的设备提供你发送的任务。关闭连接会撤销设备授权。</p>

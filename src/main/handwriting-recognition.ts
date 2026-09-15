@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {handwritingTranscriptionSchema,type HandwritingTranscription,type HandwritingSubmission} from '../shared/handwriting';
+import {imageDataInfo} from '../shared/raster-image';
 import {inkPageSvg} from '../shared/ink-svg';
 import {LearningStore} from './store';
 import {LearningService} from './learning-service';
@@ -9,13 +10,16 @@ const requestId=z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/);
 const recognitionResult=z.object({text:z.string().max(100000),uncertainties:z.array(z.string().max(2000)).max(100),unresolved:z.boolean()}).strict();
 const confirmInput=z.object({handwritingId:z.string().min(1).max(120),requestId,text:z.string().min(1).max(100000),transcriptionId:z.string().min(1).max(120).optional(),unresolved:z.boolean()}).strict();
 
-/** Only locally validated immutable strokes are rasterized; callers cannot replace them with arbitrary images. */
+/** Render only validated, saved originals. Raster pages retain their original aspect ratio. */
 export async function renderHandwritingImages(original:HandwritingSubmission):Promise<{dataUrl:string}[]>{
  const {createCanvas,loadImage}=await import('@napi-rs/canvas');let total=0;
  const images:{dataUrl:string}[]=[];
  for(const page of original.pages){
-  const image=await loadImage(Buffer.from(inkPageSvg(page),'utf8')),canvas=createCanvas(768,1024),context=canvas.getContext('2d');
-  context.fillStyle='white';context.fillRect(0,0,768,1024);context.drawImage(image,0,0,768,1024);
+  const raster=page.image?imageDataInfo(page.image.dataUrl):undefined;
+  const image=await loadImage(raster?Buffer.from(raster.bytes):Buffer.from(inkPageSvg(page),'utf8'));
+  if(raster&&(image.width!==raster.width||image.height!==raster.height))throw new Error('图片解码尺寸与保存的原图不一致，请核对原稿。');
+  const width=raster?.width??768,height=raster?.height??1024,canvas=createCanvas(width,height),context=canvas.getContext('2d');
+  context.fillStyle='white';context.fillRect(0,0,width,height);context.drawImage(image,0,0,width,height);
   const bytes=canvas.encodeSync('png');total+=bytes.length;
   if(bytes.length>8*1024*1024||total>24*1024*1024)throw new Error('这份手写图像较大，请分次整理，或手工录入并核对文字。原稿仍已保存。');
   images.push({dataUrl:'data:image/png;base64,'+bytes.toString('base64')});

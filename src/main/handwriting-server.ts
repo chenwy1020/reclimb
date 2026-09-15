@@ -6,7 +6,7 @@ import {extname,isAbsolute,relative,resolve,sep} from 'node:path';
 import {z} from 'zod';
 import {handwritingSubmitSchema,type HandwritingReceipt,type HandwritingServerStatus,type HandwritingTarget} from '../shared/handwriting';
 
-const PAIRING_LIFETIME=10*60*1000,MAX_BODY=8*1024*1024,BODY_TIMEOUT=10000;
+const PAIRING_LIFETIME=10*60*1000,MAX_BODY=24*1024*1024,BODY_TIMEOUT=10000;
 const secret=()=>randomBytes(32).toString('base64url');
 const privateIPv4=(address:string)=>{
  const octets=address.split('.').map(Number);

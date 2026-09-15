@@ -39,7 +39,7 @@ const handwritingTarget=handwritingTargetSchema.extend({id,projectId:id,sessionI
 const handwriting=handwritingSubmissionSchema.extend({id,projectId:id,sessionId:id,targetId:id});
 const entities={projects:project,capabilities:capability,materials:material,fragments:fragment,sessions:session.extend({teachingVersionId:id.optional()}),attempts:attempt.extend({teachingVersionId:id.optional()}),evidence:evidence.extend({teachingVersionId:id.optional()}),reviews:review,usage:usage.extend({entryType:z.enum(['call','hold']).optional()}),sourceTranscriptions:transcription.extend({origin:z.enum(['manual','machine']).optional()}),teachingVersions:teachingVersionSchema,taskReviews:taskReviewSchema,disputes:disputeSchema,corrections:correctionSchema,answerExposures:answerExposureSchema,routeVersions:routeVersion,learningUnits:learningUnit,learningPositions:learningPosition,teachingObservations:teachingObservation,understandingDrafts:understandingDraft,readingLayouts:readingLayout,handwritingTargets:handwritingTarget,handwritings:handwriting,handwritingTranscriptions:handwritingTranscriptionSchema};
 const handwritingFileSchema=z.object({handwritingId:id,entry:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
-const MAX_INK_BYTES=16*1024*1024;
+const MAX_INK_BYTES=32*1024*1024;
 export function within(root:string,target:string):boolean{const rel=relative(resolve(root),resolve(target));return rel===''||(!rel.startsWith('..')&&!isAbsolute(rel));}
 const sha=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 export function writeBackup(store:LearningStore,target:string):void{
@@ -54,7 +54,7 @@ export function writeBackup(store:LearningStore,target:string):void{
   if(bytes.length>MAX_INK_BYTES)throw new Error('手写原稿过大，无法生成完整备份');
   zip.addFile(entry,bytes);handwritingFiles.push({handwritingId:metadata.id,entry,sha256:sha(bytes)});return metadata;
  });
- zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:9,createdAt:new Date().toISOString(),records:{...records,handwritingTranscriptions:records.handwritingTranscriptions??[],handwritingTargets:records.handwritingTargets??[],handwritings,settings:safeSettings},files,handwritingFiles},null,2),'utf8'));
+ zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:10,createdAt:new Date().toISOString(),records:{...records,handwritingTranscriptions:records.handwritingTranscriptions??[],handwritingTargets:records.handwritingTargets??[],handwritings,settings:safeSettings},files,handwritingFiles},null,2),'utf8'));
  const tmp=target+'.partial';
  try{
   writeFileSync(tmp,zip.toBuffer());
@@ -74,8 +74,8 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  const manifest=zip.getEntry('manifest.json');if(!manifest||manifest.header.size>30*1024*1024)throw new Error('备份清单缺失或过大');
  let raw:any;try{raw=JSON.parse(zip.readAsText(manifest));}catch{throw new Error('备份清单无法解析');}
  if(raw?.format!=='reclimb.backup'||!raw.records)throw new Error('这不是受支持的重登备份文件');
- if(typeof raw.version==='number'&&raw.version>9)throw new Error('此备份由更新版本创建，请先升级应用。');
- if(![1,2,3,4,5,6,7,8,9].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
+ if(typeof raw.version==='number'&&raw.version>10)throw new Error('此备份由更新版本创建，请先升级应用。');
+ if(![1,2,3,4,5,6,7,8,9,10].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
  if(raw.version<9)raw.records.handwritingTranscriptions=[];
  if(raw.version<8){raw.records.handwritingTargets=[];raw.records.handwritings=[];}
  else{
@@ -258,7 +258,7 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
   if(handwritingRequests.has(original.requestId))throw new Error('手写原稿包含重复提交编号');handwritingRequests.add(original.requestId);
   const request=handwritingSubmitSchema.parse({requestId:original.requestId,targetId:original.targetId,pages:original.pages,note:original.note});
   if(sha(Buffer.from(JSON.stringify(request),'utf8'))!==original.contentHash)throw new Error('手写原稿内容或提交关联校验失败');
-  if(!original.pages.some((page:any)=>page.strokes.length)&&!original.note.trim())throw new Error('手写原稿没有笔迹或文字');
+  if(!original.pages.some((page:any)=>page.image||page.strokes.length)&&!original.note.trim())throw new Error('手写原稿没有笔迹或文字');
   let minimumHelp=target.helpLevel;
   for(const event of s.helpEvents)if((event.taskId??target.taskId)===target.taskId&&Date.parse(event.createdAt)<=Date.parse(original.submittedAt))minimumHelp=Math.max(minimumHelp,event.level);
   if(records.answerExposures.some((exposure:any)=>exposure.sessionId===s.id&&exposure.taskId===target.taskId&&Date.parse(exposure.createdAt)<=Date.parse(original.submittedAt)))minimumHelp=4;

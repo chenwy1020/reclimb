@@ -28,7 +28,7 @@ export function importDraft(text:string,workspaceId:string):LocalDraft{
  if(draft.target.sourceVersions?.some(source=>!draft.target.sourceIds.includes(source.fragmentId)))throw new Error('原稿的来源版本关联不一致，未导入。');
  if(draft.pending){
   if(draft.pending.targetId!==draft.target.id)throw new Error('待发送原稿绑定了另一个任务，未导入。');
-  if(!draft.pending.note.trim()&&!draft.pending.pages.some(page=>page.strokes.length))throw new Error('待发送原稿没有笔迹或文字，未导入。');
+  if(!draft.pending.note.trim()&&!draft.pending.pages.some(page=>page.image||page.strokes.length))throw new Error('待发送原稿没有笔迹或文字，未导入。');
  }
  const requests=new Set<string>();
  for(const item of draft.receipts){
