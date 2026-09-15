@@ -1,0 +1,9 @@
+{
+ "version":"0.5.1",
+ "suiteTag":"v051",
+ "expectedChecks":9,
+ "smokeScript":"smoke-v051.mjs",
+ "desktopReportName":"desktop-verification-v051.json",
+ "testScope":"targeted",
+ "targetTests":["tests/webdav-sync.test.ts","tests/sync-workspace.test.ts","tests/workspace-recovery.test.ts","tests/renderer-model-profiles.test.ts","tests/appearance.test.ts","tests/budget.test.ts","tests/test-profile.test.ts","tests/delivery-v051.test.ts"]
+}

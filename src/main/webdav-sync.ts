@@ -74,7 +74,7 @@ export class WebDavSyncService {
    return{status:response.status,headers:response.headers,bytes:Buffer.concat(chunks,total)};
   }catch(error){if(signal.aborted)throw new Error(this.controller?.signal.aborted?'同步已取消；已经保存的本机内容和快照仍保留。':'WebDAV 请求超时；请检查网络后主动重试，未自动覆盖档案。');if(error instanceof Error&&error.message.startsWith('WebDAV '))throw error;throw new Error('WebDAV 请求失败，请检查网络和服务器；本机档案未被覆盖。');}finally{clearTimeout(timer);}
  }
- private async remote(){const result=await this.request(this.url('head.json'),'GET');if(result.status===404)return null;if(result.status!==200)throw new Error('WebDAV 无法读取远端版本（HTTP '+result.status+'）。');let snapshot:SyncRemoteSnapshot;try{snapshot=remoteSchema.parse(JSON.parse(result.bytes.toString('utf8')));if(snapshot.vaultId!==this.connection().vaultId)throw new Error();}catch{throw new Error('WebDAV 远端版本清单无效或不属于这个同步空间。');}return{snapshot,etag:result.headers.get('etag')};}
+ private async remote(prepareOnConflict=false){let result=await this.request(this.url('head.json'),'GET');if(result.status===409&&prepareOnConflict){await this.directories();result=await this.request(this.url('head.json'),'GET');}if(result.status===404)return null;if(result.status!==200)throw new Error('WebDAV 无法读取远端版本（HTTP '+result.status+'）。');let snapshot:SyncRemoteSnapshot;try{snapshot=remoteSchema.parse(JSON.parse(result.bytes.toString('utf8')));if(snapshot.vaultId!==this.connection().vaultId)throw new Error();}catch{throw new Error('WebDAV 远端版本清单无效或不属于这个同步空间。');}return{snapshot,etag:result.headers.get('etag')};}
  private requireStrong(remote:Awaited<ReturnType<WebDavSyncService['remote']>>){if(remote&&!strongETag(remote.etag))throw new Error('WebDAV 服务器未提供强 ETag，不能安全检查或覆盖远端版本；已保留本机档案。');}
  private baselineRewritten(remote:Awaited<ReturnType<WebDavSyncService['remote']>>){return!!remote&&remote.snapshot.snapshotId===this.state.baselineSnapshotId&&!!this.state.baselineRemote&&JSON.stringify(remote.snapshot)!==JSON.stringify(this.state.baselineRemote);}
  private async currentHash(){return sha.parse(await this.options.callbacks.currentHash());}
@@ -88,8 +88,8 @@ export class WebDavSyncService {
   else{state=localContentHash===this.state.baselineContentHash?'remote_ahead':'conflict';message=state==='remote_ahead'?'远端有新版本，请预览后采用。':'本机和远端都有修改；不会自动合并或覆盖，请先保留两份档案。';}
   this.checked={state,message,localContentHash,remote:remote?.snapshot,checkedAt:new Date().toISOString()};return this.status();
  }
- async check(){return this.run(async()=>this.observe(await this.remote()));}
- private async directories(){const c=this.connection();for(const path of ['reclimb-sync/','reclimb-sync/v1/','reclimb-sync/v1/'+c.vaultId+'/','reclimb-sync/v1/'+c.vaultId+'/snapshots/','reclimb-sync/v1/'+c.vaultId+'/probes/']){const result=await this.request(new URL(path,c.endpoint).toString(),'MKCOL');if(![201,405].includes(result.status))throw new Error('WebDAV 无法建立同步目录（HTTP '+result.status+'）。');}}
+ async check(){return this.run(async()=>this.observe(await this.remote(true)));}
+ private async directories(){const c=this.connection();for(const path of ['reclimb-sync/','reclimb-sync/v1/','reclimb-sync/v1/'+c.vaultId+'/','reclimb-sync/v1/'+c.vaultId+'/snapshots/','reclimb-sync/v1/'+c.vaultId+'/probes/']){const result=await this.request(new URL(path,c.endpoint).toString(),'MKCOL');if(result.status===409)throw new Error('WebDAV 无法建立同步目录（HTTP 409）：请确认配置的网盘目录已存在且允许创建子文件夹；可点击“修改连接”调整地址。');if(result.status===507)throw new Error('WebDAV 网盘空间不足（HTTP 507），请释放空间后重试。');if(![201,405].includes(result.status))throw new Error('WebDAV 无法建立同步目录（HTTP '+result.status+'），请检查目录地址及创建权限。');}}
  private async verifyConditionalWrites(){
   if(this.conditionalVerified)return;const url=this.url('probes/'+randomUUID()+'.txt'),first=Buffer.from('reclimb conditional write probe'),second=Buffer.from('reclimb conditional write verified');
   try{
@@ -103,6 +103,7 @@ export class WebDavSyncService {
  }
  async upload(body:WebDavUploadInput){return this.run(async()=>{
   const input=z.object({requestId:id,expectedRemoteSnapshotId:id.nullable().optional()}).strict().parse(body);
+  await this.directories();
   if(this.state.lastUpload?.requestId===input.requestId)return this.observe(await this.remote());
   let remote=await this.remote();this.requireStrong(remote);if(this.baselineRewritten(remote))throw new Error('WebDAV 远端已改写同编号快照，不能覆盖或沿用这个版本。');const currentHead=remote?.snapshot.snapshotId??null;
   let pending=this.state.pendingUpload;
@@ -117,7 +118,7 @@ export class WebDavSyncService {
    const snapshot:SyncRemoteSnapshot={format:'reclimb.webdav.snapshot',version:1,vaultId:this.connection().vaultId,snapshotId,deviceId:this.state.deviceId,deviceName:this.state.deviceName,parentSnapshotId:currentHead,createdAt:new Date().toISOString(),contentHash:captured.contentHash,sha256:digest(bytes),bytes:bytes.length};
    pending={requestId:input.requestId,snapshot,expectedHead:currentHead};this.state.pendingUpload=pending;this.persist();
   }
-  const bytes=this.localArchive(pending.snapshot);await this.options.callbacks.inspectBackup(this.file(pending.snapshot.snapshotId));await this.directories();await this.verifyConditionalWrites();
+  const bytes=this.localArchive(pending.snapshot);await this.options.callbacks.inspectBackup(this.file(pending.snapshot.snapshotId));await this.verifyConditionalWrites();
   // Re-read immediately before publication; CAS still protects the interval after this read.
   remote=await this.remote();this.requireStrong(remote);if(this.baselineRewritten(remote)||(remote?.snapshot.snapshotId??null)!==pending.expectedHead)throw new Error('WebDAV 远端在上传期间发生变化，已停止覆盖；待上传快照仍保留。');
   const archive=await this.request(this.url('snapshots/'+pending.snapshot.snapshotId+'.reclimb'),'PUT',bytes,{'Content-Type':'application/octet-stream','If-None-Match':'*'});if(![200,201,204,412].includes(archive.status))throw new Error('WebDAV 上传快照失败（HTTP '+archive.status+'）。');

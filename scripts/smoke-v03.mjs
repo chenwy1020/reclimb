@@ -1,4 +1,5 @@
 import {fixturePdf} from './fixture-pdf.mjs';
+import {openSettingsCards} from './desktop-navigation.mjs';
 import {_electron as electron} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync,readFileSync,existsSync} from 'node:fs';
@@ -85,7 +86,7 @@ async function screenshot(name){const path=join(artifactDir,name+'.png');await p
 async function reload(){await page.reload();await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor()}
 async function leaveSidebar(){await page.mouse.move(900,100);if(!await page.locator('.sidebar.is-pinned').count())await page.locator('.sidebar.is-collapsed').waitFor()}
 async function waitSidebarWidth(width){await page.waitForFunction(expected=>Math.abs(document.querySelector('.sidebar').getBoundingClientRect().width-expected)<0.05,width)}
-async function nav(name){await page.getByRole('button',{name,exact:true}).first().click();await leaveSidebar();await settle()}
+async function nav(name){await page.getByRole('button',{name,exact:true}).first().click();await leaveSidebar();await settle();if(name==='设置')await openSettingsCards(page)}
 async function goProject(){await (await projectNav()).click();await leaveSidebar()}
 async function projectNav(){await page.mouse.move(900,100);await page.mouse.move(30,200);const openSidebar=page.locator('.sidebar.is-expanded, .sidebar.is-pinned');if(!await openSidebar.count()){await page.getByRole('button',{name:'展开导航',exact:true}).click();}await openSidebar.waitFor();return page.locator('.project-nav').filter({hasText:'原创路径学习'})}
 async function close(){if(app){await app.close();app=undefined}}
