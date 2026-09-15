@@ -42,7 +42,7 @@ export class HandwritingService {
   const previous=this.store.list('handwritings').find(item=>item.requestId===input.requestId);
   if(previous){if(previous.contentHash!==hash)throw new Error('同一提交编号已对应其他原稿，请保留草稿并重新提交。');if(!this.getTarget(previous.targetId))throw new Error('原项目已删除，请先恢复。');return this.receipt(previous);}
   const target=this.getTarget(input.targetId);if(!target)throw new Error('原任务已不在当前档案中。草稿仍在 iPad，请先恢复原项目或导出草稿。');
-  if(!input.pages.some(page=>page.strokes.length)&&!input.note.trim())throw new Error('请先写下笔迹或补充文字。');
+  if(!input.pages.some(page=>page.image||page.strokes.length)&&!input.note.trim())throw new Error('请先写下笔迹或补充文字。');
   const session=this.store.get('sessions',target.sessionId)!;let helpLevel=target.helpLevel;
   // Capture help delivered after pairing as well, without treating handwriting as assessed ability.
   for(const event of session.helpEvents)if((event.taskId??target.taskId)===target.taskId)helpLevel=Math.max(helpLevel,event.level);

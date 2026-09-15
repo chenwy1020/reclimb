@@ -65,7 +65,7 @@ it('binds submissions to the original target after switching and accepts idempot
 });
 it('rejects invalid or oversized ink before invoking persistence',async()=>{
  const t=await fixture(),{token}=await t.pair();expect((await t.post('/api/submit',{...submission(),pages:[]},token)).status).toBe(400);
- expect((await t.post('/api/submit',{...submission(),note:'a'.repeat(8*1024*1024)},token)).status).toBe(413);expect(t.save).not.toHaveBeenCalled();
+ expect((await t.post('/api/submit',{...submission(),note:'a'.repeat(24*1024*1024)},token)).status).toBe(413);expect(t.save).not.toHaveBeenCalled();
 });
 it('renewing pairing preserves the current device until a different device is approved',async()=>{
  const t=await fixture(),first=await t.pair();t.server.renewPairing();expect((await fetch(t.origin+'/api/state',{headers:{Authorization:'Bearer '+first.token}})).status).toBe(200);

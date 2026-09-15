@@ -1,0 +1,32 @@
+{
+  "version": "0.5.3",
+  "suiteTag": "v053",
+  "expectedChecks": 10,
+  "smokeScript": "smoke-v053.mjs",
+  "desktopReportName": "desktop-verification-v053.json",
+  "testScope": "targeted",
+  "targetTests": [
+    "tests/handwriting-images.test.ts",
+    "tests/handwriting-service.test.ts",
+    "tests/handwriting-server.test.ts",
+    "tests/handwriting-recognition.test.ts",
+    "tests/handwriting-backup.test.ts",
+    "tests/handwriting-migration.test.ts",
+    "tests/handwriting-followups.test.ts",
+    "tests/companion-draft.test.ts",
+    "tests/companion-import.test.ts",
+    "tests/test-profile.test.ts",
+    "tests/delivery-v053.test.ts",
+    "tests/sync-workspace.test.ts",
+    "tests/workspace-recovery.test.ts",
+    "tests/backup-v4.test.ts",
+    "tests/backup-v5.test.ts",
+    "tests/backup-v6.test.ts",
+    "tests/curriculum-state.test.ts",
+    "tests/migration.test.ts",
+    "tests/model-profiles.test.ts",
+    "tests/reliability-store.test.ts",
+    "tests/delivery-v052.test.ts",
+    "tests/delivery-v051.test.ts"
+  ]
+}
