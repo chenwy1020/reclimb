@@ -21,8 +21,11 @@ export async function leaveDesktopNavigation(page){
  assert.equal(await page.getByRole('dialog').count(),0,'Navigation must not open or dismiss a dialog');
 }
 
-export async function navigateDesktop(page,name){
+// Earlier workflow suites exercise the controls after explicitly opening their cards.
+export async function openSettingsCards(page){for(const card of await page.locator('.settings-card-toggle').all())if(await card.getAttribute('aria-expanded')==='false')await card.click();}
+export async function navigateDesktop(page,name,{expandSettings=true}={}){
  assert.equal(await page.getByRole('dialog').count(),0,'Close the current dialog through its real UI before navigating');
  await page.getByRole('button',{name,exact:true}).click();
  await leaveDesktopNavigation(page);
+ if(name==='设置'&&expandSettings)await openSettingsCards(page);
 }

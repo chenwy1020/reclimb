@@ -24,6 +24,50 @@ function server(){
  };
  return {files,requests,fetcher:fetcher as typeof fetch,setIntercept(value:typeof intercept){intercept=value;}};
 }
+
+// Unlike a flat key/value mock, a DAV collection must have an existing parent.
+function hierarchicalServer({baseExists=true,persistentConflict=false}={}){
+ const remote=server(),folders=new Set(baseExists?['https://dav.example/user/']:[]);
+ remote.setIntercept((url,init)=>{
+  const parent=new URL('./',url.endsWith('/')?url.slice(0,-1):url).toString();
+  if(init.method==='MKCOL'){
+   if(!folders.has(parent))return new Response(null,{status:409});
+   const existed=folders.has(url);folders.add(url);return new Response(null,{status:existed?405:201});
+  }
+  if(init.method==='GET'&&url.endsWith('/head.json')&&(persistentConflict||!folders.has(parent)))return new Response(null,{status:409});
+ });
+ return remote;
+}
+
+it('prepares missing DAV parent collections before checking and uploading the first archive',async()=>{
+ const remote=hierarchicalServer(),a=device(remote);configure(a);
+ expect((await a.service.check()).state).toBe('remote_empty');
+ expect(remote.requests.slice(0,7).map(r=>r.method)).toEqual(['GET',...Array(5).fill('MKCOL'),'GET']);
+ expect(remote.requests.some(r=>r.method==='PUT')).toBe(false);
+ expect((await a.service.upload({requestId:'first-with-parents',expectedRemoteSnapshotId:null})).state).toBe('up_to_date');
+ expect(a.read()).toBe('first');
+});
+
+it('does not reinterpret a persistent 409 as an empty vault or bypass publication checks',async()=>{
+ const remote=hierarchicalServer({persistentConflict:true}),a=device(remote);configure(a);
+ await expect(a.service.check()).rejects.toThrow('409');
+ await expect(a.service.upload({requestId:'still-conflicted',expectedRemoteSnapshotId:null})).rejects.toThrow('409');
+ expect(remote.requests.some(r=>r.method==='PUT')).toBe(false);expect(a.adopted).toEqual([]);
+});
+
+it('keeps checking an existing archive read-only when directory creation is forbidden',async()=>{
+ const remote=server(),a=device(remote);configure(a);await a.service.upload({requestId:'existing-archive'});
+ const before=remote.requests.length;remote.setIntercept((_url,init)=>init.method==='MKCOL'?new Response(null,{status:403}):undefined);
+ expect((await a.service.check()).state).toBe('up_to_date');
+ expect(remote.requests.slice(before).every(request=>request.method==='GET')).toBe(true);
+});
+
+it('explains a missing configured base without creating outside that base',async()=>{
+ const remote=hierarchicalServer({baseExists:false}),a=device(remote);configure(a);
+ await expect(a.service.check()).rejects.toThrow('配置的网盘目录');
+ expect(remote.requests).toHaveLength(2);expect(remote.requests[1].url).toBe('https://dav.example/user/reclimb-sync/');
+ expect(a.service.status().pendingUploadRequestId).toBeUndefined();
+});
 function device(remote:ReturnType<typeof server>,content='first'){
  const directory=mkdtempSync(join(tmpdir(),'reclimb-dav-'));roots.push(directory);let local=content;const adopted:string[]=[],inspected:string[]=[];
  const callbacks={currentHash:()=>hash(local),captureBackup(file:string){writeFileSync(file,local);return{contentHash:hash(local)};},inspectBackup(file:string){const value=readFileSync(file,'utf8');if(value==='INVALID')throw new Error('无效备份');inspected.push(value);return{projects:1,sessions:1,materials:0,handwritings:0,createdAt:'2026-09-15T00:00:00.000Z'};},adoptBackup(file:string,options:{expectedLocalContentHash:string}){if(options.expectedLocalContentHash!==hash(local))throw new Error('采用时本机已有新内容');local=readFileSync(file,'utf8');adopted.push(local);}};
