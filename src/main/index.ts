@@ -219,7 +219,7 @@ app.whenReady().then(async()=>{
  const root=app.getPath('userData');mkdirSync(root,{recursive:true});workspaceDir=join(root,'workspace');credentialFile=join(root,'credentials.json');visionCredentialFile=join(root,'vision-credentials.json');recoverInterruptedRestore(root,{workspace:workspaceDir,teachingCredential:credentialFile,visionCredential:visionCredentialFile});credentials=new CredentialsStore(credentialFile,safeStorage);visionCredentials=new CredentialsStore(visionCredentialFile,safeStorage);
  wasmPath=app.isPackaged?join(process.resourcesPath,'sql-wasm.wasm'):join(app.getAppPath(),'node_modules','sql.js','dist','sql-wasm.wasm');
  store=await LearningStore.open(workspaceDir,wasmPath);makeService();
- try{syncService=new WebDavSyncService({directory:join(root,'webdav-sync'),cipher:safeStorage,callbacks:{
+  try{syncService=new WebDavSyncService({directory:join(root,'webdav-sync'),cipher:safeStorage,onDiagnostic:event=>visionRunner.diagnostics.record({operationId:'webdav',kind:'webdav',model:'local',status:event.error?'transport_error':'valid',response:JSON.stringify(event)}),callbacks:{
   currentHash:()=>currentWorkspaceHash(store),
   captureBackup:destination=>{
    if(service.isBusy||visionRunner.isBusy||handwritingFeedback.isBusy)throw new Error('请等待当前 AI 回应保存后再上传完整档案。');

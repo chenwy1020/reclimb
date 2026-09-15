@@ -16,7 +16,7 @@ export function redactDiagnostic(text: string, secrets: string[] = []): string {
   for (const secret of secrets) if (secret) result = result.replaceAll(secret, '[密钥已隐藏]');
   return result.replace(/Bearer\s+[^\s"',}]+/gi, 'Bearer [密钥已隐藏]').replace(/\b(?:sk-|fw_)[A-Za-z0-9_-]{12,}\b/g, '[密钥已隐藏]');
 }
-/** Only local failure snippets and call metadata; never request prompts or headers. */
+/** Only local failure snippets and call metadata; WebDAV events contain allowlisted fields, never headers or file bodies. */
 export class DiagnosticLog {
   constructor(readonly directory: string, private now = () => Date.now()) {}
   private files() {
@@ -44,7 +44,7 @@ export class DiagnosticLog {
     this.prune(); const entries:DiagnosticEntry[]=[];let bytes=0;
     for(const file of this.files()){try{entries.push(JSON.parse(readFileSync(file.path,'utf8')));bytes+=file.stat.size;}catch{/* A damaged diagnostic must not block access to learning records. */}}
     entries.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-    return {entries,bytes,description:'包含最近 7 天的模型配置、请求模型、服务商报告模型、调用标识、结束原因、已报告的缓存用量与耗时、请求结构版本与本机前缀摘要（不是命中证明）、恢复类型、校验结果和失败回复片段。片段可能包含学习内容；不包含密钥、认证头或完整请求。总量最多 20 MB。'};
+    return {entries,bytes,description:'包含 WebDAV 同步请求状态和校验失败原因（不含地址、认证头及文件正文），以及最近 7 天的模型配置、请求模型、服务商报告模型、调用标识、结束原因、已报告的缓存用量与耗时、请求结构版本与本机前缀摘要（不是命中证明）、恢复类型、校验结果和失败回复片段。片段可能包含学习内容；不包含密钥、认证头或完整请求。总量最多 20 MB。'};
   }
   clear():void{for(const file of this.files())unlinkSync(file.path);}
 }

@@ -3,12 +3,13 @@ import {appendFileSync,readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 const contract = JSON.parse(readFileSync(new URL('./release-contract-v0410.json', import.meta.url), 'utf8'));
+const patch052 = JSON.parse(readFileSync(new URL('./release-contract-v052.json', import.meta.url), 'utf8'));
 const patch051 = JSON.parse(readFileSync(new URL('./release-contract-v051.json', import.meta.url), 'utf8'));
 
 export function selectTestProfile(version, scope = 'auto') {
   if (!['auto', 'full'].includes(scope)) throw new Error('Test scope must be auto or full.');
   // This targeted exception expires with its exact release.
-  const tests = scope === 'auto' ? [contract,patch051].find(item=>item.version===version)?.targetTests : undefined;
+  const tests = scope === 'auto' ? [contract,patch051,patch052].find(item=>item.version===version)?.targetTests : undefined;
   return {scope: tests ? 'targeted' : 'full', tests: tests ? [...tests] : []};
 }
 

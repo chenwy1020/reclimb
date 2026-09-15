@@ -20,7 +20,8 @@ export interface WebDavSyncCallbacks {
  /** Must recheck expectedLocalContentHash under the actual workspace transition lock. */
  adoptBackup(file:string,options:{expectedLocalContentHash:string;allowReplaceLocal:boolean;expectedRemoteSnapshotId:string}):MaybePromise<void>;
 }
-export interface WebDavSyncOptions {directory:string;cipher:CredentialCipher;callbacks:WebDavSyncCallbacks;fetcher?:typeof fetch;timeoutMs?:number;maxBackupBytes?:number;}
+export interface WebDavDiagnostic {method:string;resource:string;status?:number;etagKind?:string;bytes?:number;durationMs:number;error?:string;}
+export interface WebDavSyncOptions {directory:string;cipher:CredentialCipher;callbacks:WebDavSyncCallbacks;fetcher?:typeof fetch;timeoutMs?:number;maxBackupBytes?:number;onDiagnostic?:(event:WebDavDiagnostic)=>void;}
 const digest=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 function endpoint(value:string,allowHTTP:boolean):string{
  let url:URL;try{url=new URL(value.trim());}catch{throw new Error('WebDAV 地址不是有效网址。');}
@@ -29,6 +30,8 @@ function endpoint(value:string,allowHTTP:boolean):string{
  if(!url.hostname)throw new Error('WebDAV 地址缺少服务器。');url.pathname=url.pathname.replace(/\/+$/,'')+'/';return url.toString();
 }
 const strongETag=(value:string|null):value is string=>!!value&&value.length<=1024&&/^"[\x21\x23-\x7e\x80-\xff]*"$/.test(value);
+const tagKind=(value:string|null)=>value===null?'missing':value.startsWith('W/')?'weak':strongETag(value)?'strong-syntax':'nonstandard';
+class CompatibilityError extends Error {}
 function abortable<T>(promise:Promise<T>,signal:AbortSignal):Promise<T>{return new Promise((resolve,reject)=>{const abort=()=>reject(new Error('aborted'));if(signal.aborted){reject(new Error('aborted'));return;}signal.addEventListener('abort',abort,{once:true});promise.then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));});}
 
 /** Explicit snapshot transfer; this service never merges learning records or silently adopts a remote head. */
@@ -61,11 +64,19 @@ export class WebDavSyncService {
  private connection(){const c=this.state.config;if(!c)throw new Error('请先配置 WebDAV 连接。');return c;}
  private url(path:string){const c=this.connection();return new URL('reclimb-sync/v1/'+c.vaultId+'/'+path,c.endpoint).toString();}
  private authorization(){const c=this.connection();try{if(!this.options.cipher.isEncryptionAvailable())throw new Error();const secret=JSON.parse(this.options.cipher.decryptString(Buffer.from(c.encryptedPassword,'base64')));if(secret.purpose!=='reclimb-webdav-password'||secret.endpoint!==c.endpoint||secret.username!==c.username||typeof secret.password!=='string')throw new Error();return'Basic '+Buffer.from(c.username+':'+secret.password).toString('base64');}catch{throw new Error('本机 WebDAV 密码无法解密，请重新配置连接。');}}
- private async run<T>(fn:()=>Promise<T>):Promise<T>{if(this.busy)throw new Error('已有同步操作正在进行，不会重复执行。');this.connection();this.busy=true;this.controller=new AbortController();try{const result=await fn();return result&&typeof result==='object'&&'configured' in result?{...result,busy:false}:result;}finally{this.busy=false;this.controller=undefined;}}
+ private async run<T>(fn:()=>Promise<T>):Promise<T>{if(this.busy)throw new Error('已有同步操作正在进行，不会重复执行。');this.connection();this.busy=true;this.controller=new AbortController();try{const result=await fn();return result&&typeof result==='object'&&'configured' in result?{...result,busy:false}:result;}catch(error){if(error instanceof CompatibilityError)this.checked={...this.checked,state:'unsupported',message:error.message};this.diagnose({method:'CHECK',resource:'validation',durationMs:0,error:error instanceof Error&&error.message.startsWith('WebDAV ')?error.message:'本机同步操作未完成'});throw error;}finally{this.busy=false;this.controller=undefined;}}
+ private diagnose(event:WebDavDiagnostic){try{this.options.onDiagnostic?.(event);}catch{/* Diagnostics cannot prevent saving or synchronization. */}}
+ private nutstore(){return new URL(this.connection().endpoint).origin==='https://dav.jianguoyun.com';}
+ // The official Nutstore endpoint uses bare opaque validators. Preserve the wire value:
+ // adding quotes changes If-Match semantics. Upload still probes actual version rejection.
+ private usableETag(value:string|null):boolean{return strongETag(value)||this.nutstore()&&!!value&&/^[A-Za-z0-9+/_=-]{16,128}$/.test(value);}
+ private assertTag(value:string|null){if(this.usableETag(value))return;throw new CompatibilityError(value===null?'WebDAV 读取文件成功，但缺少 ETag 版本标记；安全同步暂停。':value.startsWith('W/')?'WebDAV 返回弱 ETag，不能可靠保护版本；安全同步暂停。':'WebDAV ETag 版本标记格式不受支持；安全同步暂停。');}
  private async request(url:string,method:string,body?:Buffer,headers:Record<string,string>={},limit=MAX_META):Promise<{status:number;headers:Headers;bytes:Buffer}>{
+  const started=Date.now(),resource=url.includes('.upload-')?'staging':url.includes('/probes/')?'probe':url.endsWith('/head.json')?'head':url.includes('/snapshots/')?'snapshot':'collection';
   const timeout=new AbortController(),timer=setTimeout(()=>timeout.abort(),this.options.timeoutMs??30000),signal=AbortSignal.any([timeout.signal,...(this.controller?[this.controller.signal]:[])]);
   try{
-   const response=await abortable((this.options.fetcher??fetch)(url,{method,redirect:'manual',headers:{Authorization:this.authorization(),...headers},body:body as BodyInit|undefined,signal}),signal);
+    const response=await abortable((this.options.fetcher??fetch)(url,{method,redirect:'manual',headers:{Authorization:this.authorization(),...headers},body:body as BodyInit|undefined,signal}),signal);
+    this.diagnose({method,resource,status:response.status,etagKind:tagKind(response.headers.get('etag')),durationMs:Date.now()-started});
    if(response.status>=300&&response.status<400){void response.body?.cancel().catch(()=>{});throw new Error('WebDAV 返回重定向，已停止以避免密码发送到其他地址；请直接填写最终地址。');}
    const length=response.headers.get('content-length');if(length&&(!/^\d+$/.test(length)||Number(length)>limit)){void response.body?.cancel().catch(()=>{});throw new Error('WebDAV 响应超过允许大小，当前学习档案未改变。');}
    const chunks:Buffer[]=[];let total=0;const reader=response.body?.getReader();
@@ -75,12 +86,12 @@ export class WebDavSyncService {
   }catch(error){if(signal.aborted)throw new Error(this.controller?.signal.aborted?'同步已取消；已经保存的本机内容和快照仍保留。':'WebDAV 请求超时；请检查网络后主动重试，未自动覆盖档案。');if(error instanceof Error&&error.message.startsWith('WebDAV '))throw error;throw new Error('WebDAV 请求失败，请检查网络和服务器；本机档案未被覆盖。');}finally{clearTimeout(timer);}
  }
  private async remote(prepareOnConflict=false){let result=await this.request(this.url('head.json'),'GET');if(result.status===409&&prepareOnConflict){await this.directories();result=await this.request(this.url('head.json'),'GET');}if(result.status===404)return null;if(result.status!==200)throw new Error('WebDAV 无法读取远端版本（HTTP '+result.status+'）。');let snapshot:SyncRemoteSnapshot;try{snapshot=remoteSchema.parse(JSON.parse(result.bytes.toString('utf8')));if(snapshot.vaultId!==this.connection().vaultId)throw new Error();}catch{throw new Error('WebDAV 远端版本清单无效或不属于这个同步空间。');}return{snapshot,etag:result.headers.get('etag')};}
- private requireStrong(remote:Awaited<ReturnType<WebDavSyncService['remote']>>){if(remote&&!strongETag(remote.etag))throw new Error('WebDAV 服务器未提供强 ETag，不能安全检查或覆盖远端版本；已保留本机档案。');}
+ private requireStrong(remote:Awaited<ReturnType<WebDavSyncService['remote']>>){if(remote)this.assertTag(remote.etag);}
  private baselineRewritten(remote:Awaited<ReturnType<WebDavSyncService['remote']>>){return!!remote&&remote.snapshot.snapshotId===this.state.baselineSnapshotId&&!!this.state.baselineRemote&&JSON.stringify(remote.snapshot)!==JSON.stringify(this.state.baselineRemote);}
  private async currentHash(){return sha.parse(await this.options.callbacks.currentHash());}
  private async observe(remote:Awaited<ReturnType<WebDavSyncService['remote']>>){
   const localContentHash=await this.currentHash(),base=this.state.baselineSnapshotId;let state:WebDavSyncState,message:string;
-  if(remote&&!strongETag(remote.etag)){state='unsupported';message='服务器未提供强 ETag，安全同步暂停。';}
+  if(remote&&!this.usableETag(remote.etag)){state='unsupported';message='服务器未提供可用的 ETag 版本标记，安全同步暂停。';}
   else if(!remote){state=base?'conflict':'remote_empty';message=base?'远端主版本已不存在，停止自动重建，避免覆盖或复活已移除的数据。':'远端空间没有快照，可以主动上传当前档案。';}
   else if(this.baselineRewritten(remote)){state='conflict';message='远端改写了已经保存的同编号快照，已暂停同步，请保留本机档案。';}
   else if(!base){state='unlinked';message='尚未采用这个空间的共同版本，请预览远端档案后选择。';}
@@ -93,13 +104,33 @@ export class WebDavSyncService {
  private async verifyConditionalWrites(){
   if(this.conditionalVerified)return;const url=this.url('probes/'+randomUUID()+'.txt'),first=Buffer.from('reclimb conditional write probe'),second=Buffer.from('reclimb conditional write verified');
   try{
-   let result=await this.request(url,'PUT',first,{'If-None-Match':'*'});if(![200,201,204].includes(result.status))throw new Error('WebDAV 不能创建条件写入核对文件。');
-   const read=await this.request(url,'GET');if(read.status!==200||!strongETag(read.headers.get('etag'))||!read.bytes.equals(first))throw new Error('WebDAV 条件写入核对未获得可靠强 ETag。');
-   result=await this.request(url,'PUT',second,{'If-None-Match':'*'});if(result.status!==412)throw new Error('WebDAV 服务器没有执行防覆盖条件，已暂停安全同步。');
-   result=await this.request(url,'PUT',second,{'If-Match':'"reclimb-invalid-'+randomUUID()+'"'});if(result.status!==412)throw new Error('WebDAV 服务器没有执行版本条件，已暂停安全同步。');
+   let result=await this.createExclusive(url,first,'text/plain');if(![200,201,204].includes(result.status))throw new Error('WebDAV 不能创建核对文件（HTTP '+result.status+'）。');
+   const read=await this.request(url,'GET');if(read.status!==200)throw new Error('WebDAV 核对文件读取失败（HTTP '+read.status+'），尚未上传档案。');
+   if(!read.bytes.equals(first))throw new CompatibilityError('WebDAV 核对文件读回内容与写入不同，尚未上传档案。');this.assertTag(read.headers.get('etag'));
+   result=await this.createExclusive(url,second,'text/plain');if(result.status!==412)throw new CompatibilityError('WebDAV 服务器没有执行防覆盖条件，已暂停安全同步。');
+   const unchanged=await this.request(url,'GET');if(unchanged.status!==200||!unchanged.bytes.equals(first)||unchanged.headers.get('etag')!==read.headers.get('etag'))throw new CompatibilityError('WebDAV 防覆盖核对失败：原文件被改变，已暂停安全同步。');
+   result=await this.request(url,'PUT',second,{'If-Match':'"reclimb-invalid-'+randomUUID()+'"'});if(result.status!==412)throw new CompatibilityError('WebDAV 服务器没有执行版本条件，已暂停安全同步。');
+   const rejected=await this.request(url,'GET');if(rejected.status!==200||!rejected.bytes.equals(first)||rejected.headers.get('etag')!==read.headers.get('etag'))throw new CompatibilityError('WebDAV 错误版本请求仍改变了文件，已暂停安全同步。');
    result=await this.request(url,'PUT',second,{'If-Match':read.headers.get('etag')!});if(![200,201,204].includes(result.status))throw new Error('WebDAV 条件更新核对失败。');
-   const after=await this.request(url,'GET');if(after.status!==200||!strongETag(after.headers.get('etag'))||after.headers.get('etag')===read.headers.get('etag')||!after.bytes.equals(second))throw new Error('WebDAV 版本更新核对失败。');this.conditionalVerified=true;
+   const after=await this.request(url,'GET');if(after.status!==200||!this.usableETag(after.headers.get('etag'))||after.headers.get('etag')===read.headers.get('etag')||!after.bytes.equals(second))throw new CompatibilityError('WebDAV 版本更新核对失败：内容或版本标记未正确更新。');
+   result=await this.request(url,'PUT',first,{'If-Match':read.headers.get('etag')!});if(result.status!==412)throw new CompatibilityError('WebDAV 服务器没有拒绝过期版本，已暂停安全同步。');
+   const final=await this.request(url,'GET');if(final.status!==200||!final.bytes.equals(second)||final.headers.get('etag')!==after.headers.get('etag'))throw new CompatibilityError('WebDAV 过期版本核对失败：原文件被改变。');this.conditionalVerified=true;
   }finally{try{await this.request(url,'DELETE');}catch{/* Only this operation's small probe may remain; never delete snapshots. */}}
+ }
+ /** Publish a new immutable file. Nutstore ignores If-None-Match:* but enforces
+  * MOVE Overwrite:F. Never use that provider's ordinary PUT to create head.json. */
+ private async createExclusive(url:string,bytes:Buffer,contentType:string){
+  if(!this.nutstore())return this.request(url,'PUT',bytes,{'Content-Type':contentType,'If-None-Match':'*'});
+  const temporary=url+'.upload-'+randomUUID();
+  try{
+   const staged=await this.request(temporary,'PUT',bytes,{'Content-Type':contentType});
+   if(![200,201,204].includes(staged.status))throw new Error('WebDAV 临时文件上传失败（HTTP '+staged.status+'），待上传档案保留。');
+   const moved=await this.request(temporary,'MOVE',undefined,{Destination:url,Overwrite:'F'});
+   // Nutstore reports an existing destination as 409 rather than 412. Confirm
+   // existence; a missing parent or other persistent 409 is still an error.
+   if(moved.status===409){const target=await this.request(url,'HEAD',undefined,{},this.maxBytes());if(target.status===200)return{...moved,status:412};throw new Error('WebDAV 文件发布失败（HTTP 409），目标并不存在；请检查目录和网盘权限。');}
+   return moved;
+  }finally{try{await this.request(temporary,'DELETE');}catch{/* This invocation's unique staging file only; retries retain the local archive. */}}
  }
  async upload(body:WebDavUploadInput){return this.run(async()=>{
   const input=z.object({requestId:id,expectedRemoteSnapshotId:id.nullable().optional()}).strict().parse(body);
@@ -121,11 +152,11 @@ export class WebDavSyncService {
   const bytes=this.localArchive(pending.snapshot);await this.options.callbacks.inspectBackup(this.file(pending.snapshot.snapshotId));await this.verifyConditionalWrites();
   // Re-read immediately before publication; CAS still protects the interval after this read.
   remote=await this.remote();this.requireStrong(remote);if(this.baselineRewritten(remote)||(remote?.snapshot.snapshotId??null)!==pending.expectedHead)throw new Error('WebDAV 远端在上传期间发生变化，已停止覆盖；待上传快照仍保留。');
-  const archive=await this.request(this.url('snapshots/'+pending.snapshot.snapshotId+'.reclimb'),'PUT',bytes,{'Content-Type':'application/octet-stream','If-None-Match':'*'});if(![200,201,204,412].includes(archive.status))throw new Error('WebDAV 上传快照失败（HTTP '+archive.status+'）。');
+   const archive=await this.createExclusive(this.url('snapshots/'+pending.snapshot.snapshotId+'.reclimb'),bytes,'application/octet-stream');if(![200,201,204,412].includes(archive.status))throw new Error('WebDAV 上传快照失败（HTTP '+archive.status+'）。');
   await this.verifyRemoteArchive(pending.snapshot);
-  const metadata=Buffer.from(JSON.stringify(pending.snapshot));const manifest=await this.request(this.url('snapshots/'+pending.snapshot.snapshotId+'.json'),'PUT',metadata,{'Content-Type':'application/json','If-None-Match':'*'});
+   const metadata=Buffer.from(JSON.stringify(pending.snapshot));const manifest=await this.createExclusive(this.url('snapshots/'+pending.snapshot.snapshotId+'.json'),metadata,'application/json');
   if(manifest.status===412){const found=await this.request(this.url('snapshots/'+pending.snapshot.snapshotId+'.json'),'GET');if(found.status!==200||!found.bytes.equals(metadata))throw new Error('WebDAV 已有快照清单与本次内容不同，未覆盖。');}else if(![200,201,204].includes(manifest.status))throw new Error('WebDAV 快照清单上传失败。');
-  const published=await this.request(this.url('head.json'),'PUT',metadata,remote?{'Content-Type':'application/json','If-Match':remote.etag!}:{'Content-Type':'application/json','If-None-Match':'*'});
+   const published=remote?await this.request(this.url('head.json'),'PUT',metadata,{'Content-Type':'application/json','If-Match':remote.etag!}):await this.createExclusive(this.url('head.json'),metadata,'application/json');
   if(published.status===412)throw new Error('WebDAV 同时收到另一设备的新版本，当前快照已保留，主版本未覆盖。');if(![200,201,204].includes(published.status))throw new Error('WebDAV 主版本提交未确认，请使用原操作编号重试。');
   const confirmed=await this.remote();this.requireStrong(confirmed);if(confirmed?.snapshot.snapshotId!==pending.snapshot.snapshotId)throw new Error('WebDAV 主版本提交结果不一致，保留本机快照并暂停。');
   return this.finishUpload(pending.requestId,pending.snapshot,confirmed);
