@@ -8,17 +8,25 @@ import {WebDavSyncService} from '../src/main/webdav-sync';
 const roots:string[]=[];afterEach(()=>roots.splice(0).forEach(path=>rmSync(path,{recursive:true,force:true})));
 const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
 const key=randomBytes(32),cipher={isEncryptionAvailable:()=>true,encryptString(value:string){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',key,iv);return Buffer.concat([iv,c.update(value),c.final(),c.getAuthTag()]);},decryptString(value:Buffer){const c=createDecipheriv('aes-256-gcm',key,value.subarray(0,12));c.setAuthTag(value.subarray(-16));return Buffer.concat([c.update(value.subarray(12,-16)),c.final()]).toString();}};
-function server(){
+function server({nut=false}={}){
  const files=new Map<string,{body:Buffer;etag:string}>(),requests:{url:string;method:string;headers:Headers}[]=[];let generation=0;
  let intercept:((url:string,init:RequestInit)=>Promise<Response|undefined>|Response|undefined)|undefined;
  const fetcher=async(input:URL|RequestInfo,init:RequestInit={})=>{
   const url=String(input),method=init.method??'GET',headers=new Headers(init.headers);requests.push({url,method,headers});const altered=await intercept?.(url,init);if(altered)return altered;
   if(method==='MKCOL')return new Response(null,{status:201});
   const item=files.get(url);
+  if(method==='HEAD')return new Response(null,{status:item?200:404});
+  if(method==='DELETE'){files.delete(url);return new Response(null,{status:204});}
+  if(method==='MOVE'){
+   const destination=headers.get('destination')!;
+   if(!item)return new Response(null,{status:404});
+   if(headers.get('overwrite')==='F'&&files.has(destination))return new Response(null,{status:nut?409:412});
+   files.set(destination,item);files.delete(url);return new Response(null,{status:201});
+  }
   if(method==='GET')return item?new Response(new Uint8Array(item.body),{status:200,headers:{ETag:item.etag,'content-length':String(item.body.length)}}):new Response(null,{status:404});
   if(method==='PUT'){
-   if(headers.get('if-none-match')==='*'&&item||headers.has('if-match')&&headers.get('if-match')!==item?.etag)return new Response(null,{status:412});
-   const body=Buffer.from(init.body as Uint8Array),etag='"v'+(++generation)+'"';files.set(url,{body,etag});return new Response(null,{status:item?204:201,headers:{ETag:etag}});
+   if(!nut&&headers.get('if-none-match')==='*'&&item||headers.has('if-match')&&headers.get('if-match')!==item?.etag)return new Response(null,{status:412});
+   const body=Buffer.from(init.body as Uint8Array),etag=nut?hash(body).slice(0,22):'"v'+(++generation)+'"';files.set(url,{body,etag});return new Response(null,{status:item?204:201,headers:{ETag:etag}});
   }
   return new Response(null,{status:405});
  };
@@ -75,6 +83,78 @@ function device(remote:ReturnType<typeof server>,content='first'){
  return {service,directory,callbacks,options,adopted,inspected,read:()=>local,write:(value:string)=>{local=value;}};
 }
 const configure=(d:ReturnType<typeof device>,vaultId?:string)=>d.service.configure({endpoint:'https://dav.example/user/',username:'student',password:'TOP_SECRET_DAV_PASSWORD',vaultId});
+const configureNut=(d:ReturnType<typeof device>,vaultId='fixture')=>d.service.configure({endpoint:'https://dav.jianguoyun.com/dav/',username:'student',password:'TOP_SECRET_DAV_PASSWORD',vaultId});
+
+it('supports Nutstore bare validators using verified no-overwrite MOVE and raw version updates',async()=>{
+ const remote=server({nut:true}),a=device(remote);configureNut(a);
+ const initial=await a.service.upload({requestId:'nut-first'});expect(initial.state).toBe('up_to_date');
+ expect(remote.requests.some(r=>r.method==='MOVE'&&r.headers.get('destination')?.endsWith('/head.json')&&r.headers.get('overwrite')==='F')).toBe(true);
+ expect(remote.requests.some(r=>r.method==='PUT'&&r.url.endsWith('/head.json'))).toBe(false);
+ a.write('advanced');expect((await a.service.upload({requestId:'nut-next',expectedRemoteSnapshotId:initial.remote!.snapshotId})).state).toBe('up_to_date');
+ expect([...remote.requests].reverse().find(r=>r.method==='PUT'&&r.url.endsWith('/head.json'))!.headers.get('if-match')).toMatch(/^[a-f0-9]{22}$/);
+ const b=device(remote,'other local');configureNut(b);const p=await b.service.preview({});
+ await b.service.adopt({previewId:p.id,expectedLocalContentHash:p.localContentHash,expectedRemoteSnapshotId:p.snapshot.snapshotId,allowReplaceLocal:true});
+ expect(b.read()).toBe('advanced');expect([...remote.files.keys()].filter(k=>k.includes('/probes/')||k.includes('.upload-'))).toEqual([]);
+});
+
+it('keeps the winning initial head and both archives when Nutstore MOVE detects a concurrent first upload',async()=>{
+ const remote=server({nut:true}),a=device(remote);configureNut(a);
+ remote.setIntercept((url,init)=>{const h=new Headers(init.headers),dest=h.get('destination');if(init.method==='MOVE'&&dest?.endsWith('/head.json')){const item=remote.files.get(url)!;remote.files.set(dest,{etag:'competing-version-tag-22',body:Buffer.from(JSON.stringify({...JSON.parse(item.body.toString()),snapshotId:'other-winner',deviceId:'other'}))});}return undefined;});
+ await expect(a.service.upload({requestId:'race-nut'})).rejects.toThrow('另一设备');
+ expect(a.service.status().pendingUploadRequestId).toBe('race-nut');expect(JSON.parse([...remote.files].find(([u])=>u.endsWith('/head.json'))![1].body.toString()).snapshotId).toBe('other-winner');
+ expect([...remote.files.keys()].filter(u=>u.endsWith('.reclimb'))).toHaveLength(1);
+});
+
+it('recovers Nutstore MOVE publication after a lost response without recreating the snapshot',async()=>{
+ const remote=server({nut:true}),a=device(remote);configureNut(a);
+ remote.setIntercept((url,init)=>{const dest=new Headers(init.headers).get('destination');if(init.method==='MOVE'&&dest?.endsWith('/head.json')){remote.files.set(dest,remote.files.get(url)!);remote.files.delete(url);throw new Error('lost');}return undefined;});
+ await expect(a.service.upload({requestId:'nut-lost'})).rejects.toThrow('请求失败');
+ remote.setIntercept(undefined);const restarted=new WebDavSyncService(a.options),before=remote.requests.filter(r=>r.method==='PUT').length;
+ expect((await restarted.upload({requestId:'nut-lost'})).state).toBe('up_to_date');expect(remote.requests.filter(r=>r.method==='PUT')).toHaveLength(before);
+});
+
+it('refuses a Nutstore server that ignores MOVE no-overwrite even if raw If-Match works',async()=>{
+ const remote=server({nut:true}),a=device(remote);configureNut(a);
+ remote.setIntercept((url,init)=>{if(init.method==='MOVE'){remote.files.set(new Headers(init.headers).get('destination')!,remote.files.get(url)!);remote.files.delete(url);return new Response(null,{status:201});}return undefined;});
+ await expect(a.service.upload({requestId:'unsafe-move'})).rejects.toThrow('防覆盖');
+ expect(a.service.status().state).toBe('unsupported');expect([...remote.files.keys()].some(u=>u.endsWith('/head.json')||u.endsWith('.reclimb'))).toBe(false);
+});
+
+it.each(['missing','weak','body','http'])('explains the actual probe failure: %s',async failure=>{
+ const remote=server({nut:true}),a=device(remote);configureNut(a);
+ remote.setIntercept((url,init)=>{if(init.method==='GET'&&url.includes('/probes/')){const item=remote.files.get(url);if(item)return new Response(failure==='body'?'wrong':new Uint8Array(item.body),{status:failure==='http'?503:200,headers:failure==='missing'?{}:{ETag:failure==='weak'?'W/"weak"':item.etag}});}return undefined;});
+ await expect(a.service.upload({requestId:'reason-'+failure})).rejects.toThrow(({missing:'缺少',weak:'弱',body:'内容',http:'503'})[failure]);
+ expect([...remote.files.keys()].some(u=>u.endsWith('.reclimb'))).toBe(false);
+});
+
+it('does not accept bare ETags from an unrelated provider',async()=>{
+ const remote=server({nut:true}),a=device(remote);configure(a);
+ await expect(a.service.upload({requestId:'unknown-bare'})).rejects.toThrow('ETag');
+ expect([...remote.files.keys()].some(u=>u.endsWith('.reclimb'))).toBe(false);
+});
+
+it('does not treat an unrelated MOVE 409 as an existing destination',async()=>{
+ const remote=server({nut:true}),a=device(remote);configureNut(a);
+ remote.setIntercept((_url,init)=>init.method==='MOVE'?new Response(null,{status:409}):undefined);
+ await expect(a.service.upload({requestId:'move-parent-missing'})).rejects.toThrow('目标并不存在');
+ expect(a.service.status().pendingUploadRequestId).toBe('move-parent-missing');
+ expect([...remote.files.keys()]).toEqual([]);
+});
+
+it('rejects a server that returns 412 while actually performing the forbidden version write',async()=>{
+ const remote=server({nut:true}),a=device(remote);configureNut(a);
+ remote.setIntercept((url,init)=>{if(new Headers(init.headers).get('if-match')?.includes('reclimb-invalid')){remote.files.set(url,{body:Buffer.from(init.body as Uint8Array),etag:hash('changed').slice(0,22)});return new Response(null,{status:412});}return undefined;});
+ await expect(a.service.upload({requestId:'lying-412'})).rejects.toThrow('错误版本');
+ expect([...remote.files.keys()].some(u=>u.endsWith('.reclimb'))).toBe(false);
+});
+
+it('records bounded diagnostic fields without credentials, paths, validators or learning text',async()=>{
+ const remote=server({nut:true}),a=device(remote,'PRIVATE_LEARNING_TEXT'),events:unknown[]=[];configureNut(a);
+ const service=new WebDavSyncService({...a.options,onDiagnostic:event=>{events.push(event);}});
+ await service.upload({requestId:'safe-diagnostic'});
+ const text=JSON.stringify(events);expect(events.length).toBeGreaterThan(5);expect(text).toContain('"method":"MOVE"');expect(text).toContain('"etagKind":"nonstandard"');
+ for(const value of ['TOP_SECRET','student','Authorization','PRIVATE_LEARNING_TEXT','dav.jianguoyun.com'])expect(text).not.toContain(value);
+});
 
 it('keeps credentials encrypted on disk, rejects unsafe endpoints and exposes only safe preferences',()=>{
  const d=device(server());expect(()=>d.service.configure({endpoint:'http://nas.local/dav',username:'u',password:'p'})).toThrow('HTTPS');
