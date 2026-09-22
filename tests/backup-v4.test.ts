@@ -17,7 +17,7 @@ describe('durable input archives remain compatible in 0.4',()=>{
    const SQL=await initSqlJs(),db=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));
    db.run('PRAGMA user_version=3');const original=Buffer.from(db.export());db.close();writeFileSync(join(dir,'learning.sqlite'),original);
    store=await LearningStore.open(dir);expect(store.get('projects',project.id)).toEqual(project);store.close();store=undefined;
-   const after=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(after.exec('PRAGMA user_version')[0].values[0][0]).toBe(10);after.close();
+   const after=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(after.exec('PRAGMA user_version')[0].values[0][0]).toBe(11);after.close();
    const backups=readdirSync(join(dir,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.4-/);
    expect(readFileSync(join(dir,'upgrade-backups',backups[0]))).toEqual(original);
    store=await LearningStore.open(dir);expect(readdirSync(join(dir,'upgrade-backups'))).toHaveLength(1);
@@ -33,7 +33,7 @@ describe('durable input archives remain compatible in 0.4',()=>{
    const message={id:'input',role:'user' as const,text:'我还不明白，但这个想法需要保留。',createdAt:now,kind:'note',taskId:'task',inputId:'input',requestId:'request',responseMode:'discussion' as const,responseState:'failed' as const,responseError:'网络不可用',responseUpdatedAt:now,activitySnapshot:activity,helpLevel:0};
    store.put('sessions',{id:'s',projectId:'p',capabilityId:'c',activity,mode:'practice',status:'active',createdAt:now,updatedAt:now,draft:'仍在继续写',helpLevel:0,helpEvents:[],messages:[message],checkpoint:'已保存',nextStep:'稍后回应'});
    const file=join(root,'archive.reclimb');writeBackup(store,file);
-   expect(JSON.parse(new AdmZip(file).readAsText('manifest.json')).version).toBe(10);
+   expect(JSON.parse(new AdmZip(file).readAsText('manifest.json')).version).toBe(11);
    const backup=readBackup(file);expect(backup.records.sessions[0].messages[0]).toEqual(message);expect(backup.records.evidence).toEqual([]);
    await prepareRestore(file,join(root,'restored'));restored=await LearningStore.open(join(root,'restored'));
    expect(restored.get('sessions','s')?.messages[0]).toEqual(message);expect(restored.list('evidence')).toEqual([]);

@@ -32,6 +32,8 @@ export function evidenceStanding(snapshot:Records,evidence:Evidence):Standing{
  const correction=snapshot.corrections.filter(c=>c.evidenceId===evidence.id).at(-1);
  if(correction&&correction.action!=='restore')return {effective:false,reason:correction.reason};
  const versionId=versionForTask(snapshot,evidence.projectId,evidence.taskId??evidence.activitySnapshot?.id,evidence.teachingVersionId??evidence.activitySnapshot?.teachingVersionId);
+ const replaced=versionId?snapshot.corrections.find(c=>c.teachingVersionId===versionId&&!c.evidenceId&&(c.action==='invalidate'||c.action==='replace')):undefined;
+ if(replaced)return {effective:false,reason:replaced.reason};
  return versionId?versionStanding(snapshot,versionId):{effective:true};
 }
 export function reviewStanding(snapshot:Records,review:Review):Standing{
@@ -39,5 +41,12 @@ export function reviewStanding(snapshot:Records,review:Review):Standing{
  if(versionId){const state=versionStanding(snapshot,versionId);if(!state.effective)return state;}
  const origin=snapshot.evidence.filter(e=>e.sessionId===review.fromSessionId&&e.capabilityId===review.capabilityId&&(!review.fromTaskId||e.taskId===review.fromTaskId)&&e.status!=='needs_review');
  if(origin.length&&!origin.some(e=>evidenceStanding(snapshot,e).effective))return {effective:false,reason:'这次回访依赖的原表现已暂停或失效'};
+ return {effective:true};
+}
+
+/** Machine conclusions remain applicable only while their recorded bases are effective. */
+export function derivedStanding(snapshot:Records,derived:{basedOnEvidenceIds?:string[];basedOnTeachingVersionIds?:string[]}):Standing{
+ for(const id of derived.basedOnEvidenceIds??[]){const evidence=snapshot.evidence.find(item=>item.id===id);if(!evidence)return {effective:false,reason:'原建议依赖的表现记录不存在'};const standing=evidenceStanding(snapshot,evidence);if(!standing.effective)return standing;}
+ for(const id of derived.basedOnTeachingVersionIds??[]){const standing=versionStanding(snapshot,id);if(!standing.effective)return standing;}
  return {effective:true};
 }

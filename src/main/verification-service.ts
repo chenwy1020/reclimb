@@ -8,6 +8,7 @@ import {LearningStore} from './store';import {CallRunner} from './call-runner';
 import {taskReviewSchemaFor} from './verification-schemas';
 import {runMathChecks} from './math-checks';
 import {exposureCandidates} from '../shared/reliability-state';
+import {reconcileDerivedState} from './operations';
 
 const clone=<T>(value:T):T=>JSON.parse(JSON.stringify(value));
 function canonical(value:unknown):string{if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';if(value&&typeof value==='object')return '{'+Object.entries(value).filter(([,v])=>v!==undefined).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>JSON.stringify(k)+':'+canonical(v)).join(',')+'}';return JSON.stringify(value);}
@@ -99,7 +100,7 @@ export class VerificationService{
   if(record.status==='ready'&&(!record.privateSolution.trim()||record.issues.length||record.branches.some(branch=>branch.applicability==='unknown')))record.status='uncertain';record.effectiveStatus=record.status;record.blockingReasons=reviewBlockers(version,record);this.store.put('taskReviews',record);this.runner.markPublished(result);return record;
  }
  correct(versionId:string,action:CorrectionRecord['action'],reason:string,extra:Partial<Pick<CorrectionRecord,'disputeId'|'reviewId'|'replacementVersionId'|'evidenceId'>>={}):CorrectionRecord{
-  const version=this.store.get('teachingVersions',versionId);if(!version)throw new Error('待修正的教学版本不存在。');const correction:CorrectionRecord={id:randomUUID(),projectId:version.projectId,teachingVersionId:versionId,action,reason,createdAt:new Date().toISOString(),...extra};this.store.put('corrections',correction);return correction;
+  const version=this.store.get('teachingVersions',versionId);if(!version)throw new Error('待修正的教学版本不存在。');const correction:CorrectionRecord={id:randomUUID(),projectId:version.projectId,teachingVersionId:versionId,action,reason,createdAt:new Date().toISOString(),...extra};this.store.transaction(()=>{this.store.put('corrections',correction);reconcileDerivedState(this.store);});return correction;
  }
  openDispute(session:Session,issue:string):Dispute{
   if(!issue.trim()||issue.length>10000)throw new Error('请简要说明需要核对的题目或评价问题。');const versionId=session.teachingVersionId??session.activity.teachingVersionId,version=versionId?this.store.get('teachingVersions',versionId):undefined;if(!version)throw new Error('这道旧题需要先建立核验版本。');

@@ -9,6 +9,15 @@ param(
   [int]$ExpectedChecks = 62
 )
 $ErrorActionPreference = 'Stop'
+function Get-Sha256Hex([string]$Path) {
+  $stream = [IO.File]::OpenRead($Path)
+  try {
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try { $bytes = $algorithm.ComputeHash($stream) }
+    finally { $algorithm.Dispose() }
+  } finally { $stream.Dispose() }
+  return ([BitConverter]::ToString($bytes)).Replace('-','')
+}
 $workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location -LiteralPath $workspace
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
@@ -23,7 +32,7 @@ foreach($directory in @($extractionDirectory,$artifactDirectory)) {
   if(Test-Path -LiteralPath $directory) { throw ('Refusing to overwrite an existing validation directory: ' + $directory) }
   New-Item -ItemType Directory -Path $directory | Out-Null
 }
-$installerHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash
+$installerHash = Get-Sha256Hex $installerPath
 $installerBytes = (Get-Item -LiteralPath $installerPath).Length
 $productExecutableName = ([string][char]0x91CD) + ([string][char]0x767B) + '.exe'
 
@@ -80,7 +89,7 @@ try {
   [Environment]::SetEnvironmentVariable('RECLIMB_TEST_PDF',$previousPdf,'Process')
   [Environment]::SetEnvironmentVariable('RECLIMB_TEST_ARTIFACT_DIR',$previousArtifact,'Process')
 }
-if((Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash -ne $installerHash) { throw 'The installer changed during validation; no final package report will be published.' }
+if((Get-Sha256Hex $installerPath) -ne $installerHash) { throw 'The installer changed during validation; no final package report will be published.' }
 
 $desktopReport = Join-Path $artifactDirectory $DesktopReportName
 $desktop = Get-Content -LiteralPath $desktopReport -Raw -Encoding UTF8 | ConvertFrom-Json

@@ -5,6 +5,7 @@ import {mkdirSync,writeFileSync,existsSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {createServer} from 'node:http';
 import {createRequire} from 'node:module';
+import {openDeskDetails} from './desktop-navigation.mjs';
 
 const require=createRequire(import.meta.url),root=process.cwd(),stamp=Date.now().toString();
 const executable=process.env.RECLIMB_TEST_EXECUTABLE?.trim();
@@ -49,7 +50,7 @@ await new Promise(done=>server.listen(0,'127.0.0.1',done));
 const baseUrl='http://127.0.0.1:'+server.address().port+'/v1';
 const api=(action,payload={})=>page.evaluate(({action,payload})=>window.learning.request(action,payload),{action,payload});
 const snapshot=()=>api('workspace.snapshot');
-const settle=async()=>{await page.locator('.working').waitFor({state:'hidden'});await page.waitForTimeout(80)};
+const settle=async()=>{await page.locator('.working').waitFor({state:'hidden'});await page.waitForTimeout(80);await openDeskDetails(page)};
 async function launch(){
  app=await electron.launch({executablePath:executable||require('electron'),args:executable?[]:['.'],cwd:root,env:{...Object.fromEntries(Object.entries(process.env).filter(([key])=>key!=='ELECTRON_RUN_AS_NODE')),RECLIMB_DATA_DIR:dataDirectory,RECLIMB_DEV_URL:''},timeout:45000});
  app.process().stderr.on('data',data=>{if(/error/i.test(data.toString()))stderr.push(data.toString().slice(0,1600));});

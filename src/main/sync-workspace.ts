@@ -9,8 +9,10 @@ export function canonicalSyncJson(value:unknown):string {
 }
 export function portableWorkspaceHash(snapshot:Omit<WorkspaceSnapshot,'dataDirectory'>,materialBytes:(id:string)=>Buffer):string {
  const {settings,dataDirectory:_directory,...collections}=snapshot as WorkspaceSnapshot;
+ const formatVersion=(snapshot as unknown as {__reclimbBackupFormatVersion?:number}).__reclimbBackupFormatVersion;
+ const remediation=new Set(['operations','learningProposals','routeAssociations','readerStates','validationSets','validationTasks','validationRuns','validationExposures','trialRecords']);
  const content:Record<string,unknown>={settings:{personalGoal:settings.personalGoal,studyMinutes:settings.studyMinutes,confirmedPreferences:settings.confirmedPreferences}};
- for(const [key,items] of Object.entries(collections))if(Array.isArray(items))content[key]=items.map(item=>{
+ for(const [key,items] of Object.entries(collections))if(Array.isArray(items)&&!(formatVersion!==undefined&&formatVersion<11&&remediation.has(key)))content[key]=items.map(item=>{
   if(key!=='materials')return item;
   const {storedPath:_path,...material}=item as import('../shared/types').Material;
   return {...material,fileSha256:createHash('sha256').update(materialBytes(item.id)).digest('hex')};

@@ -1,3 +1,4 @@
+import type {UnitGoal} from './remediation';
 export type LearningPhase='survey'|'expand'|'synthesize'|'revisit';
 export type ProgressionIntent='continue'|'challenge'|'advance'|'synthesize'|'consolidate'|'fill_gap';
 export interface TaskDemand{
@@ -47,6 +48,7 @@ export interface RouteCapabilitySnapshot{
  goalContext:string;
 }
 export interface RouteVersion{
+ scope?:'local'|'book';
  id:string;
  projectId:string;
  version:number;
@@ -66,6 +68,7 @@ export interface RouteVersion{
  adoptedAt?:string;
 }
 export interface LearningUnit{
+ goal?:UnitGoal;
  id:string;
  projectId:string;
  routeVersionId:string;
@@ -86,6 +89,9 @@ export interface LearningUnit{
  updatedAt:string;
 }
 export interface LearningPosition{
+ basedOnEvidenceIds?:string[];
+ basedOnTeachingVersionIds?:string[];
+ derivedStatus?:'active'|'suspended';
  id:string;
  projectId:string;
  routeVersionId:string;
@@ -129,6 +135,9 @@ export interface UnderstandingBlock{
  sourceInputIds:string[];
 }
 export interface UnderstandingDraft{
+ basedOnEvidenceIds?:string[];
+ basedOnTeachingVersionIds?:string[];
+ derivedStatus?:'active'|'suspended';
  id:string;
  projectId:string;
  routeVersionId:string;

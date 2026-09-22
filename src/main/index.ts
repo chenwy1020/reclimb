@@ -1,3 +1,5 @@
+import {saveReaderState} from './reader-state';
+import {ValidationService} from './validation-service';
 import {WebDavSyncService} from './webdav-sync';
 import {currentWorkspaceHash,portableWorkspaceHash,mergeSyncDeviceState} from './sync-workspace';
 import {HandwritingService} from './handwriting-service';
@@ -25,6 +27,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}
 let win:BrowserWindow|undefined,store:LearningStore,service:LearningService,trashService:ProjectTrashService,modelProfiles:ModelProfileManager,workspaceDir:string,credentialFile:string,visionCredentialFile:string,wasmPath:string;
 const workspaceGate=new WorkspaceTransitionGate();
 let syncService:WebDavSyncService;
+let validationService:ValidationService,validationRunner:CallRunner;
 let syncInitializationError='';
 let handwritingFeedback:HandwritingFeedbackService,handwriting:HandwritingService,handwritingServer:HandwritingServer|undefined;
 let handwritingControlBusy=false;
@@ -32,7 +35,7 @@ const timestamp=()=>new Date().toISOString();
 let credentials:CredentialsStore,visionCredentials:CredentialsStore,visionRunner:CallRunner;
 function keyRead(settings=store.getSettings()):string{return store&&credentials?credentials.read(settings.activeModelProfileId??'default-model',settings.baseUrl):'';}
 function visionKeyRead():string{const v=store?.getSettings().vision;return v?.baseUrl&&visionCredentials?visionCredentials.read(v.baseUrl):'';}
-function makeService(){handwriting=new HandwritingService(store);store.transaction(()=>{for(const u of store.list('usage'))if(u.status==='reserved')store.put('usage',u.entryType==='hold'?{...u,status:'failed',estimatedCny:0}:{...u,status:'uncertain'});});applyKnownIncidentCorrections(store);visionRunner=new CallRunner(store,visionKeyRead);trashService=new ProjectTrashService(store,workspaceDir,visionRunner.diagnostics);try{trashService.cleanStaging();}catch{/* A locked cleanup directory must not block access to learning records. */}for(const failure of trashService.purgeExpired())try{visionRunner.diagnostics.record({operationId:failure.projectId,kind:'project_purge',model:'local',status:'transport_error',error:failure.error});}catch{/* A locked diagnostic file must not block application startup. */}service=new LearningService(store,keyRead);handwritingFeedback=new HandwritingFeedbackService(store,service,visionRunner,visionKeyRead);service.setResponseGate(()=>visionRunner.isBusy||handwritingFeedback.isBusy);modelProfiles=new ModelProfileManager(store,credentials,()=>service.isBusy||visionRunner.isBusy||handwritingFeedback?.isBusy);}
+function makeService(){handwriting=new HandwritingService(store);store.transaction(()=>{for(const u of store.list('usage'))if(u.status==='reserved')store.put('usage',u.entryType==='hold'?{...u,status:'failed',estimatedCny:0}:{...u,status:'uncertain'});});applyKnownIncidentCorrections(store);visionRunner=new CallRunner(store,visionKeyRead);trashService=new ProjectTrashService(store,workspaceDir,visionRunner.diagnostics);try{trashService.cleanStaging();}catch{/* A locked cleanup directory must not block access to learning records. */}for(const failure of trashService.purgeExpired())try{visionRunner.diagnostics.record({operationId:failure.projectId,kind:'project_purge',model:'local',status:'transport_error',error:failure.error});}catch{/* A locked diagnostic file must not block application startup. */}service=new LearningService(store,keyRead);validationRunner=new CallRunner(store,keyRead);validationService=new ValidationService(store,validationRunner);handwritingFeedback=new HandwritingFeedbackService(store,service,visionRunner,visionKeyRead);service.setResponseGate(()=>visionRunner.isBusy||validationRunner?.isBusy||handwritingFeedback.isBusy);modelProfiles=new ModelProfileManager(store,credentials,()=>service.isBusy||visionRunner.isBusy||validationRunner?.isBusy||handwritingFeedback?.isBusy);}
 function snapshot():WorkspaceSnapshot{const s=store.snapshot({includeHandwriting:false}),profiles=s.settings.modelProfiles??[],configured=credentials.configured(profiles);s.settings.modelProfiles=profiles.map(profile=>({...profile,hasApiKey:configured.has(profile.id)}));s.settings.hasApiKey=!!s.settings.modelProfiles.find(profile=>profile.id===s.settings.activeModelProfileId)?.hasApiKey;if(s.settings.vision)s.settings.vision.hasApiKey=!!visionKeyRead();return publicSnapshot(s);}
 function getId(p:any,key='id'):string{const value=p?.[key];if(typeof value!=='string'||!value||value.length>120)throw new Error('缺少有效的记录编号');return value;}
 function requireProject(id:string){const p=store.get('projects',id);if(!p)throw new Error('学习项目不存在');if(p.trashedAt)throw new Error('这个项目在最近删除中，请先恢复后继续学习。');return p;}
@@ -47,7 +50,7 @@ async function saveParsed(projectId:string,parsed:ParsedMaterial,original:{file?
 }
 async function prepareSources(projectId:string){requireProject(projectId);for(const material of store.list('materials',projectId))if(material.kind==='pdf'&&!material.pdfMetadata)await analyzePdfMaterial(store,material.id);}
 async function restore(file:string,syncOptions?:{expectedLocalContentHash:string}){
- if(service.isBusy||visionRunner.isBusy||handwritingFeedback?.isBusy)throw new Error('请等待当前AI请求结束后再恢复备份。');
+ if(service.isBusy||visionRunner.isBusy||validationRunner?.isBusy||handwritingFeedback?.isBusy)throw new Error('请等待当前AI请求结束后再恢复备份。');
  const finishTransition=workspaceGate.begin();
  try{
  if(syncOptions&&currentWorkspaceHash(store)!==syncOptions.expectedLocalContentHash)throw new Error('预览后本机学习记录已经变化，请重新检查同步，未覆盖任何作答。');
@@ -82,9 +85,31 @@ async function handleRequest(action:DesktopAction,p:any={}):Promise<unknown>{
  workspaceGate.assertAvailable();
  if(!p||typeof p!=='object'||Array.isArray(p))throw new Error('请求内容无效');
  if(action.startsWith('sync.')&&!syncService)throw new Error('同步设置未能打开，本机学习仍可使用。'+syncInitializationError);
- if((visionRunner.isBusy||handwritingFeedback?.isBusy)&&(['route.generate','lesson.start','session.nextStep','session.verify','dispute.review','understanding.suggest','material.transcribe','settings.test','settings.modelProfile.test'].includes(action)||(action==='session.help'&&p.kind!=='explore')))throw new Error('图像识别正在进行，请稍后继续。文字和手写草稿仍可保存。');
+ if((visionRunner.isBusy||validationRunner?.isBusy||handwritingFeedback?.isBusy)&&(['route.generate','lesson.start','lesson.startFromSources','proposal.analyze','operation.retry','session.nextStep','session.verify','dispute.review','understanding.suggest','material.transcribe','settings.test','settings.modelProfile.test'].includes(action)||(action==='session.help'&&p.kind!=='explore')))throw new Error('图像识别正在进行，请稍后继续。文字和手写草稿仍可保存。');
  switch(action){
  case 'workspace.snapshot':return snapshot();
+ case 'reader.save':return saveReaderState(store,p);
+ case 'operation.resume':{const operationId=getId(p,'operationId');if(store.get('operations',operationId)?.kind==='validation_candidates')await validationService.resumeOperation(operationId);else if(store.get('operations',operationId)?.kind==='handwriting_recognition')await handwritingFeedback.resumeRecognition(operationId);else await service.resumeOperation(operationId);break;}
+ case 'operation.retry':{const operationId=getId(p,'operationId'),operation=store.get('operations',operationId);if(operation?.kind==='handwriting_recognition')await handwritingFeedback.retryRecognition(operationId);else if(operation?.kind==='validation_candidates')await validationService.generateCandidates(operation.binding);else await service.retryOperation(operationId);break;}
+ case 'lesson.startFromSources':{const {projectId,...request}=z.object({projectId:z.string().min(1).max(120),requestId:z.string().min(1).max(120),sourceIds:z.array(z.string().min(1).max(120)).min(1).max(100),intent:z.enum(['explain','practice']),question:z.string().max(10000).optional()}).strict().parse(p);await service.startFromSources(projectId,request);break;}
+ case 'unit.saveGoal':service.saveGoal(getId(p,'projectId'),getId(p,'unitId'),p.goal);break;
+ case 'proposal.save':{const {projectId,...proposal}=p;service.proposeNext(getId(p,'projectId'),proposal);break;}
+ case 'proposal.analyze':await service.analyzeProposal(getId(p,'proposalId'));break;
+ case 'proposal.adopt':service.adoptProposal(getId(p,'proposalId'));break;
+ case 'proposal.dismiss':service.dismissProposal(getId(p,'proposalId'));break;
+ case 'association.propose':service.proposeAssociation(getId(p,'localUnitId'),getId(p,'bookUnitId'),z.string().min(1).max(4000).parse(p.reason));break;
+ case 'association.accept':service.acceptAssociation(getId(p,'associationId'));break;
+ case 'association.dismiss':service.dismissAssociation(getId(p,'associationId'));break;
+ case 'validation.createSet':validationService.createSet(p);break;
+ case 'validation.import':validationService.importTasks(p);break;
+ case 'validation.edit':validationService.editTask(getId(p,'taskId'),p.task);break;
+ case 'validation.readTask':return validationService.readTask(getId(p,'taskId'));
+ case 'validation.start':{const result=validationService.start(p);return {run:result,snapshot:snapshot()};}
+ case 'validation.answer':return validationService.readAnswer(getId(p,'runId'));
+ case 'validation.results':return validationService.results(getId(p,'setId'));
+ case 'validation.generate':if(service.isBusy||visionRunner.isBusy||validationRunner.isBusy)throw new Error('请等待当前请求保存后再生成候选。');await validationService.generateCandidates(p);break;
+ case 'validation.trial':validationService.recordTrial(p);break;
+ case 'validation.export':{const body=validationService.exportReport(getId(p,'projectId')),result=await dialog.showSaveDialog(win!,{title:'导出验证与试用记录',defaultPath:'重登验证与试用记录.md',filters:[{name:'Markdown',extensions:['md']}]});if(result.canceled||!result.filePath)return {message:'已取消导出'};writeFileSync(result.filePath,body,'utf8');return {message:'验证与试用记录已导出'};}
  case 'sync.configure':return syncService.configure(p);
  case 'sync.status':return syncService.status();
  case 'sync.check':return syncService.check();
@@ -137,7 +162,7 @@ async function handleRequest(action:DesktopAction,p:any={}):Promise<unknown>{
  }
  case 'project.create':{const value=z.object({title:z.string().max(120).default(''),goal:z.string().trim().min(1).max(10000),startingPoint:z.object({familiarity:z.enum(['new','some','experienced']),background:z.string().max(10000)}).optional()}).parse(p);const now=timestamp();store.put('projects',{id:randomUUID(),title:value.title.trim()||value.goal.slice(0,24),goal:value.goal,status:'active',createdAt:now,updatedAt:now,...(value.startingPoint?{startingPoint:{...value.startingPoint,updatedAt:now}}:{})});break;}
  case 'project.update':{const id=getId(p),old=requireProject(id);const update=z.object({title:z.string().trim().min(1).max(120).optional(),goal:z.string().trim().min(1).max(10000).optional(),status:z.enum(['active','paused']).optional(),startingPoint:z.object({familiarity:z.enum(['new','some','experienced']),background:z.string().max(10000)}).optional()}).parse(p);const {startingPoint,...fields}=update;store.put('projects',{...old,...fields,...(startingPoint?{startingPoint:{...startingPoint,updatedAt:timestamp()}}:{}),...(update.goal&&update.goal!==old.goal?{learningScope:undefined,nearSteps:undefined}:{}),updatedAt:timestamp()});break;}
- case 'project.trash':case 'project.restore':case 'project.purge':handleProjectTrashAction(trashService,action,p,service.isBusy||visionRunner.isBusy||handwritingFeedback?.isBusy);break;
+ case 'project.trash':case 'project.restore':case 'project.purge':handleProjectTrashAction(trashService,action,p,service.isBusy||visionRunner.isBusy||validationRunner?.isBusy||handwritingFeedback?.isBusy);break;
  case 'project.startingPoint':service.saveStartingPoint(getId(p,'projectId'),z.object({familiarity:z.enum(['new','some','experienced']),background:z.string().max(10000)}).parse(p));break;
  case 'project.confirmScope':service.confirmScope(getId(p,'projectId'));break;
  case 'route.generate':await prepareSources(getId(p,'projectId'));await service.generateRoute(getId(p,'projectId'));break;
@@ -170,16 +195,16 @@ async function handleRequest(action:DesktopAction,p:any={}):Promise<unknown>{
  case 'session.verification':return service.getVerification(getId(p,'sessionId'));
  case 'session.verify':await service.verify(getId(p,'sessionId'),{force:z.boolean().optional().parse(p.force)});break;
  case 'session.adoptConfirmedSources':await service.adoptConfirmedSources(getId(p,'sessionId'));break;
- case 'session.reviewSolution':return {text:await service.viewReviewSolution(getId(p,'sessionId'))};
+ case 'session.reviewSolution':validationService.noteHelp(getId(p,'sessionId'),'answer','查看核验解答。');return {text:await service.viewReviewSolution(getId(p,'sessionId'))};
  case 'session.dispute':await service.dispute(getId(p,'sessionId'),z.string().max(10000).optional().parse(p.issue)??'这里可能有错，请核对题目、讲解及评价。');break;
  case 'dispute.review':await service.reviewDispute(getId(p,'disputeId'),{allowSendingPrivateContext:z.boolean().default(false).parse(p.allowSendingPrivateContext)});break;
  case 'lesson.start':{const value=z.object({projectId:z.string().min(1).max(120),capabilityId:z.string().min(1).max(120).optional(),reviewId:z.string().min(1).max(120).optional(),nearStepId:z.string().min(1).max(120).optional(),unitId:z.string().min(1).max(120).optional(),newAttempt:z.boolean().default(false),mode:z.enum(['practice','delayed','transfer','diagnosis','selection']).optional()}).parse(p);await prepareSources(value.projectId);await service.start(value.projectId,value.capabilityId,value.mode as SessionMode|undefined,value.reviewId,value.nearStepId,value.unitId,value.newAttempt);break;}
  case 'session.saveDraft':service.saveDraft(getId(p),z.string().max(100000).parse(p.draft),z.string().max(120).optional().parse(p.taskId),z.string().max(120).optional().parse(p.stepId));break;
  case 'session.recordInput':return service.recordInput(getId(p,'sessionId'),z.object({requestId:z.string().min(1).max(120),text:z.string().min(1).max(100000),kind:z.enum(['attempt','explore','note']),taskId:z.string().min(1).max(120).optional(),stepId:z.string().min(1).max(120).optional(),teachingVersionId:z.string().min(1).max(120).optional(),followup:z.object({kind:z.enum(['step','message','source']),id:z.string().min(1).max(120),intent:z.enum(['question','example']),teachingVersionId:z.string().min(1).max(120).optional(),historyIndex:z.number().int().nonnegative().optional()}).optional()}).parse(p));
- case 'session.respondInput':{const sessionId=getId(p,'sessionId'),inputId=getId(p,'inputId');requireSession(sessionId);if(!visionRunner.isBusy)await service.respondInput(sessionId,inputId);break;}
- case 'session.submit':await service.submit(getId(p,'sessionId'),z.string().max(100000).parse(p.text),getId(p,'requestId'));break;
- case 'session.help':await service.help(getId(p,'sessionId'),z.enum(['hint','confused','example','answer','explore']).parse(p.kind) as HelpEvent['kind'],p.text??'',z.enum(['term','reason','step','overload']).optional().parse(p.confusionKind));break;
- case 'session.nextStep':await service.nextStep(getId(p,'sessionId'),z.enum(['continue','smaller','independent','return','challenge','advance','synthesize','consolidate']).parse(p.intent));break;
+ case 'session.respondInput':{const sessionId=getId(p,'sessionId'),inputId=getId(p,'inputId');requireSession(sessionId);if(!visionRunner.isBusy)await service.respondInput(sessionId,inputId);validationService.completeRuns(sessionId);break;}
+ case 'session.submit':await service.submit(getId(p,'sessionId'),z.string().max(100000).parse(p.text),getId(p,'requestId'));validationService.completeRuns(getId(p,'sessionId'));break;
+ case 'session.help':validationService.noteHelp(getId(p,'sessionId'),p.kind==='answer'?'answer':'hint');await service.help(getId(p,'sessionId'),z.enum(['hint','confused','example','answer','explore']).parse(p.kind) as HelpEvent['kind'],p.text??'',z.enum(['term','reason','step','overload']).optional().parse(p.confusionKind));break;
+ case 'session.nextStep':validationService.noteHelp(getId(p,'sessionId'),'hint','离开固定验证题并请求后续讲解或任务。');await service.nextStep(getId(p,'sessionId'),z.enum(['continue','smaller','independent','return','challenge','advance','synthesize','consolidate']).parse(p.intent));break;
  case 'session.pause':{const session=requireSession(getId(p));store.put('sessions',{...session,status:'paused',updatedAt:timestamp(),nextStep:'已暂停，准备好后从这里继续'});break;}
  case 'session.resume':service.resumeSession(getId(p));break;
  case 'understanding.save':{const value=z.object({projectId:z.string().min(1).max(120),unitId:z.string().min(1).max(120).optional(),phase:z.enum(['expand','synthesize']),title:z.string().max(200).default('我的理解'),text:z.string().min(1).max(100000),sourceIds:z.array(z.string().min(1).max(120)).max(100).default([]),sourceInputIds:z.array(z.string().min(1).max(120)).max(100).default([]),basedOnDraftId:z.string().min(1).max(120).optional()}).parse(p);service.saveUnderstanding(value.projectId,value);break;}
@@ -209,7 +234,7 @@ async function handleRequest(action:DesktopAction,p:any={}):Promise<unknown>{
  case 'backup.create':{const result=await dialog.showSaveDialog(win!,{title:'保存完整学习档案',defaultPath:'重登备份-'+new Date().toISOString().slice(0,10)+'.reclimb',filters:[{name:'重登备份',extensions:['reclimb']}]});if(result.canceled||!result.filePath)return {message:'已取消备份'};writeBackup(store,result.filePath);return {message:'备份已保存。包含学习资料和记录，不包含AI密钥。'};}
  case 'backup.restore':{const answer=await dialog.showMessageBox(win!,{type:'question',buttons:['取消','选择备份并恢复'],defaultId:0,cancelId:0,message:'恢复将用备份替换当前学习档案。',detail:'当前档案会另外保留在本机previous目录；AI密钥不会从备份恢复，需要重新配置。'});if(answer.response!==1)return {message:'已取消恢复',restored:false};const result=await dialog.showOpenDialog(win!,{title:'选择重登备份',properties:['openFile'],filters:[{name:'重登备份',extensions:['reclimb']}]});if(result.canceled)return {message:'已取消恢复',restored:false};await restore(result.filePaths[0]);return {message:'学习档案已恢复，请重新配置AI密钥。',restored:true};}
  case 'export.markdown':{const projectId=p.projectId?getId(p,'projectId'):undefined;if(projectId)requireProject(projectId);const body=readableExport(store.snapshot(),projectId);const result=await dialog.showSaveDialog(win!,{title:'导出可读学习成果',defaultPath:'我的学习成果.md',filters:[{name:'Markdown',extensions:['md']}]});if(result.canceled||!result.filePath)return {message:'已取消导出'};writeFileSync(result.filePath,body,'utf8');return {message:'可读学习成果已导出'};}
- case 'sample.seed':if(service.isBusy||visionRunner.isBusy||handwritingFeedback.isBusy)throw new Error('请等待当前请求保存后再创建示例。');seedSamples(store);makeService();break;
+ case 'sample.seed':if(service.isBusy||visionRunner.isBusy||validationRunner?.isBusy||handwritingFeedback.isBusy)throw new Error('请等待当前请求保存后再创建示例。');seedSamples(store);makeService();break;
  default:throw new Error('不支持的操作');
  }
  return snapshot();
@@ -222,7 +247,7 @@ app.whenReady().then(async()=>{
   try{syncService=new WebDavSyncService({directory:join(root,'webdav-sync'),cipher:safeStorage,onDiagnostic:event=>visionRunner.diagnostics.record({operationId:'webdav',kind:'webdav',model:'local',status:event.error?'transport_error':'valid',response:JSON.stringify(event)}),callbacks:{
   currentHash:()=>currentWorkspaceHash(store),
   captureBackup:destination=>{
-   if(service.isBusy||visionRunner.isBusy||handwritingFeedback.isBusy)throw new Error('请等待当前 AI 回应保存后再上传完整档案。');
+   if(service.isBusy||visionRunner.isBusy||validationRunner?.isBusy||handwritingFeedback.isBusy)throw new Error('请等待当前 AI 回应保存后再上传完整档案。');
    const finish=workspaceGate.begin();try{writeBackup(store,destination);const backup=readBackup(destination);return {contentHash:portableWorkspaceHash(backup.records,id=>backup.files.get(id)!.bytes)};}finally{finish();}
   },
   inspectBackup:file=>{

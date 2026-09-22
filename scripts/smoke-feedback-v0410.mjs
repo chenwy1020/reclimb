@@ -24,7 +24,7 @@ const server=createServer(async(req,res)=>{try{
  const discussion=['discuss_input','discuss_legacy_handwriting'].includes(input.operation);
  if(discussion&&failFeedback){res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{message:'原创模拟服务临时断开，输入应已保存'}}));return;}
  let value;if(discussion)value={text:feedback,sourceIds:(input.sources??[]).slice(0,1).map(s=>s.id),scope:'current_task'};
- else if(input.operation==='handwriting_transcription')value={text:recognized,uncertainties:['末尾符号需要对照原稿'],unresolved:true};
+ else if(input.operation==='handwriting_transcription')value={pages:(input.pageRefs??[{pageId:'page'}]).map((page,index)=>({pageId:page.pageId,blocks:[{id:'mock-feedback-block-'+(index+1),text:recognized,uncertainties:[{id:'mock-feedback-uncertainty-'+(index+1),text:'末尾符号需要对照原稿',critical:true,resolved:false}]}]}))};
  else throw new Error('Unexpected mocked operation '+input.operation);
  res.writeHead(200,{'Content-Type':'application/json','x-request-id':'local-handwriting-feedback-'+calls.length});res.end(JSON.stringify({model:'local-ink-mock',choices:[{finish_reason:'stop',message:{content:JSON.stringify(value)}}],usage:{prompt_tokens:50,completion_tokens:50}}));
 }catch(e){res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({error:String(e)}));}});
@@ -37,9 +37,9 @@ async function launch(){
  page=await app.firstWindow();page.setDefaultTimeout(22000);await applyDesktopTestWindow(app,page);page.on('pageerror',error=>rendererErrors.push(error.message));page.on('request',request=>{if(/^https?:/.test(request.url()))externalRequests.push(new URL(request.url()).origin);});await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();
 }
 async function desk(){await page.getByRole('button',{name:'继续上次学习',exact:true}).click();await page.getByLabel('当前学习项目').selectOption('sample-reasoning');await page.getByRole('region',{name:'iPad 手写原稿'}).waitFor();}
-async function view(n=0){await page.getByRole('button',{name:'查看原稿',exact:true}).nth(n).click();await page.getByRole('dialog',{name:'手写原稿',exact:true}).waitFor();await page.getByLabel('手写核对文本',{exact:true}).waitFor();}
 const region=()=>page.getByRole('region',{name:'手写识别与反馈'});
-const editor=()=>page.getByLabel('手写核对文本',{exact:true});
+const editor=()=>region().locator('textarea[aria-label="手写核对文本"], textarea[aria-label$="段转写"]').first();
+async function view(n=0){await page.getByRole('button',{name:'查看原稿',exact:true}).nth(n).click();await page.getByRole('dialog',{name:'手写原稿',exact:true}).waitFor();await editor().waitFor();}
 const confirmButton=()=>page.getByRole('button',{name:'保存确认文本并获取反馈',exact:true});
 const checked=()=>page.getByRole('checkbox',{name:'我已对照原稿核对这份文字；尚不确定的地方已保留并说明',exact:true});
 async function json(path,payload,token){const response=await fetch(origin+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(payload)});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;}
@@ -53,7 +53,7 @@ try{
  await page.getByRole('button',{name:'查看原稿',exact:true}).nth(1).waitFor();const ink=(await api('handwriting.list',{sessionId:'sample-reasoning-session'})).at(-1).record;
  await view();assert.equal(await page.getByRole('button',{name:'识别这份原稿（计费）',exact:true}).isDisabled(),true);assert.equal(await editor().isEditable(),true);assert.equal(calls.length,0);record('无视觉配置和模型密钥仍可手工核对，原稿保存不产生模型调用');
 
- await editor().fill(note);await region().getByText('预览文字与公式',{exact:true}).click();await region().locator('.katex').first().waitFor();
+ await editor().fill(note);await region().getByText('预览完整文字与公式',{exact:true}).click();await region().locator('.katex').first().waitFor();
  await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();await view();assert.equal(await editor().inputValue(),note,'Unconfirmed local transcription draft must survive closing the original');
  await checked().check();assert.equal(await confirmButton().isEnabled(),true);await confirmButton().click();await region().getByText('记录已保存 · 等待回应',{exact:true}).waitFor();
  let inputs=(await api('handwriting.responses',{handwritingId:ink.id})).filter(m=>m.role==='user');assert.equal(inputs.length,1);assert.equal(inputs[0].text,note);assert.equal(inputs[0].responseMode,'discussion');assert.equal(inputs[0].responseState,'pending');assert.equal((await snapshot()).evidence.length,0);assert.equal((await snapshot()).usage.length,0);record('数学预览和未确认草稿保留，核对文字先保存，默认歧义只进入讨论');
@@ -73,12 +73,12 @@ try{
  await region().getByText(feedback,{exact:true}).scrollIntoViewIfNeeded();await page.getByRole('dialog',{name:'手写原稿',exact:true}).screenshot({path:join(artifacts,'confirmed-feedback.png')});await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();
  await api('settings.save',{settings:{vision:{enabled:true,providerName:'本机图像模拟',baseUrl,model:'local-ink-mock',inputPriceCnyPerMillion:.1,outputPriceCnyPerMillion:.1,priceUpdatedAt:'本机模拟，不代表服务商价格'}},visionApiKey:'local-v0410-vision-only'});
  await page.reload();await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();await desk();await view(1);
- await page.getByRole('button',{name:'识别这份原稿（计费）',exact:true}).click();await page.waitForFunction(text=>document.querySelector('[aria-label="手写核对文本"]')?.value===text,recognized);
+ await page.getByRole('button',{name:'识别这份原稿（计费）',exact:true}).click();await page.getByLabel('第 1 页第 1 段转写',{exact:true}).waitFor();assert.equal(await page.getByLabel('第 1 页第 1 段转写',{exact:true}).inputValue(),recognized);
  assert.equal(await checked().isChecked(),false);assert.equal(await confirmButton().isDisabled(),true);const imageCall=calls.find(c=>c.operation==='handwriting_transcription');assert.equal(imageCall.imageCount,1);
  const other=(await api('handwriting.list',{sessionId:'sample-reasoning-session'}))[0].record;assert.equal((await api('handwriting.responses',{handwritingId:other.id})).length,0);assert.equal((await api('handwriting.transcriptions',{handwritingId:other.id})).filter(v=>v.status==='machine').length,1);record('保存的笔迹经过真实本机PNG生成送入模拟视觉接口，机器文字待核对不自动评价');
 
  await region().getByText('已保存的机器识别结果',{exact:true}).click();await region().getByText('末尾符号需要对照原稿',{exact:true}).waitFor();await editor().fill('我仍在核对 $g(x)=x^2$，尚未确认。');
- await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();await navigateDesktop(page,'设置');await page.getByRole('button',{name:'深色',exact:true}).click();await navigateDesktop(page,'学习桌');await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1040,800));await view(1);
+ await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();await page.getByRole('dialog',{name:'手写原稿',exact:true}).waitFor({state:'detached'});await navigateDesktop(page,'设置');await page.getByRole('button',{name:'深色',exact:true}).click();await navigateDesktop(page,'学习桌');await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1040,800));await view(1);
  assert.equal(await editor().inputValue(),'我仍在核对 $g(x)=x^2$，尚未确认。');await editor().scrollIntoViewIfNeeded();assert.ok(await region().evaluate(el=>el.scrollWidth<=el.clientWidth+1));await page.getByRole('dialog',{name:'手写原稿',exact:true}).screenshot({path:join(artifacts,'recognition-dark-narrow.png')});
  assert.ok((await page.locator('.handwriting-original').getAttribute('src')).includes('data:image/svg'));assert.deepEqual(externalRequests,[]);assert.deepEqual(rendererErrors,[]);record('深色窄窗口下核对区与原稿可用，修改未确认文字可恢复，全部模型流量仅回环模拟');
  const tail='我仍在核对 $g(x)=x^2$，尚未确认。最后补写：立即关窗的尾字。',beforeCloseCalls=calls.length;

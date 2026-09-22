@@ -66,7 +66,7 @@ try{
  await context.setOffline(true);await page.getByLabel('补充说明或疑问（选填）').fill('离线后保留的推导');await saved();await context.setOffline(false);await page.reload();await page.locator('#workbench').waitFor();await saved();assert.equal(await page.locator('#draft-note').inputValue(),'离线后保留的推导');assert.equal((await readDraft()).pages[0].strokes.length,beforeUndo);assert.equal(submissions.length,0);record('撤销重做、文字编辑、离线和重载保留原稿；诊断仅计数且连续书写没有逐点全页重绘');
 
  await canvas.scrollIntoViewIfNeeded();await canvas.screenshot({path:join(artifacts,'continuous-pen.png')});
- await page.getByRole('button',{name:'提交这份手写',exact:true}).click();await page.locator('#submission-status').filter({hasText:'电脑已保存原稿'}).waitFor();assert.equal(submissions.length,1);assert.equal(submissions[0].pages[0].strokes.length,beforeUndo);assert.equal(submissions[0].targetId,target.id);assert.deepEqual(externalRequests,[]);assert.deepEqual(errors,[]);record('手写原稿仍主动提交到冻结原任务，无外部网络、模型调用或脚本错误');
+ await page.getByRole('button',{name:'提交这份作答',exact:true}).click();await page.locator('#submission-status').filter({hasText:'电脑已保存原稿'}).waitFor();assert.equal(submissions.length,1);assert.equal(submissions[0].pages[0].strokes.length,beforeUndo);assert.equal(submissions[0].targetId,target.id);assert.deepEqual(externalRequests,[]);assert.deepEqual(errors,[]);record('手写原稿仍主动提交到冻结原任务，无外部网络、模型调用或脚本错误');
 
  const beforeNative=(await readDraft()).pages[0].strokes.length;
  for(const mode of ['touch-only','pointer-first','touch-first']){

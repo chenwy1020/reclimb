@@ -5,7 +5,7 @@ import type {WorkspaceSnapshot} from '../shared/types';
 import {visibleProjects} from '../shared/projects';
 import type {Page} from './ui';
 import {createSidebarController} from './sidebar-state';
-export const navigationPages:{id:Page;label:string;icon:typeof Home}[]=[{id:'home',label:'学习首页',icon:Home},{id:'route',label:'学习路线',icon:Compass},{id:'desk',label:'学习桌',icon:BookOpen},{id:'evidence',label:'能力记录',icon:Sprout},{id:'settings',label:'设置',icon:Settings}];
+export const navigationPages:{id:Page;label:string;icon:typeof Home}[]=[{id:'home',label:'学习首页',icon:Home},{id:'route',label:'学习路线',icon:Compass},{id:'desk',label:'学习桌',icon:BookOpen},{id:'evidence',label:'能力记录',icon:Sprout},{id:'validation',label:'独立验证',icon:ShieldCheck},{id:'settings',label:'设置',icon:Settings}];
 export function useSidebar(){
  const[controller]=useState(()=>{let storage:Storage|undefined;try{storage=window.localStorage}catch{}return createSidebarController(storage)});
  const state=useSyncExternalStore(controller.subscribe,controller.getSnapshot,controller.getSnapshot);

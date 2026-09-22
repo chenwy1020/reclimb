@@ -29,3 +29,11 @@ export async function navigateDesktop(page,name,{expandSettings=true}={}){
  await leaveDesktopNavigation(page);
  if(name==='设置'&&expandSettings)await openSettingsCards(page);
 }
+
+// 0.6 keeps secondary desk actions available behind native disclosures.
+// Workflow suites explicitly open these through their visible summaries.
+export async function openDeskDetails(page){
+ for(const selector of ['.verification-overview','.next-options','.desk-more','.attempts-history']){
+  for(const detail of await page.locator(selector).all())if(await detail.isVisible()&&!(await detail.evaluate(el=>el.open)))await detail.locator(':scope > summary').click();
+ }
+}
