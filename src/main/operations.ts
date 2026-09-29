@@ -1,3 +1,4 @@
+import {knowledgeMemory} from '../shared/knowledge-graph';
 import {createHash,randomUUID} from 'node:crypto';
 import type {Operation} from '../shared/remediation';
 import type {LearningStore} from './store';
@@ -62,10 +63,11 @@ export class OperationManager{
 /** Suspend conclusions, never learner-authored history. A later restore cannot revive them implicitly. */
 export function reconcileDerivedState(store:LearningStore):void{
  const snapshot=store.snapshot();
+ const knowledgeCurrent=(item:{projectId:string;knowledgeBasis?:{capabilityId:string;digest:string}})=>!item.knowledgeBasis||item.knowledgeBasis.digest===bindingDigest(knowledgeMemory(snapshot,item.projectId,item.knowledgeBasis.capabilityId).fingerprint);
  const observations=snapshot.teachingObservations.filter(item=>{if(item.status!=='active'||!item.evidenceId)return false;const evidence=snapshot.evidence.find(evidence=>evidence.id===item.evidenceId);return !evidence||!evidenceStanding(snapshot,evidence).effective;});
  const drafts=snapshot.understandingDrafts.filter(item=>item.derivedStatus!=='suspended'&&!derivedStanding(snapshot,item).effective);
- const positions=snapshot.learningPositions.filter(item=>item.derivedStatus!=='suspended'&&!derivedStanding(snapshot,item).effective);
- const proposals=(snapshot.learningProposals??[]).filter(item=>item.status!=='stale'&&item.status!=='dismissed'&&!derivedStanding(snapshot,item).effective);
+ const positions=snapshot.learningPositions.filter(item=>item.derivedStatus!=='suspended'&&(!derivedStanding(snapshot,item).effective||!knowledgeCurrent(item)));
+ const proposals=(snapshot.learningProposals??[]).filter(item=>item.status!=='stale'&&item.status!=='dismissed'&&(!derivedStanding(snapshot,item).effective||!knowledgeCurrent(item)));
  if(!observations.length&&!drafts.length&&!positions.length&&!proposals.length)return;
  store.transaction(()=>{
   for(const item of observations)store.put('teachingObservations',{...item,status:'suspended',progressionEligible:false});

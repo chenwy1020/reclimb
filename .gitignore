@@ -78,3 +78,6 @@ webdav-state.json
 # Shared 0.6 remediation and verification artifacts.
 !/docs/重登-产品审查总结.md
 !/docs/验证记录-0.6.md
+
+!docs/使用说明-0.7.md
+!docs/验证记录-0.7.md

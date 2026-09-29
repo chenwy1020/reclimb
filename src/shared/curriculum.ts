@@ -89,6 +89,7 @@ export interface LearningUnit{
  updatedAt:string;
 }
 export interface LearningPosition{
+ knowledgeBasis?:{capabilityId:string;digest:string};
  basedOnEvidenceIds?:string[];
  basedOnTeachingVersionIds?:string[];
  derivedStatus?:'active'|'suspended';

@@ -17,7 +17,10 @@ export type Operation=z.infer<typeof operationSchema>;
 
 export const unitGoalSchema=z.object({behavior:z.string().max(4000),materialScope:z.string().max(4000),allowedHelp:z.string().max(4000),verification:z.string().max(4000),version:z.number().int().positive()}).strict();
 export type UnitGoal=z.infer<typeof unitGoalSchema>;
+export const knowledgeBasisSchema=z.object({capabilityId:id,digest:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+export type KnowledgeBasis=z.infer<typeof knowledgeBasisSchema>;
 export const learningProposalSchema=z.object({
+ knowledgeBasis:knowledgeBasisSchema.optional(),
  id,projectId:id,requestId:id,unitId:id.optional(),text:z.string().min(1).max(10000),reason:z.string().max(10000),
  status:z.enum(['saved','analyzing','proposed','adopted','dismissed','stale']),
  basisDigest:z.string(),basedOnEvidenceIds:z.array(id),basedOnTeachingVersionIds:z.array(id),

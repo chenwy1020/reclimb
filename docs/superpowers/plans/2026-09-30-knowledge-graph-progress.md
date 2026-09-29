@@ -14,14 +14,17 @@
 | 2 | 消费图谱背景，不冒充新表现 | 独立短验证沿既有教学核验链；只保存已发布版本的实际使用 |
 | 3 | 读取纯函数视图，修改通过IPC | 界面不计算新的掌握结论、不暴露私有解答 |
 | 4 | 验收与发布一致 | 0.7.0 / schema12，真实模型效果另列未知 |
-| 1↔2 | shared/types、KnowledgeMemory | Task 1负责类型，Task 2后续只添加动作，避免并发覆盖 |
+| 1↔2 | shared/types、KnowledgeMemory | Task 1负责图类型/动作，Task 2补建议依赖字段；按文件分工 |
 | 1↔3 | KnowledgeView与服务payload | 实现者先发布类型合同，界面再接入 |
-| 2↔3 | knowledge.check及导航 | 复用lesson.start返回session ID与公共快照；真实桌面验收 |
+| 2↔3 | knowledge.check及导航 | knowledge.check返回公共快照，按learningPosition或目标能力最新会话定位；真实桌面10项通过 |
 
 ## 进度
 
-- 设计与计划已写入；基线依赖准备中。
-- Task 1: pending
-- Task 2: pending
-- Task 3: pending
-- Task 4: pending
+- 设计/计划 80f8f07；Task 1数据图与格式12 6dee0c6；Task 3界面 b001586；重核验旧题恢复 f2fab59。
+- Task 1: implemented；22文件191测试通过，独立审查已覆盖关系重确认、目标清除、非空v11哈希、定义变化的备份往返，无阻塞。
+- Task 2: implemented；原子发布、生成/核验期间撤回、旧题重复、建议采用前后失效、备份、故障费用状态均有回归。最后纠错发布故障回滚先RED后GREEN；相关73项通过。
+- Task 3: implemented；候选确认/跨项目跳转/check定位/撤回影响通过真实Electron闭环，unit.goal对照、历史会话跳转与同名图节点项目标注已由e81e3e8修复。
+- Task 4: in_progress；0.7.0版本、安装包契约、用户说明、源码归档清单已准备。知识图谱桌面10项通过；最终全量/累计桌面/安装包仍待完成。
+- 最终完整自动回归：101文件861项通过，output/unit-v070.json。
+- 基线现有手写服务测试曾随机选中浏览器禁止端口；后续全量通过，未把这个随机现象误归为图谱变化。
+- 审查修复：强制核验不得遗忘旧题；已采用建议须追踪旧依据；未采用生成归档且保留真实费用；纠错发布/使用记录同步回滚；历史导出不得把旧决定误标当前依据。

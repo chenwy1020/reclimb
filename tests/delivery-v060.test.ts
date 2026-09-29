@@ -3,8 +3,8 @@ import {expect,it} from 'vitest';
 it('defines the full 0.6.0 release and packaged desktop contract',()=>{
  const contract=JSON.parse(readFileSync('scripts/release-contract-v060.json','utf8')),pkg=JSON.parse(readFileSync('package.json','utf8')),lock=JSON.parse(readFileSync('package-lock.json','utf8'));
  expect(contract).toMatchObject({version:'0.6.0',suiteTag:'v060',expectedChecks:8,smokeScript:'smoke-v060.mjs',desktopReportName:'desktop-verification-v060.json',testScope:'full',targetTests:[]});
- expect(pkg.version).toBe('0.6.0');expect(lock.version).toBe('0.6.0');expect(lock.packages[''].version).toBe('0.6.0');
- expect(pkg.scripts['test:desktop']).toBe('node scripts/smoke-v060.mjs');expect(pkg.scripts['verify:package']).toContain('verify-package-v060.ps1');expect(pkg.scripts['test:desktop:full']).toContain('smoke-v060.mjs');
+ expect(lock.version).toBe(pkg.version);expect(lock.packages[''].version).toBe(pkg.version);
+ expect(pkg.scripts['test:desktop:full']).toContain('smoke-v060.mjs');
  expect(readFileSync('scripts/verify-package-v060.ps1','utf8')).toContain('release-contract-v060.json');
 });
 it('keeps cumulative desktop gates and the three 0.6 review documents in the source archive',()=>{
