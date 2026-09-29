@@ -49,7 +49,7 @@ describe('format 11 persistence and backup',()=>{
   const store=await LearningStore.open(root);store.close();
   const backups=readdirSync(join(root,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.6-/);
   expect(readFileSync(join(root,'upgrade-backups',backups[0]))).toEqual(original);
-  const upgraded=new SQL.Database(readFileSync(file));expect(upgraded.exec('PRAGMA user_version')[0].values[0][0]).toBe(11);upgraded.close();
+  const upgraded=new SQL.Database(readFileSync(file));expect(upgraded.exec('PRAGMA user_version')[0].values[0][0]).toBe(12);upgraded.close();
   const reopened=await LearningStore.open(root);reopened.close();expect(readdirSync(join(root,'upgrade-backups'))).toHaveLength(1);
  });
  it('keeps the original version-10 database intact when schema upgrade fails',async()=>{
@@ -58,9 +58,9 @@ describe('format 11 persistence and backup',()=>{
   await expect(LearningStore.open(root)).rejects.toThrow();expect(readFileSync(file)).toEqual(original);
   const backups=readdirSync(join(root,'upgrade-backups'));expect(backups).toHaveLength(1);expect(readFileSync(join(root,'upgrade-backups',backups[0]))).toEqual(original);
  });
- it('writes format 11 and roundtrips every remediation collection and provenance field',async()=>{
+ it('writes current format and roundtrips every remediation collection and provenance field',async()=>{
   const {root,store}=await populated(),file=join(root,'all.reclimb');writeBackup(store,file);store.close();
-  expect(manifest(file).version).toBe(11);const backup=readBackup(file);
+  expect(manifest(file).version).toBe(12);const backup=readBackup(file);
   for(const key of ['operations','learningProposals','routeAssociations','readerStates','validationSets','validationTasks','validationRuns','validationExposures','trialRecords'] as const)expect(backup.records[key]).toHaveLength(1);
   expect(backup.records.projects[0].bookRouteVersionId).toBe('book-route');expect(backup.records.learningUnits[0].goal?.version).toBe(1);expect(backup.records.learningPositions[0].basedOnEvidenceIds).toEqual([]);
  });
@@ -80,11 +80,11 @@ describe('format 11 persistence and backup',()=>{
   const interrupted=join(root,'interrupted-preflight.reclimb');rewriteManifest(valid,interrupted,m=>{m.records.operations[0].phase='interrupted';m.records.operations[0].callIds.push('preflight-call');});expect(()=>readBackup(interrupted)).not.toThrow();
   const retried=join(root,'completed-after-retry.reclimb');rewriteManifest(interrupted,retried,m=>{m.records.operations[0].phase='completed';});expect(()=>readBackup(retried)).not.toThrow();
   const noCall=join(root,'saved-without-actual-call.reclimb');rewriteManifest(retried,noCall,m=>{m.records.usage=[];});expect(()=>readBackup(noCall)).toThrow(/缺少实际费用调用/);
- }); it('hashes a migrated format-10 archive with its original collection set while format 11 includes new records',async()=>{
+ }); it('hashes a migrated format-10 archive with its original collection set while current format includes new records',async()=>{
   const {root,store}=await populated(),current=join(root,'current.reclimb');writeBackup(store,current);store.close();const currentBackup=readBackup(current),currentHash=portableWorkspaceHash(currentBackup.records,id=>currentBackup.files.get(id)!.bytes);
-  const legacy=join(root,'legacy.reclimb');rewriteManifest(current,legacy,m=>{m.version=10;for(const key of ['operations','learningProposals','routeAssociations','readerStates','validationSets','validationTasks','validationRuns','validationExposures','trialRecords'])delete m.records[key];});
+  const legacy=join(root,'legacy.reclimb');rewriteManifest(current,legacy,m=>{m.version=10;for(const key of ['knowledgeRelations','knowledgeUses','operations','learningProposals','routeAssociations','readerStates','validationSets','validationTasks','validationRuns','validationExposures','trialRecords'])delete m.records[key];});
   const old=readBackup(legacy),oldHash=portableWorkspaceHash(old.records,id=>old.files.get(id)!.bytes);
-  const legacyShape=structuredClone(old.records) as any;for(const key of ['operations','learningProposals','routeAssociations','readerStates','validationSets','validationTasks','validationRuns','validationExposures','trialRecords'])delete legacyShape[key];
+  const legacyShape=structuredClone(old.records) as any;for(const key of ['knowledgeRelations','knowledgeUses','operations','learningProposals','routeAssociations','readerStates','validationSets','validationTasks','validationRuns','validationExposures','trialRecords'])delete legacyShape[key];
   expect(oldHash).toBe(portableWorkspaceHash(legacyShape,id=>old.files.get(id)!.bytes));expect(currentHash).not.toBe(oldHash);
  });
  it('rejects missing provenance references on positions and understanding drafts',async()=>{

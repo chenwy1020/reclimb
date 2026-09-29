@@ -1,3 +1,4 @@
+import {knowledgeRelationSchema,knowledgeUseSchema,validateKnowledgeRecords} from '../shared/knowledge-graph';
 import AdmZip from 'adm-zip';import {createHash} from 'node:crypto';import {readFileSync,writeFileSync,renameSync,mkdirSync,existsSync,statSync,unlinkSync} from 'node:fs';import {join,resolve,relative,isAbsolute,basename} from 'node:path';import {z} from 'zod';
 import {LearningStore,normalizeSettings} from './store';import {safeMaterialFilename} from './file-safety';import {activitySchema,assessmentSchema,startingPointSchema,learningScopeSchema,nearStepSchema,teachingStateSchema,teachingStepSchema,supportScopeSchema,taskDemandSchema} from './schemas';import {settingsInputSchema} from './settings-schema';import type {Collection,WorkspaceSnapshot} from '../shared/types';
 import {teachingVersionSchema,taskReviewSchema,disputeSchema,correctionSchema,answerExposureSchema} from './reliability-record-schemas';
@@ -40,7 +41,7 @@ const understandingDraft=z.object({id,projectId:id,routeVersionId:id,unitId:id.o
 const readingLayout=z.object({id,projectId:id,materialId:id,fragmentId:id,pageNumber:z.number().int().positive().optional(),version:z.number().int().positive(),blocks:z.array(z.object({id,order:z.number().int().nonnegative(),kind:z.enum(['prose','source_image']),text:txt.optional(),region:region.optional(),reason:txt.optional(),source:z.enum(['extracted','confirmed_transcription','original_page']),transcriptionId:id.optional()})).max(10000),status:z.enum(['current','superseded']),createdAt:date});
 const handwritingTarget=handwritingTargetSchema.extend({id,projectId:id,sessionId:id,taskId:id,stepId:id.optional(),teachingVersionId:id.optional()});
 const handwriting=handwritingSubmissionSchema.extend({id,projectId:id,sessionId:id,targetId:id});
-const entities={...remediationSchemas,projects:project,capabilities:capability,materials:material,fragments:fragment,sessions:session.extend({teachingVersionId:id.optional()}),attempts:attempt.extend({teachingVersionId:id.optional()}),evidence:evidence.extend({teachingVersionId:id.optional()}),reviews:review,usage:usage.extend({entryType:z.enum(['call','hold']).optional()}),sourceTranscriptions:transcription.extend({origin:z.enum(['manual','machine']).optional()}),teachingVersions:teachingVersionSchema,taskReviews:taskReviewSchema,disputes:disputeSchema,corrections:correctionSchema,answerExposures:answerExposureSchema,routeVersions:routeVersion,learningUnits:learningUnit,learningPositions:learningPosition,teachingObservations:teachingObservation,understandingDrafts:understandingDraft,readingLayouts:readingLayout,handwritingTargets:handwritingTarget,handwritings:handwriting,handwritingTranscriptions:handwritingTranscriptionSchema};
+const entities={knowledgeRelations:knowledgeRelationSchema,knowledgeUses:knowledgeUseSchema,...remediationSchemas,projects:project,capabilities:capability,materials:material,fragments:fragment,sessions:session.extend({teachingVersionId:id.optional()}),attempts:attempt.extend({teachingVersionId:id.optional()}),evidence:evidence.extend({teachingVersionId:id.optional()}),reviews:review,usage:usage.extend({entryType:z.enum(['call','hold']).optional()}),sourceTranscriptions:transcription.extend({origin:z.enum(['manual','machine']).optional()}),teachingVersions:teachingVersionSchema,taskReviews:taskReviewSchema,disputes:disputeSchema,corrections:correctionSchema,answerExposures:answerExposureSchema,routeVersions:routeVersion,learningUnits:learningUnit,learningPositions:learningPosition,teachingObservations:teachingObservation,understandingDrafts:understandingDraft,readingLayouts:readingLayout,handwritingTargets:handwritingTarget,handwritings:handwriting,handwritingTranscriptions:handwritingTranscriptionSchema};
 const handwritingFileSchema=z.object({handwritingId:id,entry:z.string(),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 const MAX_INK_BYTES=32*1024*1024;
 export function within(root:string,target:string):boolean{const rel=relative(resolve(root),resolve(target));return rel===''||(!rel.startsWith('..')&&!isAbsolute(rel));}
@@ -57,7 +58,7 @@ export function writeBackup(store:LearningStore,target:string):void{
   if(bytes.length>MAX_INK_BYTES)throw new Error('手写原稿过大，无法生成完整备份');
   zip.addFile(entry,bytes);handwritingFiles.push({handwritingId:metadata.id,entry,sha256:sha(bytes)});return metadata;
  });
- zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:11,createdAt:new Date().toISOString(),records:{...records,handwritingTranscriptions:records.handwritingTranscriptions??[],handwritingTargets:records.handwritingTargets??[],handwritings,settings:safeSettings},files,handwritingFiles},null,2),'utf8'));
+ zip.addFile('manifest.json',Buffer.from(JSON.stringify({format:'reclimb.backup',version:12,createdAt:new Date().toISOString(),records:{...records,handwritingTranscriptions:records.handwritingTranscriptions??[],handwritingTargets:records.handwritingTargets??[],handwritings,settings:safeSettings},files,handwritingFiles},null,2),'utf8'));
  const tmp=target+'.partial';
  try{
   writeFileSync(tmp,zip.toBuffer());
@@ -77,8 +78,8 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  const manifest=zip.getEntry('manifest.json');if(!manifest||manifest.header.size>30*1024*1024)throw new Error('备份清单缺失或过大');
  let raw:any;try{raw=JSON.parse(zip.readAsText(manifest));}catch{throw new Error('备份清单无法解析');}
  if(raw?.format!=='reclimb.backup'||!raw.records)throw new Error('这不是受支持的重登备份文件');
- if(typeof raw.version==='number'&&raw.version>11)throw new Error('此备份由更新版本创建，请先升级应用。');
- if(![1,2,3,4,5,6,7,8,9,10,11].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
+ if(typeof raw.version==='number'&&raw.version>12)throw new Error('此备份由更新版本创建，请先升级应用。');
+ if(![1,2,3,4,5,6,7,8,9,10,11,12].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
  if(raw.version<9)raw.records.handwritingTranscriptions=[];
  if(raw.version<8){raw.records.handwritingTargets=[];raw.records.handwritings=[];}
  else{
@@ -97,7 +98,7 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
   raw.records.handwritings=metadata.map(record=>({...record,pages:originals.get(record.id)}));
  }
  const records:any={};
- const introduced:Record<string,number>={operations:11,learningProposals:11,routeAssociations:11,readerStates:11,validationSets:11,validationTasks:11,validationRuns:11,validationExposures:11,trialRecords:11,sourceTranscriptions:2,teachingVersions:3,taskReviews:3,disputes:3,corrections:3,answerExposures:3,routeVersions:5,learningUnits:5,learningPositions:5,teachingObservations:5,understandingDrafts:5,readingLayouts:5};
+ const introduced:Record<string,number>={knowledgeRelations:12,knowledgeUses:12,operations:11,learningProposals:11,routeAssociations:11,readerStates:11,validationSets:11,validationTasks:11,validationRuns:11,validationExposures:11,trialRecords:11,sourceTranscriptions:2,teachingVersions:3,taskReviews:3,disputes:3,corrections:3,answerExposures:3,routeVersions:5,learningUnits:5,learningPositions:5,teachingObservations:5,understandingDrafts:5,readingLayouts:5};
  for(const [key,schema] of Object.entries(entities)){records[key]=z.array(schema).max(100000).parse(raw.version<(introduced[key]??1)?raw.records[key]??[]:raw.records[key]);const ids=new Set<string>();for(const r of records[key]){if(ids.has(r.id))throw new Error('备份包含重复记录');ids.add(r.id);}}
  const settings={...raw.records.settings};delete settings.hasApiKey;
  if(raw.version<7)for(const field of ['providerName','baseUrl','model'] as const)if(typeof settings[field]!=='string'||!settings[field].trim())delete settings[field];
@@ -336,6 +337,7 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
  if(!Array.isArray(raw.files))throw new Error('备份原件清单无效');
  for(const f of raw.files){if(!maps.materials.has(f.materialId)||typeof f.entry!=='string'||!f.entry.startsWith('materials/'+f.materialId+'/')||files.has(f.materialId))throw new Error('备份原件关联无效');const entry=zip.getEntry(f.entry);if(!entry||entry.header.size>50*1024*1024)throw new Error('备份原件缺失或过大');const bytes=entry.getData();if(sha(bytes)!==f.sha256)throw new Error('备份原件校验失败，未更改现有档案');files.set(f.materialId,{name:safeMaterialFilename(basename(f.entry)),bytes});}
  if(files.size!==records.materials.length)throw new Error('备份未包含全部材料原件');
+ validateKnowledgeRecords(records);
  Object.defineProperty(records,'__reclimbBackupFormatVersion',{value:raw.version,enumerable:false});
  return {records,files};
 }

@@ -68,7 +68,7 @@ describe('schema version 9 curriculum storage',()=>{
   expect(store.list('teachingObservations')).toEqual([]);
   expect(store.list('understandingDrafts')).toEqual([]);
   store.close();
-  const migrated=new SQL.Database(readFileSync(join(root,'learning.sqlite')));expect(migrated.exec('PRAGMA user_version')[0].values[0][0]).toBe(11);migrated.close();
+  const migrated=new SQL.Database(readFileSync(join(root,'learning.sqlite')));expect(migrated.exec('PRAGMA user_version')[0].values[0][0]).toBe(12);migrated.close();
   const backups=readdirSync(join(root,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.4-/);expect(readFileSync(join(root,'upgrade-backups',backups[0]))).toEqual(original);
  });
 });

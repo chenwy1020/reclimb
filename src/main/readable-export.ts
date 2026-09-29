@@ -1,3 +1,4 @@
+import {knowledgeRelationView,knowledgeUseImpact} from '../shared/knowledge-graph';
 import type {WorkspaceSnapshot} from '../shared/types';
 import {evidenceStanding,reviewStanding} from '../shared/reliability-state';
 import {publicVerificationBlocker} from '../shared/reliability';
@@ -9,6 +10,13 @@ export function readableExport(snapshot:WorkspaceSnapshot,projectId?:string):str
  if(projectId&&!projects.length)throw new Error('学习项目不存在');
  for(const project of projects){
   body.push('## '+project.title,'项目编号：'+project.id,project.goal,project.routeSummary??'');
+  for(const relation of (snapshot.knowledgeRelations??[]).filter(r=>r.projectId===project.id)){
+   const state=knowledgeRelationView(snapshot,relation);body.push('### 学习关联决定 '+relation.id,'关系：'+relation.kind+'；状态：'+relation.status+'；来源能力：'+(state.source?.title??relation.sourceCapabilityId)+'；目标能力：'+(state.target?.title??relation.targetCapabilityId),relation.createdAt+' '+relation.reason,'起始决定：'+relation.rootId+'；前一决定：'+(relation.previousId??'无'),'当前依据：'+state.reason);
+  }
+  for(const use of (snapshot.knowledgeUses??[]).filter(u=>u.projectId===project.id)){
+   const state=knowledgeUseImpact(snapshot,use);body.push('### 历史知识使用 '+use.id,'教学版本：'+use.teachingVersionId+'；时间：'+use.createdAt,'当前依据：'+(state.effective?'仍可作为待短验证的背景':state.reasons.join('；')));
+   for(const entry of use.entries)body.push('来源项目：'+entry.sourceProjectTitle+'（'+entry.sourceProjectId+'）；能力：'+entry.sourceCapabilityTitle,'表现编号：'+entry.evidenceId+'；作答：'+entry.attemptId+'；时间：'+entry.performedAt+'；帮助程度：'+entry.helpLevel,entry.summary,'用户确认理由：'+entry.relationReason);
+  }
   for(const source of snapshot.materials.filter(m=>m.projectId===project.id))body.push('### 材料：'+source.title,'材料编号：'+source.id,'原件：'+source.originalName,source.warnings.join('；'));
   for(const version of snapshot.teachingVersions.filter(v=>v.projectId===project.id)){
    body.push('### 教学版本：'+version.activity.title,'版本编号：'+version.id+'；任务：'+version.taskId+'；内容校验：'+version.contentHash,version.activity.instruction,'评价标准：',...version.activity.rubric.map((r,i)=>'- '+(version.activity.rubricIds?.[i]??String(i+1))+'：'+r));

@@ -10,7 +10,7 @@ describe('0.1 archive upgrade',()=>{
    const SQL=await initSqlJs();const oldDb=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));oldDb.run('PRAGMA user_version=5');const original=Buffer.from(oldDb.export());oldDb.close();writeFileSync(join(dir,'learning.sqlite'),original);
    store=await LearningStore.open(dir);expect(store.get('projects','p')?.title).toBe('保留的项目');store.close();store=undefined;
    const backups=readdirSync(join(dir,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.4\.1-/);expect(readFileSync(join(dir,'upgrade-backups',backups[0]))).toEqual(original);
-   const upgraded=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(Number(upgraded.exec('PRAGMA user_version')[0].values[0][0])).toBe(11);upgraded.close();
+   const upgraded=new SQL.Database(readFileSync(join(dir,'learning.sqlite')));expect(Number(upgraded.exec('PRAGMA user_version')[0].values[0][0])).toBe(12);upgraded.close();
    store=await LearningStore.open(dir);store.close();store=undefined;expect(readdirSync(join(dir,'upgrade-backups'))).toHaveLength(1);
   }finally{store?.close();rmSync(dir,{recursive:true,force:true});}
  });
