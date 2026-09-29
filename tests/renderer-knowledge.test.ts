@@ -2,7 +2,7 @@ import {createElement, isValidElement, type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {describe, expect, it, vi} from 'vitest';
 import type {Capability, Evidence, Project, WorkspaceSnapshot} from '../src/shared/types';
-import LearningRelationsPanel, {KnowledgeEvidenceList, KnowledgeImpactNotice, KnowledgeLocalGraph, RelationConfirmation, RelationRetraction, ShortKnowledgeCheck} from '../src/renderer/LearningRelationsPanel';
+import LearningRelationsPanel, {KnowledgeEvidenceList, KnowledgeImpactNotice, KnowledgeImpacts, KnowledgeLocalGraph, RelationConfirmation, RelationRetraction, ShortKnowledgeCheck} from '../src/renderer/LearningRelationsPanel';
 import {capabilitySignature,type KnowledgeView} from '../src/shared/knowledge-graph';
 import {knowledgeCheckDestination} from '../src/renderer/knowledge-navigation';
 
@@ -30,6 +30,12 @@ describe('learning relationship presentation',()=>{
  });
  it('presents same-name matches as candidates with separate definitions and goals',()=>{
   const html=render();expect(html).toContain('候选');expect(html).toContain('解释概率问题的条件和适用边界');expect(html).toContain('通过反例说明前提不可省略');expect(html).toContain('概率方法');expect(html).toContain('逻辑学习');expect(html).toContain('确认这项关联');expect(html).toContain('尚未验证');expect(html).toContain('辨认前提');expect(html).toContain('搜索其他名称');
+ });
+ it('shows current saved goals and material scope on both sides when a prior confirmation becomes stale',()=>{
+  const s=confirmed(),unitDefaults={routeVersionId:'route',purpose:'学习条件',prerequisiteUnitIds:[],order:0,phase:'expand' as const,createdAt:date,updatedAt:date};s.learningUnits=[{...unitDefaults,id:'source-unit',projectId:'old',capabilityId:'source',title:'原单元',status:'active',coreQuestion:'如何判断前提',expectedOutcome:'原先的概括',sourceIds:[],locators:[],goal:{behavior:'构造前提失效的反例',materialScope:'只讨论确定性命题',allowedHelp:'允许查阅定义',verification:'解释新的反例',version:2}},{...unitDefaults,id:'target-unit',projectId:'new',capabilityId:'target',title:'新单元',status:'active',coreQuestion:'怎样区分条件',expectedOutcome:'原先的概括',sourceIds:[],locators:[],goal:{behavior:'独立推导概率条件',materialScope:'加入随机变量的材料范围',allowedHelp:'不使用提示',verification:'独立处理陌生案例',version:3}}];
+  s.projects[0]={...current,goal:'说明随机变量条件分布',learningScope:{suggestedFocus:'条件分布的适用边界',reason:'当前范围',status:'confirmed'}};
+  const html=renderToStaticMarkup(createElement(LearningRelationsPanel,{snapshot:s,project:s.projects[0],capabilityId:'target',busy:false,run:async()=>null,onSource:()=>{}}));
+  expect(html).toContain('需重新确认');for(const text of ['构造前提失效的反例','只讨论确定性命题','允许查阅定义','解释新的反例','独立推导概率条件','加入随机变量的材料范围','不使用提示','独立处理陌生案例','条件分布的适用边界','说明随机变量条件分布'])expect(html).toContain(text);
  });
  it('shows old evidence conditions without assigning current-project mastery',()=>{
   const html=render();expect(html).toContain('独立完成过');expect(html).toContain('直接帮助 0');expect(html).toContain('2026');expect(html).not.toContain('当前能力已掌握');expect(html).toContain('查看旧作答');
@@ -63,6 +69,21 @@ describe('learning relationship presentation',()=>{
 });
 
 describe('relationship actions and navigation',()=>{
+ it.each(['current','upcoming','history','returnStep','returnUpcoming'] as const)('finds affected teaching through %s and same-task replacement lineage',location=>{
+  const s=snapshot(),navigate=vi.fn();s.teachingVersions=[{id:'original',projectId:'new',capabilityId:'target',activity:{title:'曾受影响的教学'}},{id:'revised',projectId:'new',capabilityId:'target',replacesVersionId:'original'},{id:'cycle',projectId:'new',capabilityId:'target',replacesVersionId:'cycle'}] as WorkspaceSnapshot['teachingVersions'];
+  const step={id:'step',taskId:'task',teachingVersionId:'revised',action:'check' as const,title:'旧任务',content:'旧题内容',sourceIds:[],createdAt:date},teaching={version:1 as const,guidance:'independent' as const,confusionCount:0,current:{...step,teachingVersionId:'cycle'},upcoming:[],history:[],returnUpcoming:[],[location]:['upcoming','history','returnUpcoming'].includes(location)?[step]:step};
+  const related={...s.sessions[0],id:'affected-session',projectId:'new',capabilityId:'target',activity:{...s.sessions[0].activity,teachingVersionId:'current-new-task'},teachingVersionId:'current-new-task',teaching};
+  s.sessions=[{...related,id:'wrong-project',projectId:'old'},{...related,id:'wrong-capability',capabilityId:'other'},related] as WorkspaceSnapshot['sessions'];
+  const use={id:'use',projectId:'new',targetCapabilityId:'target',teachingVersionId:'original',createdAt:date,fingerprint:'saved',entries:[]};
+  const tree=KnowledgeImpacts({impacts:[{use,effective:false,reasons:['旧关系已撤回']}],snapshot:s,onNavigate:navigate});
+  const button=find(tree,p=>p.children==='查看受影响教学');expect(button).toBeDefined();button!.onClick();expect(navigate).toHaveBeenCalledWith('new','affected-session');
+ });
+ it('never follows a replacement chain across project or ability boundaries',()=>{
+  const s=snapshot();s.teachingVersions=[{id:'original',projectId:'new',capabilityId:'target',activity:{title:'旧任务'}},{id:'foreign',projectId:'old',capabilityId:'source',replacesVersionId:'original'}] as WorkspaceSnapshot['teachingVersions'];
+  s.sessions=[{...s.sessions[0],id:'unrelated',projectId:'new',capabilityId:'target',teachingVersionId:'foreign'}];
+  const use={id:'use',projectId:'new',targetCapabilityId:'target',teachingVersionId:'original',createdAt:date,fingerprint:'saved',entries:[]};
+  expect(find(KnowledgeImpacts({impacts:[{use,effective:false,reasons:[]}],snapshot:s,onNavigate:vi.fn()}),p=>p.children==='查看受影响教学')).toBeUndefined();
+ });
  it('requires a nonempty reason and sends exact source and target identities',async()=>{
   const run=vi.fn(async()=>snapshot());const props={projectId:'new',targetCapabilityId:'target',sourceCapabilityId:'other',kind:'prerequisite' as const,reason:'   ',busy:false,run,onKind:()=>{},onReason:()=>{},onSaved:()=>{}};
   let tree=RelationConfirmation(props);let form=find(tree,p=>!!p.onSubmit)!;

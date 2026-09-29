@@ -63,7 +63,12 @@ function KnowledgeContent({snapshot:s,project,target,busy,run,onSource,onNavigat
 }
 
 function CapabilityDefinition({title,capability,project,snapshot:s,onSource,onNavigate}:{title:string;capability:Capability;project:Project;snapshot:WorkspaceSnapshot;onSource:(id:string)=>void;onNavigate?:Navigate}){
- return <section className="knowledge-definition"><span className="knowledge-caption">{title} · {project.title}</span><h4>{capability.title}</h4><RichText text={capability.description}/><strong className="knowledge-caption">原学习目标</strong><RichText text={capability.goalContext||project.goal}/><strong className="knowledge-caption">材料来源</strong><div className="source-links">{capability.sourceIds.length?capability.sourceIds.map(id=>{const fragment=s.fragments.find(item=>item.id===id),material=fragment?s.materials.find(item=>item.id===fragment.materialId):undefined;return fragment?<button type="button" key={id} onClick={()=>onSource(id)}>{material?.title??'材料'} · {fragment.locator}</button>:<span key={id}>原来源暂不可用</span>}):<span className="muted tiny">尚未关联材料</span>}</div>{onNavigate&&<button type="button" className="text-button" onClick={()=>onNavigate(project.id)}>返回来源项目</button>}</section>;
+ const units=(s.learningUnits??[]).filter(unit=>unit.projectId===project.id&&unit.capabilityId===capability.id&&unit.status!=='retired'),sourceIds=[...new Set([...capability.sourceIds,...units.flatMap(unit=>unit.sourceIds??[])])];
+ return <section className="knowledge-definition"><span className="knowledge-caption">{title} · {project.title}</span><h4>{capability.title}</h4><RichText text={capability.description}/><strong className="knowledge-caption">原学习目标</strong><RichText text={capability.goalContext||project.goal}/>
+  {project.learningScope?.suggestedFocus&&<><strong className="knowledge-caption">当前学习范围</strong><RichText text={project.learningScope.suggestedFocus}/></>}
+  {capability.goalContext&&capability.goalContext!==project.goal&&<><strong className="knowledge-caption">当前项目目标</strong><RichText text={project.goal}/></>}
+  {units.map(unit=><div key={unit.id}><strong className="knowledge-caption">当前单元目标 · {unit.title}</strong>{unit.coreQuestion&&<RichText text={unit.coreQuestion}/>}<dl>{([['目标行为',unit.goal?.behavior??unit.expectedOutcome],['材料范围',unit.goal?.materialScope??(unit.locators??[]).join('、')],['允许的帮助',unit.goal?.allowedHelp],['检验方式',unit.goal?.verification]] as const).map(([label,value])=><div key={label}><dt>{label}</dt><dd><RichText text={value?.trim()||'尚未单独约定'}/></dd></div>)}</dl></div>)}
+  <strong className="knowledge-caption">材料来源</strong><div className="source-links">{sourceIds.length?sourceIds.map(id=>{const fragment=s.fragments.find(item=>item.id===id),material=fragment?s.materials.find(item=>item.id===fragment.materialId):undefined;return fragment?<button type="button" key={id} onClick={()=>onSource(id)}>{material?.title??'材料'} · {fragment.locator}</button>:<span key={id}>原来源暂不可用</span>}):<span className="muted tiny">尚未关联材料</span>}</div>{onNavigate&&<button type="button" className="text-button" onClick={()=>onNavigate(project.id)}>返回来源项目</button>}</section>;
 }
 
 export function KnowledgeEvidenceList({entries,snapshot:s,onNavigate}:{entries:KnowledgeEvidenceView[];snapshot:WorkspaceSnapshot;onNavigate?:Navigate}){
@@ -108,21 +113,30 @@ export function KnowledgeLocalGraph({view}:{view:KnowledgeView}){
  return <details className="knowledge-section knowledge-graph"><summary>局部关联图与文字说明</summary><p className="knowledge-note">沿来源、具体作答和证据查看联系；连线不表示能力已经掌握。</p><div className="knowledge-graph-scroll"><svg viewBox={'0 0 840 '+height} aria-hidden="true" focusable="false">{edges.map(edge=>{const from=positions.get(edge.from)!,to=positions.get(edge.to)!;return <g key={edge.id}><path d={'M'+(from.x+185)+','+(from.y+27)+' C'+(from.x+205)+','+(from.y+27)+' '+(to.x-20)+','+(to.y+27)+' '+to.x+','+(to.y+27)}/><text x={(from.x+185+to.x)/2} y={(from.y+to.y)/2+17} textAnchor="middle">{edge.label.slice(0,12)}</text></g>})}{shown.map(node=>{const pos=positions.get(node.id)!;return <g key={node.id}><rect x={pos.x} y={pos.y} width="184" height="55" rx="8"/><text className="knowledge-node-label" x={pos.x+12} y={pos.y+32}>{node.label.length>11?node.label.slice(0,10)+'…':node.label}</text><title>{node.label}</title></g>})}</svg></div><div className="knowledge-text-equivalent"><h4>文字关系与来源</h4>{view.edges.length?<ul>{view.edges.slice(0,40).map(edge=><li key={edge.id}><strong>{byId.get(edge.from)?.label??'原节点不可用'}</strong><span> — {edge.label} → </span><strong>{byId.get(edge.to)?.label??'原节点不可用'}</strong></li>)}</ul>:<p>{shown.map(node=>node.label).join('、')}：尚未建立可显示的关系。</p>}{(view.nodes.length>shown.length||view.edges.length>edges.length)&&<p className="knowledge-note">图中只展示附近的一部分节点；文字保留关系名称，具体依据可在上方记录中展开。</p>}</div></details>;
 }
 
-function KnowledgeImpacts({impacts,snapshot:s,onNavigate}:{impacts:KnowledgeImpact[];snapshot:WorkspaceSnapshot;onNavigate?:Navigate}){
+export function KnowledgeImpacts({impacts,snapshot:s,onNavigate}:{impacts:KnowledgeImpact[];snapshot:WorkspaceSnapshot;onNavigate?:Navigate}){
  if(!impacts.length)return null;
- return <section className="knowledge-section knowledge-impacts"><h3>这些依据曾用于哪些教学</h3><p className="knowledge-note">复核提示只说明旧背景是否仍适用，不会抹去你后来真实完成的作答。</p>{impacts.map(impact=>{const session=s.sessions.find(item=>item.teachingVersionId===impact.use.teachingVersionId||item.activity.teachingVersionId===impact.use.teachingVersionId),version=s.teachingVersions.find(item=>item.id===impact.use.teachingVersionId);return <article key={impact.use.id} className={!impact.effective?'needs-review':''}><Badge tone={impact.effective?'neutral':'amber'}>{impact.effective?'原参考仍有效':'旧依据需要复核'}</Badge><strong>{version?.activity.title??session?.activity.title??'历史教学记录'}</strong><small>{timeLabel(impact.use.createdAt)}</small>{impact.reasons.map(reason=><p key={reason}>{reason}</p>)}<details><summary>当时实际参考的旧表现</summary><ul>{impact.use.entries.map(entry=><li key={entry.relationId+entry.evidenceId}><strong>{entry.sourceProjectTitle} · {entry.sourceCapabilityTitle}</strong><p>{entry.summary}</p><small>{timeLabel(entry.performedAt)} · 直接帮助 {entry.helpLevel}</small></li>)}</ul></details>{session&&onNavigate&&<button type="button" className="text-button" onClick={()=>onNavigate(session.projectId,session.id)}>查看受影响教学</button>}</article>})}</section>;
+ return <section className="knowledge-section knowledge-impacts"><h3>这些依据曾用于哪些教学</h3><p className="knowledge-note">复核提示只说明旧背景是否仍适用，不会抹去你后来真实完成的作答。</p>{impacts.map(impact=>{const session=knowledgeUseSession(s,impact.use),version=s.teachingVersions.find(item=>item.id===impact.use.teachingVersionId);return <article key={impact.use.id} className={!impact.effective?'needs-review':''}><Badge tone={impact.effective?'neutral':'amber'}>{impact.effective?'原参考仍有效':'旧依据需要复核'}</Badge><strong>{version?.activity.title??session?.activity.title??'历史教学记录'}</strong><small>{timeLabel(impact.use.createdAt)}</small>{impact.reasons.map(reason=><p key={reason}>{reason}</p>)}<details><summary>当时实际参考的旧表现</summary><ul>{impact.use.entries.map(entry=><li key={entry.relationId+entry.evidenceId}><strong>{entry.sourceProjectTitle} · {entry.sourceCapabilityTitle}</strong><p>{entry.summary}</p><small>{timeLabel(entry.performedAt)} · 直接帮助 {entry.helpLevel}</small></li>)}</ul></details>{session&&onNavigate&&<button type="button" className="text-button" onClick={()=>onNavigate(session.projectId,session.id)}>查看受影响教学</button>}</article>})}</section>;
+}
+
+function knowledgeUseSession(snapshot:WorkspaceSnapshot,use:KnowledgeImpact['use']){
+ return snapshot.sessions.find(session=>{
+  if(session.projectId!==use.projectId||session.capabilityId!==use.targetCapabilityId)return false;
+  const teaching=session.teaching,steps=teaching?[teaching.current,...(teaching.upcoming??[]),...(teaching.history??[]),...(teaching.returnStep?[teaching.returnStep]:[]),...(teaching.returnUpcoming??[])]:[];
+  const versions=[session.teachingVersionId,session.activity.teachingVersionId,...steps.flatMap(step=>[step.teachingVersionId,step.activity?.teachingVersionId])];
+  return versions.some(id=>teachingLineage(snapshot,id,use.projectId,use.targetCapabilityId).has(use.teachingVersionId));
+ });
 }
 
 export function KnowledgeImpactNotice({snapshot:s,projectId,capabilityId,teachingVersionId}:{snapshot:WorkspaceSnapshot;projectId:string;capabilityId:string;teachingVersionId?:string}){
- const lineage=teachingLineage(s,teachingVersionId);
+ const lineage=teachingLineage(s,teachingVersionId,projectId,capabilityId);
  if(!lineage.size||(s.knowledgeUses??[]).every(use=>!lineage.has(use.teachingVersionId)))return null;
  const impacts=(s.knowledgeUses??[]).filter(use=>use.projectId===projectId&&use.targetCapabilityId===capabilityId&&lineage.has(use.teachingVersionId)).map(use=>knowledgeUseImpact(s,use)).filter(impact=>!impact.effective);
  if(!impacts.length)return null;
  return <aside className="knowledge-impact-notice" role="status"><strong>这次教学用过的旧依据需要复核</strong>{[...new Set(impacts.flatMap(impact=>impact.reasons))].map(reason=><p key={reason}>{reason}</p>)}<p>原作答和新产生的表现仍保留。请展开“学习关联”查看来源，再决定怎样继续。</p></aside>;
 }
 
-function teachingLineage(snapshot:WorkspaceSnapshot,versionId?:string):Set<string>{
+function teachingLineage(snapshot:WorkspaceSnapshot,versionId?:string,projectId?:string,capabilityId?:string):Set<string>{
  const visited=new Set<string>();let current=versionId;
- while(current&&!visited.has(current)){visited.add(current);current=snapshot.teachingVersions.find(version=>version.id===current)?.replacesVersionId;}
+ while(current&&!visited.has(current)){const version=snapshot.teachingVersions.find(version=>version.id===current);if(version&&((projectId&&version.projectId!==projectId)||(capabilityId&&version.capabilityId!==capabilityId)))break;visited.add(current);current=version?.replacesVersionId;}
  return visited;
 }
