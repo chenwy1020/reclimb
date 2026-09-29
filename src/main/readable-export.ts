@@ -1,4 +1,4 @@
-import {knowledgeRelationView,knowledgeUseImpact} from '../shared/knowledge-graph';
+import {knowledgeRelationView,knowledgeUseImpact,latestKnowledgeRelations} from '../shared/knowledge-graph';
 import type {WorkspaceSnapshot} from '../shared/types';
 import {evidenceStanding,reviewStanding} from '../shared/reliability-state';
 import {publicVerificationBlocker} from '../shared/reliability';
@@ -7,11 +7,12 @@ import {inkPageDataUrl} from '../shared/ink-svg';
 export function readableExport(snapshot:WorkspaceSnapshot,projectId?:string):string{
  const body=['# 我的重登学习档案','导出时间：'+new Date().toISOString(),'能力记录描述具体任务表现；AI核验与评价不等于正确性认证或全面掌握。'];
  const available=visibleProjects(snapshot.projects);const projects=projectId?available.filter(p=>p.id===projectId):available;
+ const currentRelations=new Map(latestKnowledgeRelations(snapshot).map(relation=>[relation.rootId,knowledgeRelationView(snapshot,relation)]));
  if(projectId&&!projects.length)throw new Error('学习项目不存在');
  for(const project of projects){
   body.push('## '+project.title,'项目编号：'+project.id,project.goal,project.routeSummary??'');
   for(const relation of (snapshot.knowledgeRelations??[]).filter(r=>r.projectId===project.id)){
-   const state=knowledgeRelationView(snapshot,relation);body.push('### 学习关联决定 '+relation.id,'关系：'+relation.kind+'；状态：'+relation.status+'；来源能力：'+(state.source?.title??relation.sourceCapabilityId)+'；目标能力：'+(state.target?.title??relation.targetCapabilityId),relation.createdAt+' '+relation.reason,'起始决定：'+relation.rootId+'；前一决定：'+(relation.previousId??'无'),'当前依据：'+state.reason);
+   const state=knowledgeRelationView(snapshot,relation),current=currentRelations.get(relation.rootId)!;body.push('### 学习关联决定 '+relation.id,'关系：'+relation.kind+'；历史决定状态：'+relation.status+'；来源能力：'+(state.source?.title??relation.sourceCapabilityId)+'；目标能力：'+(state.target?.title??relation.targetCapabilityId),relation.createdAt+' '+relation.reason,'起始决定：'+relation.rootId+'；前一决定：'+(relation.previousId??'无'),'当前决定：'+current.relation.id+'；'+(current.relation.status==='retracted'?'已撤回':current.effective?'已确认，仍需当前目标验证':'需重新核对'),'当前依据：'+current.reason);
   }
   for(const use of (snapshot.knowledgeUses??[]).filter(u=>u.projectId===project.id)){
    const state=knowledgeUseImpact(snapshot,use);body.push('### 历史知识使用 '+use.id,'教学版本：'+use.teachingVersionId+'；时间：'+use.createdAt,'当前依据：'+(state.effective?'仍可作为待短验证的背景':state.reasons.join('；')));
