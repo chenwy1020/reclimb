@@ -15,6 +15,7 @@ import {responseAvailability} from './LearningInputs';
 import {createDraftStore} from './draft-store';
 import {projectTrashPayload,visibleProjects} from '../shared/projects';
 import {ProjectDeleteModal} from './ProjectTrash';
+import {knowledgeCheckDestination} from './knowledge-navigation';
 
 export function ActiveModelControl({snapshot:s,busy,onActivate}:{snapshot:WorkspaceSnapshot;busy:boolean;onActivate:(id:string,name:string)=>void}){
  const profiles=(s.settings.modelProfiles??[]).filter(profile=>profile.enabled),active=profiles.find(profile=>profile.id===s.settings.activeModelProfileId)??profiles[0];
@@ -39,7 +40,7 @@ const flushDraft=useCallback(async()=>{if(draftTimer.current)clearTimeout(draftT
 const run:Run=useCallback(async(action,payload,success)=>{
  if(operationLock.current)return null;operationLock.current=true;setBusy(action);setError('');setNotice('');
  try{
-  await flushDraft();if(action.startsWith('sync.')||action==='backup.restore'){await flushAdditionalLocalDrafts();await Promise.all([...pendingRecords.current]);}
+  await flushDraft();if(action.startsWith('sync.')||action==='backup.restore'||action==='knowledge.check'){await flushAdditionalLocalDrafts();await Promise.all([...pendingRecords.current]);}
   const result=await window.learning.request<WorkspaceSnapshot|{message:string;restored?:boolean}>(action,payload);
   const restored=(action==='backup.restore'||action==='sync.adopt')&&!isSnapshot(result)&&result.restored===true;
   // The workspace has committed. Discard old bindings before any fallible refresh.
@@ -47,6 +48,7 @@ const run:Run=useCallback(async(action,payload,success)=>{
   const next=isSnapshot(result)?result:await refresh();setSnapshot(next);
   if(action==='lesson.startFromSources'){const id=(payload as {projectId:string}).projectId,p=next.projects.find(p=>p.id===id),position=next.learningPositions.find(pos=>pos.id===p?.learningPositionId);if(position?.sessionId)setSessionId(position.sessionId);setProjectId(id);setSourceId(null);setPage('desk');}
   if(action==='proposal.adopt'){const proposal=next.learningProposals?.find(p=>p.id===(payload as {proposalId:string}).proposalId),project=next.projects.find(p=>p.id===proposal?.projectId),position=next.learningPositions.find(p=>p.id===project?.learningPositionId);setSessionId(position?.sessionId??'');setPage(position?.sessionId?'desk':'route');}
+  if(action==='knowledge.check'){const request=payload as {projectId:string;capabilityId:string},destination=knowledgeCheckDestination(next,request.projectId,request.capabilityId);if(destination){setProjectId(destination.projectId);setSessionId(destination.sessionId);setSourceId(null);setPage('desk');}}
   if(restored)setProjectId(visibleProjects(next.projects)[0]?.id||'');
   if(success)setNotice(success);else if(!isSnapshot(result)&&result?.message)setNotice(result.message);return next;
  }catch(e){if(action!=='session.respondInput')setError(String((e as Error).message||e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/,''));try{await refresh()}catch{}return null}
@@ -89,12 +91,12 @@ return <div className="app-shell" style={sidebar.style}><Sidebar snapshot={snaps
 {page==='home'&&<HomePage snapshot={snapshot} busy={!!busy} onCreate={()=>setModal('project')} navigate={navigate} onSeed={async()=>{const next=await run('sample.seed',{},'内置练习示例已加入，可离线阅读与作答。');const seeded=next?visibleProjects(next.projects)[0]:undefined;if(seeded)setProjectId(seeded.id)}} onReview={reviewLesson} run={run}/>}
 {page!=='home'&&page!=='settings'&&<div className="page-heading"><div><span className="eyebrow">{page==='route'?'MAKE A PATH':page==='desk'?'LEARN BY DOING':'EVIDENCE OF GROWTH'}</span><h1>{page==='route'?'让目标，有路可走':page==='desk'?'把这一步，走扎实':page==='validation'?'用独立任务检验学习':'看见真实发生的成长'}</h1><p>{page==='route'?'从材料到能力，每一步都知道为什么。':page==='desk'?'理解、亲自尝试，再一点点放开扶手。':'记录你做到了什么，以及当时得到过多少帮助。'}</p></div><div className="heading-actions">{availableProjects.length>0&&<label className="project-picker"><FolderOpen size={16}/><select aria-label="当前学习项目" value={projectId} onChange={e=>void navigate(page,e.target.value)}>{availableProjects.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select><ChevronDown size={14}/></label>}<Button onClick={()=>setModal('project')}><Plus size={15}/>新建项目</Button></div></div>}
 {page!=='home'&&page!=='settings'&&!project&&<Empty title="先留下一颗学习的种子" icon={Sprout} action={<Button variant="primary" onClick={()=>setModal('project')}><Plus size={16}/>新建学习项目</Button>}>从想读的材料开始，也可以先说清楚你想拥有的能力。</Empty>}
-{page==='route'&&project&&<RoutePage snapshot={snapshot} project={project} busy={!!busy} onStart={startLesson} onSettings={()=>void navigate('settings')} onEdit={()=>setModal('editProject')} onDelete={()=>setDeleteOpen(true)} onFiles={()=>void run('material.importFiles',{projectId})} onUrl={()=>setModal('url')} onText={()=>setModal('text')} onSource={setSourceId} run={run}/>}
-{page==='desk'&&project&&<DeskPage snapshot={snapshot} project={project} session={currentSession} onRecord={recordInput} onRespond={respondInput} onSolution={reviewSolution} draft={draft} draftStatus={draftStatus} busy={!!busy} onDraft={changeDraft} onSave={()=>void flushDraft().catch(e=>setError(e.message))} onSelectSession={id=>void navigate('desk',projectId,id)} onStart={startLesson} onSource={setSourceId} run={run} onSettings={()=>void navigate('settings')}/>}
+{page==='route'&&project&&<RoutePage snapshot={snapshot} project={project} busy={!!busy} onStart={startLesson} onSettings={()=>void navigate('settings')} onEdit={()=>setModal('editProject')} onDelete={()=>setDeleteOpen(true)} onFiles={()=>void run('material.importFiles',{projectId})} onUrl={()=>setModal('url')} onText={()=>setModal('text')} onSource={setSourceId} onKnowledgeNavigate={(id,session)=>void navigate(session?'desk':'route',id,session)} run={run}/>}
+{page==='desk'&&project&&<DeskPage snapshot={snapshot} project={project} session={currentSession} onRecord={recordInput} onRespond={respondInput} onSolution={reviewSolution} draft={draft} draftStatus={draftStatus} busy={!!busy} onDraft={changeDraft} onSave={()=>void flushDraft().catch(e=>setError(e.message))} onSelectSession={id=>void navigate('desk',projectId,id)} onStart={startLesson} onSource={setSourceId} onKnowledgeNavigate={(id,session)=>void navigate(session?'desk':'route',id,session)} run={run} onSettings={()=>void navigate('settings')}/>}
 {page==='evidence'&&project&&<EvidencePage snapshot={snapshot} project={project} evidence={snapshot.evidence.filter(e=>e.projectId===projectId)} busy={!!busy} onSource={setSourceId} onSession={id=>void navigate('desk',projectId,id)} onReview={reviewLesson} run={run}/>}
 {page==='validation'&&project&&<ValidationPage snapshot={snapshot} project={project} busy={!!busy} run={run} onSession={id=>void navigate('desk',projectId,id)}/>}
 {page==='settings'&&<SettingsPage key={'settings-'+restoreVersion} snapshot={snapshot} used={budgetUsed(snapshot)} busy={!!busy} run={run} onRestore={()=>setModal('restore')}/>}
-<footer className="page-footer"><Mountain size={14}/> 每一次独立走过的路，都会留下来。<span>重登 · 0.6.0</span></footer>
+<footer className="page-footer"><Mountain size={14}/> 每一次独立走过的路，都会留下来。<span>重登 · 0.7.0</span></footer>
 </div></main>
 {modal&&<AppModal error={error} modal={modal} project={project} busy={!!busy} close={()=>setModal(null)} run={run} onCreated={id=>{setProjectId(id);setSessionId('');setPage('route')}}/>}
 {deleteOpen&&project&&<ProjectDeleteModal snapshot={snapshot} project={project} busy={!!busy} onCancel={()=>setDeleteOpen(false)} onConfirm={trashCurrentProject}/>}
