@@ -44,8 +44,8 @@ describe('多模型设置界面',()=>{
   expect(source).toContain('已有内容保持原版本');
   expect(source).toContain("settings.modelProfile.activate");
   expect(source).toContain('下一次请求使用的模型配置');
-  expect(source).toContain("key={'settings-'+restoreVersion}");
-  expect(source).toContain("result.restored===true");
+  expect(source).toMatch(/key=\{\s*'settings-'\s*\+\s*restoreVersion\s*\}/);
+  expect(source).toMatch(/result\.restored\s*===\s*true/);
  });
 
  it('模型列表刷新时保留尚未保存的常规设置',()=>{
@@ -58,6 +58,6 @@ describe('多模型设置界面',()=>{
  it('说明修改已配置接口时必须同时重新填写密钥',()=>{
   const source=readFileSync(resolve(__dirname,'../src/renderer/SettingsPage.tsx'),'utf8');
   expect(source).toContain('若修改接口地址，请同时重新填写密钥');
-  expect(source).toContain('busy||!!editing||!profile.enabled||!profile.hasApiKey');
+  expect(source).toMatch(/busy\s*\|\|\s*!!editing\s*\|\|\s*!profile\.enabled\s*\|\|\s*!profile\.hasApiKey/);
  });
 });

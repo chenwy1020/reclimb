@@ -36,7 +36,7 @@ export function attachPenInput(canvas:HTMLCanvasElement,handlers:PenInputHandler
  function finish(cancelled=false){
   if(!active)return;const pointer=active.pointerId;active=undefined;doc.body.classList.remove('inking');
   if(cancelled)diagnostics.cancelled++;else diagnostics.completed++;
-  if(pointer!==undefined)try{if(canvas.hasPointerCapture(pointer))canvas.releasePointerCapture(pointer);}catch{}
+  if(pointer!==undefined)try{if(canvas.hasPointerCapture(pointer))canvas.releasePointerCapture(pointer);}catch{/* Browsers may already have released capture after cancellation. */}
   handlers.finish();
  }
  function down(event:PointerEvent){
@@ -56,7 +56,7 @@ export function attachPenInput(canvas:HTMLCanvasElement,handlers:PenInputHandler
  function move(event:PointerEvent){
   if(active?.owner==='stylus-touch'){if(event.pointerType==='pen'){prevent(event);diagnostics.suppressedPointerEvents++;}return;}
   if(!belongs(event))return;prevent(event);diagnostics.moveEvents++;active!.receivedMoves++;
-  let samples:PointerEvent[]=[];try{samples=event.getCoalescedEvents?.()??[];}catch{}
+  let samples:PointerEvent[]=[];try{samples=event.getCoalescedEvents?.()??[];}catch{/* Fall back to the dispatched pointer event when coalescing is unavailable. */}
   if(!samples.length)samples=[event];diagnostics.samples+=samples.length;handlers.move(samples);
  }
  function up(event:PointerEvent){trace(event,event.pointerType);if(active?.owner==='stylus-touch'){if(event.pointerType==='pen'){prevent(event);diagnostics.suppressedPointerEvents++;}return;}if(!belongs(event))return;prevent(event);handlers.move([event]);finish();}

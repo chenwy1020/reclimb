@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '23 18 * * *'
   workflow_dispatch:
     inputs:
       test_scope:
@@ -31,7 +33,7 @@ jobs:
       - run: node scripts/test-profile.mjs
         id: tests
         env:
-          RECLIMB_TEST_SCOPE: ${{ inputs.test_scope || 'auto' }}
+          RECLIMB_TEST_SCOPE: ${{ github.event_name == 'schedule' && 'full' || inputs.test_scope || 'auto' }}
       - run: npm run build
       - run: npm run test:desktop:full
         if: steps.tests.outputs.scope == 'full'

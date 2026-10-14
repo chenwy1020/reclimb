@@ -49,7 +49,7 @@ export function writeRestoreJournal(root:string,record:RestoreJournalRecord):voi
  const temporary=destination+'.'+randomUUID()+'.tmp';let descriptor:number|undefined;
  try{descriptor=openSync(temporary,'wx',0o600);writeFileSync(descriptor,JSON.stringify(record),'utf8');fsyncSync(descriptor);closeSync(descriptor);descriptor=undefined;renameSync(temporary,destination);}
  catch{throw new Error('恢复事务日志未能安全保存，学习档案尚未替换。');}
- finally{if(descriptor!==undefined)try{closeSync(descriptor);}catch{}if(existsSync(temporary))try{unlinkSync(temporary);}catch{}}
+ finally{if(descriptor!==undefined)try{closeSync(descriptor);}catch{/* Preserve the original journal failure if descriptor cleanup also fails. */}if(existsSync(temporary))try{unlinkSync(temporary);}catch{/* An unpublished temporary journal is safe to retain for diagnosis. */}}
 }
 
 export function recoverInterruptedRestore(root:string,expected:RestoreExpectedPaths,options:{removeJournal?:(path:string)=>void}={}):RestoreRecovery{
@@ -76,7 +76,7 @@ export function recoverInterruptedRestore(root:string,expected:RestoreExpectedPa
   if(state==='replacement_moved'){renameSync(record.workspace,record.stage);undo.push(()=>renameSync(record.stage,record.workspace));}
   if(state!=='prepared'){renameSync(record.previous,record.workspace);undo.push(()=>renameSync(record.workspace,record.previous));}
   for(const item of moves)if(existsSync(item.detached)){renameSync(item.detached,item.active);undo.push(()=>renameSync(item.active,item.detached));}
- }catch(error){for(const reverse of undo.reverse())try{reverse();}catch{}throw new Error('中断的恢复未能完整回滚；原文件均已保留，请停止操作并检查数据目录。');}
+ }catch(error){for(const reverse of undo.reverse())try{reverse();}catch{/* Attempt every remaining reversal before reporting incomplete recovery. */}throw new Error('中断的恢复未能完整回滚；原文件均已保留，请停止操作并检查数据目录。');}
  try{removeJournal(file);}catch{/* The now-idempotent rollback journal can be cleaned on next startup. */}
  return{recovered:true,phase:'rollback',...(failedWorkspace?{failedWorkspace}: {})};
 }

@@ -7,7 +7,7 @@ import type {Page} from './ui';
 import {createSidebarController} from './sidebar-state';
 export const navigationPages:{id:Page;label:string;icon:typeof Home}[]=[{id:'home',label:'学习首页',icon:Home},{id:'route',label:'学习路线',icon:Compass},{id:'desk',label:'学习桌',icon:BookOpen},{id:'evidence',label:'能力记录',icon:Sprout},{id:'validation',label:'独立验证',icon:ShieldCheck},{id:'settings',label:'设置',icon:Settings}];
 export function useSidebar(){
- const[controller]=useState(()=>{let storage:Storage|undefined;try{storage=window.localStorage}catch{}return createSidebarController(storage)});
+ const[controller]=useState(()=>{let storage:Storage|undefined;try{storage=window.localStorage}catch{/* The sidebar also works without persistent preferences. */}return createSidebarController(storage)});
  const state=useSyncExternalStore(controller.subscribe,controller.getSnapshot,controller.getSnapshot);
  useEffect(()=>()=>controller.clearTimers(),[controller]);
  return {controller,state,style:{'--sidebar-expanded-width':state.width+'px','--sidebar-reserved-width':state.mode==='pinned'?state.width+'px':'64px'} as CSSProperties};

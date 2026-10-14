@@ -46,6 +46,12 @@ const handwritingFileSchema=z.object({handwritingId:id,entry:z.string(),sha256:z
 const MAX_INK_BYTES=32*1024*1024;
 export function within(root:string,target:string):boolean{const rel=relative(resolve(root),resolve(target));return rel===''||(!rel.startsWith('..')&&!isAbsolute(rel));}
 const sha=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
+function readEntryBytes(entry:AdmZip.IZipEntry,limit:number):Buffer{
+ if(entry.header.size>limit)throw new Error('备份条目展开后过大');
+ const bytes=entry.getData();
+ if(bytes.length>limit||bytes.length!==entry.header.size)throw new Error('备份条目实际大小与声明不符');
+ return bytes;
+}
 export function writeBackup(store:LearningStore,target:string):void{
  const snapshot=store.snapshot();const {dataDirectory,settings,...records}=snapshot;
  const {hasApiKey,...safeSettings}=settings;if(safeSettings.modelProfiles)safeSettings.modelProfiles=safeSettings.modelProfiles.map(({hasApiKey:_profileKey,...profile})=>profile);
@@ -70,13 +76,20 @@ export function writeBackup(store:LearningStore,target:string):void{
  }
 }
 export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDirectory'>;files:Map<string,{name:string;bytes:Buffer}>}{
- if(statSync(file).size>250*1024*1024)throw new Error('备份超过250MB，请分批整理材料后重试。');
+ if(statSync(file).size>250*1024*1024)throw new Error('备份超过250MB，当前版本无法校验或恢复，也不支持分卷。请保留原档案及已有备份，勿删除材料来缩小档案。');
  const zip=new AdmZip(file),entries=zip.getEntries();let size=0;
  if(entries.length>20000)throw new Error('备份条目过多');
  const names=new Set<string>();
- for(const e of entries){if(e.entryName.includes('\\')||e.entryName.startsWith('/')||e.entryName.split('/').includes('..')||names.has(e.entryName))throw new Error('备份包含不安全或重复路径');names.add(e.entryName);size+=e.header.size;if(size>500*1024*1024)throw new Error('备份展开后过大');}
+ for(const e of entries){
+  if(e.entryName.includes('\\')||e.entryName.startsWith('/')||e.entryName.split('/').includes('..')||names.has(e.entryName))throw new Error('备份包含不安全或重复路径');
+  const declared=e.header.size,compressed=e.header.compressedSize;
+  // Check every entry before any decompression. A zero claim must never disable
+  // the decoder's output cap; our writer represents empty files as STORED data.
+  if(!Number.isSafeInteger(declared)||declared<0||!Number.isSafeInteger(compressed)||compressed<0||(declared===0&&compressed>0)||(e.header.method===0&&declared!==compressed))throw new Error('备份条目大小声明无效');
+  names.add(e.entryName);size+=declared;if(size>500*1024*1024)throw new Error('备份展开后过大');
+ }
  const manifest=zip.getEntry('manifest.json');if(!manifest||manifest.header.size>30*1024*1024)throw new Error('备份清单缺失或过大');
- let raw:any;try{raw=JSON.parse(zip.readAsText(manifest));}catch{throw new Error('备份清单无法解析');}
+ let raw:any;try{raw=JSON.parse(readEntryBytes(manifest,30*1024*1024).toString('utf8'));}catch{throw new Error('备份清单无法解析');}
  if(raw?.format!=='reclimb.backup'||!raw.records)throw new Error('这不是受支持的重登备份文件');
  if(typeof raw.version==='number'&&raw.version>12)throw new Error('此备份由更新版本创建，请先升级应用。');
  if(![1,2,3,4,5,6,7,8,9,10,11,12].includes(raw.version))throw new Error('这不是受支持的重登备份文件');
@@ -89,7 +102,7 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
   for(const file of inkFiles){
    if(!metadataIds.has(file.handwritingId)||originals.has(file.handwritingId)||file.entry!=='handwriting/'+file.handwritingId+'.json')throw new Error('手写原稿清单关联或路径无效');
    const entry=zip.getEntry(file.entry);if(!entry||entry.header.size>MAX_INK_BYTES)throw new Error('手写原稿缺失或过大');
-   const bytes=entry.getData();if(bytes.length>MAX_INK_BYTES||sha(bytes)!==file.sha256)throw new Error('手写原稿校验失败，未更改现有档案');
+   const bytes=readEntryBytes(entry,MAX_INK_BYTES);if(sha(bytes)!==file.sha256)throw new Error('手写原稿校验失败，未更改现有档案');
    let pages:unknown;try{pages=JSON.parse(bytes.toString('utf8'));}catch{throw new Error('手写原稿无法解析');}
    originals.set(file.handwritingId,inkPagesSchema.parse(pages));
   }
@@ -335,7 +348,7 @@ export function readBackup(file:string):{records:Omit<WorkspaceSnapshot,'dataDir
   if(original.sessionId!==attempt.sessionId||transcription.status!=='confirmed'||transcription.handwritingId!==original.id||input?.attemptId!==attempt.id||input.handwritingId!==original.id||input.handwritingTranscriptionId!==transcription.id||attempt.text!==transcription.text)throw new Error('手写作答与确认文本关联不一致');
  }
  if(!Array.isArray(raw.files))throw new Error('备份原件清单无效');
- for(const f of raw.files){if(!maps.materials.has(f.materialId)||typeof f.entry!=='string'||!f.entry.startsWith('materials/'+f.materialId+'/')||files.has(f.materialId))throw new Error('备份原件关联无效');const entry=zip.getEntry(f.entry);if(!entry||entry.header.size>50*1024*1024)throw new Error('备份原件缺失或过大');const bytes=entry.getData();if(sha(bytes)!==f.sha256)throw new Error('备份原件校验失败，未更改现有档案');files.set(f.materialId,{name:safeMaterialFilename(basename(f.entry)),bytes});}
+ for(const f of raw.files){if(!maps.materials.has(f.materialId)||typeof f.entry!=='string'||!f.entry.startsWith('materials/'+f.materialId+'/')||files.has(f.materialId))throw new Error('备份原件关联无效');const entry=zip.getEntry(f.entry);if(!entry||entry.header.size>50*1024*1024)throw new Error('备份原件缺失或过大');const bytes=readEntryBytes(entry,50*1024*1024);if(sha(bytes)!==f.sha256)throw new Error('备份原件校验失败，未更改现有档案');files.set(f.materialId,{name:safeMaterialFilename(basename(f.entry)),bytes});}
  if(files.size!==records.materials.length)throw new Error('备份未包含全部材料原件');
  validateKnowledgeRecords(records);
  Object.defineProperty(records,'__reclimbBackupFormatVersion',{value:raw.version,enumerable:false});

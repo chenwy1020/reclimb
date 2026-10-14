@@ -14,6 +14,20 @@ const project=(id:string,status:Project['status']='active'):Project=>({id,title:
 async function fixture(){const root=mkdtempSync(join(tmpdir(),'reclimb-trash-service-'));roots.push(root);const store=await LearningStore.open(root);return {root,store,close:()=>store.close()};}
 
 describe('ProjectTrashService',()=>{
+ it('keeps a project deleted when an original is missing without a deletion staging manifest',async()=>{
+  const {root,store,close}=await fixture();
+  try{
+   const original=join(root,'materials','missing-original','book.md');
+   store.put('projects',{...project('ordinary-restore'),trashedAt:at,statusBeforeTrash:'active'});
+   store.put('materials',{id:'missing-original',projectId:'ordinary-restore',title:'缺失原件',kind:'md',originalName:'book.md',storedPath:original,importedAt:at,warnings:[],fragmentCount:0,summary:''});
+   const service=new ProjectTrashService(store,root,undefined,()=>new Date(at));
+   expect(()=>service.restore('ordinary-restore')).toThrow('原件');
+   expect(store.get('projects','ordinary-restore')?.trashedAt).toBe(at);
+   mkdirSync(join(root,'materials','missing-original'),{recursive:true});writeFileSync(original,'restored original');
+   expect(service.restore('ordinary-restore').trashedAt).toBeUndefined();
+   expect(readFileSync(original,'utf8')).toBe('restored original');
+  }finally{close();}
+ });
  it('moves a project to recent deletion and restores its prior active or paused state without changing related records',async()=>{
   const {root,store,close}=await fixture();
   try{

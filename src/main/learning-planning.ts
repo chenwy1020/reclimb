@@ -121,7 +121,7 @@ export class LearningPlanning{
   let proposal=this.proposal(proposalId);if(proposal.status==='dismissed')throw new Error('这个建议已略过。');reconcileDerivedState(this.store);proposal=this.proposal(proposalId);const basis=this.proposalBasis(proposal),digest=bindingDigest(basis);
   if((proposal.status==='proposed'||proposal.status==='adopted')&&proposal.basisDigest===digest)return proposal;
   let operation=this.operations.list(proposal.projectId).filter(item=>item.kind==='proposal_analysis'&&item.refs.proposalId===proposal.id&&item.phase!=='completed'&&item.phase!=='stale').at(-1);
-  if(operation&&operation.bindingDigest!==digest){try{this.operations.assertBinding(operation.id,basis);}catch{}operation=undefined;}
+  if(operation&&operation.bindingDigest!==digest){try{this.operations.assertBinding(operation.id,basis);}catch{/* assertBinding persists the stale status; this branch starts a new operation. */}operation=undefined;}
   operation??=this.operations.save({projectId:proposal.projectId,requestId:'proposal-'+randomUUID(),kind:'proposal_analysis',refs:{proposalId:proposal.id,unitId:proposal.unitId},binding:basis,savedSummary:proposal.text.slice(0,4000)});
   const running=this.running.get(operation.id);if(running)return running as Promise<LearningProposal>;
   const work=this.performAnalysis(operation,proposal);this.running.set(operation.id,work);try{return await work;}finally{this.running.delete(operation.id);}

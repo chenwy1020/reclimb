@@ -19,14 +19,14 @@
     "test:desktop:legacy": "node scripts/smoke-desktop.mjs",
     "package:source": "node scripts/package-source.mjs",
     "verify:package": "powershell -ExecutionPolicy Bypass -File scripts/verify-package-v070.ps1",
-    "test:desktop:full": "node scripts/smoke-v044.mjs && node scripts/smoke-v045.mjs && node scripts/smoke-v046.mjs && node scripts/smoke-v047.mjs && node scripts/smoke-v048.mjs && node scripts/smoke-v049.mjs && node scripts/smoke-v0410.mjs && node scripts/smoke-v050.mjs --current-only && node scripts/smoke-v051.mjs && node scripts/smoke-v052.mjs && node scripts/smoke-v053.mjs && node scripts/smoke-reader-continuity.mjs && node scripts/smoke-handwriting-recovery.mjs && node scripts/smoke-v060.mjs && node scripts/smoke-v070.mjs",
+    "test:desktop:full": "node scripts/smoke-v044.mjs && node scripts/smoke-v045.mjs && node scripts/smoke-v046.mjs && node scripts/smoke-v047.mjs && node scripts/smoke-v048.mjs && node scripts/smoke-v049.mjs && node scripts/smoke-v0410.mjs && node scripts/smoke-v050.mjs --current-only && node scripts/smoke-v051.mjs && node scripts/smoke-v052.mjs && node scripts/smoke-v053.mjs && node scripts/smoke-reader-continuity.mjs && node scripts/smoke-handwriting-recovery.mjs && node scripts/smoke-v060.mjs && node scripts/smoke-v070.mjs && node scripts/smoke-ipc-validation.mjs",
     "test:full": "npm test && npm run build && npm run test:desktop:full",
     "test:patch": "node scripts/test-profile.mjs"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
     "@napi-rs/canvas": "^1.0.8",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "cheerio": "^1.2.0",
     "katex": "^0.18.7",
     "lucide-react": "^0.577.0",
@@ -53,8 +53,11 @@
     "electron": "44.2.0",
     "electron-builder": "^26.8.0",
     "esbuild": "^0.28.1",
+    "eslint": "^10.12.0",
     "playwright": "^1.58.0",
+    "prettier": "^3.9.10",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.2",
     "vite": "^7.3.0",
     "vitest": "^4.0.18"
   },

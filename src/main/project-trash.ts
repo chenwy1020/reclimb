@@ -26,6 +26,7 @@ export class ProjectTrashService{
  restore(projectId:string):Project{
   const project=this.requireProject(projectId);if(!isTrashed(project))return project;
   try{this.recoverProjectStaging(projectId);}catch(error){throw new Error('暂存材料尚未安全回到原位，项目仍保留在最近删除中。请关闭占用材料的程序后重试。',{cause:error});}
+  for(const material of this.store.list('materials',projectId))if(!existsSync(material.storedPath))throw new Error('项目材料缺少原件，项目仍保留在最近删除中。请先找回材料原件后重试。');
   const restored:Project={...project,status:project.statusBeforeTrash??project.status,updatedAt:this.now().toISOString()};
   delete restored.trashedAt;delete restored.statusBeforeTrash;
   this.store.put('projects',restored);return restored;

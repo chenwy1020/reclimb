@@ -1,4 +1,5 @@
 import {reconcileDerivedState} from './operations';
+import {sessionHelpInputSchema,sessionNextStepInputSchema,sessionReviewSolutionInputSchema} from './session-action-inputs';
 import {KnowledgeService} from './knowledge-service';
 import {saveReaderState} from './reader-state';
 import {ValidationService} from './validation-service';
@@ -21,7 +22,7 @@ import {applyKnownIncidentCorrections} from './incident-migration';
 import {ProjectTrashService} from './project-trash';import {handleProjectTrashAction} from './project-trash-actions';
 import {parseMaterial,parseText,parseArticle,type ParsedMaterial} from '../importers/index';import {fetchPublicArticle} from './public-article';
 import {writeBackup,readBackup,prepareRestore,within} from './backup';import {seedSamples} from './samples';import {safeMaterialFilename,canOpenOriginal} from './file-safety';
-import type {DesktopAction,WorkspaceSnapshot,SessionMode,HelpEvent,Collection} from '../shared/types';
+import type {DesktopAction,WorkspaceSnapshot,SessionMode,Collection} from '../shared/types';
 
 app.setName('重登');app.setAppUserModelId('cn.reclimb.learning');
 if(process.env.RECLIMB_DATA_DIR)app.setPath('userData',resolve(process.env.RECLIMB_DATA_DIR));
@@ -201,7 +202,11 @@ async function handleRequest(action:DesktopAction,p:any={}):Promise<unknown>{
  case 'session.verification':return service.getVerification(getId(p,'sessionId'));
  case 'session.verify':await service.verify(getId(p,'sessionId'),{force:z.boolean().optional().parse(p.force)});break;
  case 'session.adoptConfirmedSources':await service.adoptConfirmedSources(getId(p,'sessionId'));break;
- case 'session.reviewSolution':validationService.noteHelp(getId(p,'sessionId'),'answer','查看核验解答。');return {text:await service.viewReviewSolution(getId(p,'sessionId'))};
+ case 'session.reviewSolution':{
+  const value=sessionReviewSolutionInputSchema.parse(p);
+  validationService.noteHelp(value.sessionId,'answer','查看核验解答。');
+  return {text:await service.viewReviewSolution(value.sessionId)};
+ }
  case 'session.dispute':await service.dispute(getId(p,'sessionId'),z.string().max(10000).optional().parse(p.issue)??'这里可能有错，请核对题目、讲解及评价。');break;
  case 'dispute.review':await service.reviewDispute(getId(p,'disputeId'),{allowSendingPrivateContext:z.boolean().default(false).parse(p.allowSendingPrivateContext)});break;
  case 'lesson.start':{const value=z.object({projectId:z.string().min(1).max(120),capabilityId:z.string().min(1).max(120).optional(),reviewId:z.string().min(1).max(120).optional(),nearStepId:z.string().min(1).max(120).optional(),unitId:z.string().min(1).max(120).optional(),newAttempt:z.boolean().default(false),mode:z.enum(['practice','delayed','transfer','diagnosis','selection']).optional()}).parse(p);await prepareSources(value.projectId);await service.start(value.projectId,value.capabilityId,value.mode as SessionMode|undefined,value.reviewId,value.nearStepId,value.unitId,value.newAttempt);break;}
@@ -209,8 +214,18 @@ async function handleRequest(action:DesktopAction,p:any={}):Promise<unknown>{
  case 'session.recordInput':return service.recordInput(getId(p,'sessionId'),z.object({requestId:z.string().min(1).max(120),text:z.string().min(1).max(100000),kind:z.enum(['attempt','explore','note']),taskId:z.string().min(1).max(120).optional(),stepId:z.string().min(1).max(120).optional(),teachingVersionId:z.string().min(1).max(120).optional(),followup:z.object({kind:z.enum(['step','message','source']),id:z.string().min(1).max(120),intent:z.enum(['question','example']),teachingVersionId:z.string().min(1).max(120).optional(),historyIndex:z.number().int().nonnegative().optional()}).optional()}).parse(p));
  case 'session.respondInput':{const sessionId=getId(p,'sessionId'),inputId=getId(p,'inputId');requireSession(sessionId);if(!visionRunner.isBusy)await service.respondInput(sessionId,inputId);validationService.completeRuns(sessionId);break;}
  case 'session.submit':await service.submit(getId(p,'sessionId'),z.string().max(100000).parse(p.text),getId(p,'requestId'));validationService.completeRuns(getId(p,'sessionId'));break;
- case 'session.help':validationService.noteHelp(getId(p,'sessionId'),p.kind==='answer'?'answer':'hint');await service.help(getId(p,'sessionId'),z.enum(['hint','confused','example','answer','explore']).parse(p.kind) as HelpEvent['kind'],p.text??'',z.enum(['term','reason','step','overload']).optional().parse(p.confusionKind));break;
- case 'session.nextStep':validationService.noteHelp(getId(p,'sessionId'),'hint','离开固定验证题并请求后续讲解或任务。');await service.nextStep(getId(p,'sessionId'),z.enum(['continue','smaller','independent','return','challenge','advance','synthesize','consolidate']).parse(p.intent));break;
+ case 'session.help':{
+  const value=sessionHelpInputSchema.parse(p);
+  validationService.noteHelp(value.sessionId,value.kind==='answer'?'answer':'hint');
+  await service.help(value.sessionId,value.kind,value.text,value.confusionKind);
+  break;
+ }
+ case 'session.nextStep':{
+  const value=sessionNextStepInputSchema.parse(p);
+  validationService.noteHelp(value.sessionId,'hint','离开固定验证题并请求后续讲解或任务。');
+  await service.nextStep(value.sessionId,value.intent);
+  break;
+ }
  case 'session.pause':{const session=requireSession(getId(p));store.put('sessions',{...session,status:'paused',updatedAt:timestamp(),nextStep:'已暂停，准备好后从这里继续'});break;}
  case 'session.resume':service.resumeSession(getId(p));break;
  case 'understanding.save':{const value=z.object({projectId:z.string().min(1).max(120),unitId:z.string().min(1).max(120).optional(),phase:z.enum(['expand','synthesize']),title:z.string().max(200).default('我的理解'),text:z.string().min(1).max(100000),sourceIds:z.array(z.string().min(1).max(120)).max(100).default([]),sourceInputIds:z.array(z.string().min(1).max(120)).max(100).default([]),basedOnDraftId:z.string().min(1).max(120).optional()}).parse(p);service.saveUnderstanding(value.projectId,value);break;}
@@ -273,4 +288,4 @@ app.whenReady().then(async()=>{
  app.on('second-instance',()=>{if(win?.isMinimized())win.restore();win?.focus();});
 }).catch(error=>{dialog.showErrorBox('重登启动未完成',friendly(error)+'\n已有学习档案不会被自动覆盖。');app.quit();});
 app.on('before-quit',()=>{void handwritingServer?.stop();});
-app.on('window-all-closed',()=>app.quit());app.on('will-quit',()=>{try{store?.close();}catch{}});
+app.on('window-all-closed',()=>app.quit());app.on('will-quit',()=>{try{store?.close();}catch{/* Final database cleanup must not interrupt Electron shutdown. */}});

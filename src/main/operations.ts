@@ -62,7 +62,9 @@ export class OperationManager{
 
 /** Suspend conclusions, never learner-authored history. A later restore cannot revive them implicitly. */
 export function reconcileDerivedState(store:LearningStore):void{
- const snapshot=store.snapshot();
+ // Standing and knowledge signatures depend on saved evidence and source text,
+ // not original ink or its recognition history. Avoid loading these on UI refresh.
+ const snapshot=store.snapshot({includeHandwriting:false});
  const knowledgeCurrent=(item:{projectId:string;knowledgeBasis?:{capabilityId:string;digest:string}})=>!item.knowledgeBasis||item.knowledgeBasis.digest===bindingDigest(knowledgeMemory(snapshot,item.projectId,item.knowledgeBasis.capabilityId).fingerprint);
  const observations=snapshot.teachingObservations.filter(item=>{if(item.status!=='active'||!item.evidenceId)return false;const evidence=snapshot.evidence.find(evidence=>evidence.id===item.evidenceId);return !evidence||!evidenceStanding(snapshot,evidence).effective;});
  const drafts=snapshot.understandingDrafts.filter(item=>item.derivedStatus!=='suspended'&&!derivedStanding(snapshot,item).effective);

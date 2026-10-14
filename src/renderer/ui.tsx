@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { BookOpen } from 'lucide-react';
+import { monthSpend } from '../shared/budget';
 import type { DesktopAction, EvidenceStatus, WorkspaceSnapshot, SessionMode, ActivityKind } from '../shared/types';
 export type Run = (action: DesktopAction, payload?: unknown, success?: string) => Promise<WorkspaceSnapshot | null>;
 export type Page = 'home' | 'route' | 'desk' | 'evidence' | 'validation' | 'settings';
@@ -11,7 +12,7 @@ export const helpLabels: Record<string,string> = {hint:'一点提示',confused:'
 export const dateLabel = (v:string) => new Date(v).toLocaleDateString('zh-CN',{month:'long',day:'numeric'});
 export const timeLabel = (v:string) => new Date(v).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
 export const tomorrow = () => new Date(Date.now()+86400000).toISOString();
-export function budgetUsed(s:WorkspaceSnapshot) { const n=new Date(); return s.usage.filter(u => {const d=new Date(u.createdAt); return d.getMonth()===n.getMonth() && d.getFullYear()===n.getFullYear() && u.status!=='failed';}).reduce((a,u)=>a+u.estimatedCny,0); }
+export function budgetUsed(s:WorkspaceSnapshot) { return monthSpend(s.usage); }
 export function isSnapshot(v:unknown):v is WorkspaceSnapshot{return !!v&&typeof v==='object'&&'projects' in v&&'settings' in v;}
 export function Button({children,className='',variant='secondary',...props}:ButtonHTMLAttributes<HTMLButtonElement>&{variant?:'primary'|'secondary'|'ghost'|'danger'}){return <button className={'button button-'+variant+' '+className} {...props}>{children}</button>}
 export function Badge({children,tone=''}:{children:ReactNode;tone?:string}){return <span className={'badge '+tone}>{children}</span>}
