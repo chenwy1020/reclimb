@@ -1,53 +1,557 @@
 import LocalLearningControls from './LocalLearningControls';
-import {latestReaderState,useReaderContinuity} from './reader-continuity';
+import { latestReaderState, useReaderContinuity } from './reader-continuity';
 import ManualTranscription from './ManualTranscription';
-import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {ArrowLeft,ArrowRight,BookOpen,Check,ChevronDown,ExternalLink,FileText,Search,ShieldCheck} from 'lucide-react';
-import type {Fragment,WorkspaceSnapshot} from '../shared/types';
-import {Badge,Button,timeLabel,type Run} from './ui';
-import {RichText} from './RichText';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  FileText,
+  Search,
+  ShieldCheck,
+} from 'lucide-react';
+import type { Fragment, WorkspaceSnapshot } from '../shared/types';
+import { Badge, Button, timeLabel, type Run } from './ui';
+import { RichText } from './RichText';
 import PdfPageViewer from './PdfPageViewer';
-import {PlainSourceText,selectReadableSource} from './SourceText';
-const qualityLabels={ 'native-text':'原生文本','ocr-text':'识别文本','image-only':'图像页面',mixed:'混合内容',unknown:'尚未判断'};
-export function SourceQualityBadge({fragment}:{fragment?:Fragment}){return fragment?.quality?<Badge tone={fragment.quality.needsVerification?'amber':'green'}>{qualityLabels[fragment.quality.kind]}{fragment.quality.needsVerification?' · 需核对':''}</Badge>:null}
-
-export function SourceReader({snapshot:s,projectId,focusId:requestedFocusId,restorePosition=false,run,full=false,followup}:{snapshot:WorkspaceSnapshot;projectId:string;focusId?:string;restorePosition?:boolean;run:Run;full?:boolean;followup?:(fragment:Fragment)=>ReactNode}){
-  const saved=latestReaderState(s,projectId),focusId=restorePosition?(saved?.fragmentId??requestedFocusId):requestedFocusId;const materials=s.materials.filter(m=>m.projectId===projectId);const[materialId,setMaterialId]=useState(focusId?'':saved?.materialId??'');const[query,setQuery]=useState('');const[selected,setSelected]=useState(focusId||saved?.fragmentId||'');const[tab,setTab]=useState<'page'|'text'|'compare'>(saved?.expanded.includes('tab:compare')?'compare':saved?.expanded.includes('tab:text')?'text':'page');
-  const focus=s.fragments.find(f=>f.id===focusId);const actualMaterialId=materialId||focus?.materialId||materials[0]?.id;const material=materials.find(m=>m.id===actualMaterialId);
-  const fragments=s.fragments.filter(f=>f.materialId===actualMaterialId).sort((a,b)=>a.ordinal-b.ordinal);const filtered=fragments.filter(f=>!query||(f.locator+' '+f.text+' '+(f.searchableText||'')).toLowerCase().includes(query.toLowerCase()));const activeFragment=filtered.find(f=>f.id===selected)||filtered[0];
-  const readerRoot=useRef<HTMLDivElement>(null),readerBody=useRef<HTMLDivElement>(null);const continuity=useReaderContinuity(s,activeFragment,tab,readerRoot,readerBody);
-  useEffect(()=>{if(focusId){setSelected(focusId);setMaterialId(focus?.materialId||'');setQuery('');setTab('page')}},[focusId]);useEffect(()=>{const prior=latestReaderState(s,projectId);setMaterialId(focusId?'':prior?.materialId??'');setQuery('');setSelected(focusId||prior?.fragmentId||'');setTab(prior?.expanded.includes('tab:compare')?'compare':prior?.expanded.includes('tab:text')?'text':'page')},[projectId]);
-  const isPdf=material?.kind==='pdf';const readable=activeFragment?selectReadableSource(activeFragment,s.sourceTranscriptions||[]):undefined;const readingLayout=activeFragment?(s.readingLayouts??[]).filter(layout=>layout.fragmentId===activeFragment.id&&layout.status==='current').sort((a,b)=>b.version-a.version)[0]:undefined;const confirmedRegions=readingLayout?.blocks.filter(block=>block.kind==='prose'&&block.source==='confirmed_transcription')??[];
-  if(!materials.length)return <div className="reader-empty"><FileText size={30}/><h3>原文在这里陪你</h3><p>在学习路线中加入材料后，可以边读原文，边尝试和核对。</p></div>;
-  return <div ref={readerRoot} className={'source-reader '+(full?'full':'')}>
-    <div className="reader-toolbar"><label><BookOpen size={16}/><select aria-label="阅读材料" value={actualMaterialId} onChange={e=>{const next=e.target.value;if(next===actualMaterialId)return;continuity.queue();void continuity.flush().then(()=>{const prior=continuity.latest(next);setMaterialId(next);setSelected(prior?.fragmentId??'');setQuery('');setTab(prior?.expanded.includes('tab:compare')?'compare':prior?.expanded.includes('tab:text')?'text':'page')}).catch(()=>{})}}>{materials.map(m=><option key={m.id} value={m.id}>{m.title}</option>)}</select></label>{material&&<button className="icon-button" title="打开原始文件" onClick={()=>void run('material.openOriginal',{materialId:material.id})}><ExternalLink size={15}/></button>}</div>
-    {continuity.error&&<p className="inline-error">{continuity.error}<button onClick={continuity.retry}>重试保存位置</button></p>}
-    <label className="search-field"><Search size={15}/><input placeholder="搜索原文或页码、段落…" value={query} onChange={e=>setQuery(e.target.value)}/></label>
-    {material?.warnings.length?<details data-reader-section="warnings" className="reader-warning"><summary>{material.warnings.length} 条解析提示 · 点击查看</summary>{material.warnings.map((w,i)=><RichText key={i} text={w}/>)}</details>:null}
-    <details data-reader-section="guide" className="textbook-guide"><summary><BookOpen size={14}/>怎样配合教材学习</summary><ol><li><strong>先读一小段原文。</strong>知道它在解决什么问题；陌生内容可以先请 AI 解释或示范。</li><li><strong>留下自己的判断。</strong>试着解释一句、补一步推导或举个例子。卡点、反例和疑问都值得记录。</li><li><strong>围绕原文求助。</strong>{followup?'在下方选中页段，再点“从这段原文提问”；重要公式回到原页核对。':'已有学习会话时，可在学习桌的材料栏选中页段，再从原文提问；重要公式回到原页核对。'}</li><li><strong>合上解释再试。</strong>减少提示，整理关键条件和方法；之后按需要回访重构、换情境应用。</li></ol><p>路线是可以调整的建议。感觉太简单可增加挑战或进入后续单元，不必反复做同一层练习。</p></details>
-    <div ref={readerBody} onScroll={continuity.queue} className="reader-body"><div className="fragment-tabs">{filtered.map(f=><button key={f.id} className={activeFragment?.id===f.id?'selected':''} onClick={()=>setSelected(f.id)} title={f.text.slice(0,90)}>{f.pageNumber?'PDF '+f.pageNumber+(f.printedPageLabel?' · 印刷 '+f.printedPageLabel:''):f.locator}</button>)}</div>
-    {!filtered.length?<p className="reader-no-results">没有找到匹配的片段，请换个关键词。</p>:activeFragment&&material?<><div className="source-quality-line"><SourceQualityBadge fragment={activeFragment}/>{activeFragment.quality?.needsVerification&&<span>重要公式与论证请和原页对照</span>}</div>
-      {isPdf&&!material.pdfMetadata&&<div className="legacy-pdf-note"><p>这份 PDF 来自早期版本。先在本机建立页码与质量信息，再定位公式和生成转录。</p><Button onClick={()=>void run('material.analyzePdf',{materialId:material.id},'已重新分析本机 PDF，页码与质量提示已更新。')}>分析本机 PDF 页码与质量</Button></div>}{isPdf&&<div className="source-view-tabs" role="tablist" aria-label="资料查看方式">{([['page','原始页面'],['text','可读文字'],['compare','原页与转录对照']] as const).map(([value,label])=><button key={value} role="tab" aria-selected={tab===value} className={tab===value?'selected':''} onClick={()=>setTab(value)}>{label}</button>)}</div>}
-      {isPdf&&(tab==='page'||tab==='compare'||(tab==='text'&&readable?.needsOriginal))&&<div className={tab==='text'?'primary-original-page':''}>{tab==='text'&&readable?.needsOriginal&&<div className="original-reading-note"><ShieldCheck size={15}/><span>这一页的文字层含有未核对的公式或顺序。原页是当前可靠阅读依据；下方提取文字只用于搜索和对照。</span></div>}<PdfPageViewer key={material.id} material={material} fragment={activeFragment} snapshot={s} run={run} onPageChange={page=>{const next=fragments.find(f=>f.pageNumber===page);if(next)setSelected(next.id)}}/></div>}
-      {(!isPdf||tab==='text'||tab==='compare')&&<article className="fragment-content"><span className="source-locator">{activeFragment.locator}</span><h3>{material.title}</h3>{isPdf&&<p className="extracted-label">{readable?.kind==='confirmed'?'人工确认的整页转录 · 可呈现 Markdown 与 LaTeX 公式':readable?.needsOriginal?'原始文本提取 · 仅供搜索与对照，不据此猜补公式':'重新排版的原生文本 · 原始提取仍保留'}</p>}{!isPdf?<RichText className="source-text" text={activeFragment.text}/>:readable?.kind==='confirmed'?<RichText className="source-text confirmed-source-text" text={readable.text}/>:readable?.needsOriginal?<><details data-reader-section="raw" className="raw-extraction"><summary>查看原始提取文字</summary><PlainSourceText text={readable.text} reflow={false}/></details>{confirmedRegions.map(block=><section className="confirmed-region" key={block.id}><Badge tone="green">人工确认的局部转录</Badge>{block.region&&<small>原页区域：{Math.round(block.region.x*100)}%–{Math.round((block.region.x+block.region.width)*100)}% × {Math.round(block.region.y*100)}%–{Math.round((block.region.y+block.region.height)*100)}%</small>}<RichText className="source-text confirmed-source-text" text={block.text??''}/></section>)}</>:<PlainSourceText className="source-text" text={readable?.text??activeFragment.text}/>}<div className="fragment-pagination"><Button variant="ghost" disabled={filtered.indexOf(activeFragment)<=0} onClick={()=>setSelected(filtered[filtered.indexOf(activeFragment)-1].id)}><ArrowLeft size={14}/>上一段</Button><small>{filtered.indexOf(activeFragment)+1} / {filtered.length}</small><Button variant="ghost" disabled={filtered.indexOf(activeFragment)>=filtered.length-1} onClick={()=>setSelected(filtered[filtered.indexOf(activeFragment)+1].id)}>下一段<ArrowRight size={14}/></Button></div></article>}
-      <LocalLearningControls key={activeFragment.id} snapshot={s} fragment={activeFragment} run={run}/>{followup&&followup(activeFragment)}
-      {isPdf&&tab==='text'&&<ManualTranscription fragment={activeFragment} run={run}/>}
-      {isPdf&&<TranscriptionPanel snapshot={s} fragment={activeFragment} run={run}/>}
-    </>:null}</div>
-  </div>
+import { PlainSourceText, selectReadableSource } from './SourceText';
+const qualityLabels = {
+  'native-text': '原生文本',
+  'ocr-text': '识别文本',
+  'image-only': '图像页面',
+  mixed: '混合内容',
+  unknown: '尚未判断',
+};
+export function SourceQualityBadge({ fragment }: { fragment?: Fragment }) {
+  return fragment?.quality ? (
+    <Badge tone={fragment.quality.needsVerification ? 'amber' : 'green'}>
+      {qualityLabels[fragment.quality.kind]}
+      {fragment.quality.needsVerification ? ' · 需核对' : ''}
+    </Badge>
+  ) : null;
 }
-function TranscriptionPanel({snapshot:s,fragment,run}:{snapshot:WorkspaceSnapshot;fragment:Fragment;run:Run}){
-  const versions=(s.sourceTranscriptions||[]).filter(t=>t.fragmentId===fragment.id||(t.materialId===fragment.materialId&&t.pageNumber===fragment.pageNumber)).sort((a,b)=>b.version-a.version||b.createdAt.localeCompare(a.createdAt));
-  const[selectedVersion,setSelectedVersion]=useState('');const[editing,setEditing]=useState(false);const[text,setText]=useState('');const[confirmed,setConfirmed]=useState(false);const[saving,setSaving]=useState(false);const[error,setError]=useState('');
-  const current=versions.find(v=>v.id===selectedVersion)||versions[0];
-  useEffect(()=>{setSelectedVersion('');setEditing(false);setError('')},[fragment.id]);
-  useEffect(()=>{setText(current?.text||'');setConfirmed(false);setEditing(false)},[current?.id,current?.text]);
-  return <section className="transcription-panel"><div className="section-heading"><h3><FileText size={15}/>可核对的转录版本</h3>{versions.length>0&&<span className="muted tiny">{versions.length} 个版本</span>}</div>
-    {!current?<p className="muted">需要时可以从原页生成转录。机器识别只是候选文本，你核对后才能标为已确认。</p>:<><div className="transcription-version"><select aria-label="选择转录版本" value={current.id} onChange={e=>setSelectedVersion(e.target.value)}>{versions.map(v=><option key={v.id} value={v.id}>版本 {v.version} · {v.origin==='manual'?'手工录入已确认':v.status==='confirmed'?'人工已确认':'机器转录待核对'} · {timeLabel(v.createdAt)}</option>)}</select><Badge tone={current.status==='confirmed'?'green':'amber'}>{current.status==='confirmed'?'人工已确认':'待核对'}</Badge></div>
-      <div className="transcription-context">PDF 实际页 {current.pageNumber}{current.region?' · 仅所选区域':' · 页面'}{current.origin==='manual'?' · 手工录入':current.model?' · '+current.model:''}</div>
-      {current.uncertainties.length>0&&<details className="reader-warning" open><summary>识别中仍有不确定之处</summary>{current.uncertainties.map((u,i)=><RichText key={i} text={u}/>)}</details>}
-      {editing?<><label className="form-label">对照原页修订文字与公式<textarea aria-label="修订转录文字" rows={10} value={text} onChange={e=>{setText(e.target.value);setConfirmed(false)}}/></label><details className="transcription-render-preview"><summary>预览修订后的文字与公式<ChevronDown size={14}/></summary><RichText text={text}/></details><label className="checkbox-label"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>我已逐项对照原页，确认这份文字及公式。</label><div className="transcription-actions"><Button disabled={saving} onClick={()=>setEditing(false)}>取消修订</Button><Button variant="primary" disabled={saving||!confirmed||!text.trim()} onClick={async()=>{setSaving(true);setError('');const next=await run('material.confirmTranscription',{transcriptionId:current.id,text},'已保存新的人工确认版本，原始提取与历史版本均保留。');setSaving(false);if(next){setSelectedVersion('');setEditing(false)}else setError('确认版本没有保存，请查看错误原因后重试。')}}><ShieldCheck size={14}/>保存人工确认版本</Button></div></>:<><RichText className="transcription-text" text={current.text}/><Button onClick={()=>{setText(current.text);setEditing(true);setConfirmed(false)}}><Check size={14}/>{current.status==='confirmed'?'修订并保留新版本':'对照原页，修订并确认'}</Button></>}
-      {error&&<p className="inline-error">{error}</p>}
-    </>}
-  </section>
+
+export function SourceReader({
+  snapshot: s,
+  projectId,
+  focusId: requestedFocusId,
+  restorePosition = false,
+  run,
+  full = false,
+  followup,
+}: {
+  snapshot: WorkspaceSnapshot;
+  projectId: string;
+  focusId?: string;
+  restorePosition?: boolean;
+  run: Run;
+  full?: boolean;
+  followup?: (fragment: Fragment) => ReactNode;
+}) {
+  const saved = latestReaderState(s, projectId),
+    focusId = restorePosition ? (saved?.fragmentId ?? requestedFocusId) : requestedFocusId;
+  const materials = s.materials.filter((m) => m.projectId === projectId);
+  const [materialId, setMaterialId] = useState(focusId ? '' : (saved?.materialId ?? ''));
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState(focusId || saved?.fragmentId || '');
+  const [tab, setTab] = useState<'page' | 'text' | 'compare'>(
+    saved?.expanded.includes('tab:compare')
+      ? 'compare'
+      : saved?.expanded.includes('tab:text')
+        ? 'text'
+        : 'page',
+  );
+  const focus = s.fragments.find((f) => f.id === focusId);
+  const actualMaterialId = materialId || focus?.materialId || materials[0]?.id;
+  const material = materials.find((m) => m.id === actualMaterialId);
+  const fragments = s.fragments
+    .filter((f) => f.materialId === actualMaterialId)
+    .sort((a, b) => a.ordinal - b.ordinal);
+  const filtered = fragments.filter(
+    (f) =>
+      !query ||
+      (f.locator + ' ' + f.text + ' ' + (f.searchableText || ''))
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  );
+  const activeFragment = filtered.find((f) => f.id === selected) || filtered[0];
+  const readerRoot = useRef<HTMLDivElement>(null),
+    readerBody = useRef<HTMLDivElement>(null);
+  const continuity = useReaderContinuity(s, activeFragment, tab, readerRoot, readerBody);
+  useEffect(() => {
+    if (focusId) {
+      setSelected(focusId);
+      setMaterialId(focus?.materialId || '');
+      setQuery('');
+      setTab('page');
+    }
+  }, [focusId]);
+  useEffect(() => {
+    const prior = latestReaderState(s, projectId);
+    setMaterialId(focusId ? '' : (prior?.materialId ?? ''));
+    setQuery('');
+    setSelected(focusId || prior?.fragmentId || '');
+    setTab(
+      prior?.expanded.includes('tab:compare')
+        ? 'compare'
+        : prior?.expanded.includes('tab:text')
+          ? 'text'
+          : 'page',
+    );
+  }, [projectId]);
+  const isPdf = material?.kind === 'pdf';
+  const readable = activeFragment
+    ? selectReadableSource(activeFragment, s.sourceTranscriptions || [])
+    : undefined;
+  const readingLayout = activeFragment
+    ? (s.readingLayouts ?? [])
+        .filter((layout) => layout.fragmentId === activeFragment.id && layout.status === 'current')
+        .sort((a, b) => b.version - a.version)[0]
+    : undefined;
+  const confirmedRegions =
+    readingLayout?.blocks.filter(
+      (block) => block.kind === 'prose' && block.source === 'confirmed_transcription',
+    ) ?? [];
+  if (!materials.length)
+    return (
+      <div className="reader-empty">
+        <FileText size={30} />
+        <h3>原文在这里陪你</h3>
+        <p>在学习路线中加入材料后，可以边读原文，边尝试和核对。</p>
+      </div>
+    );
+  return (
+    <div ref={readerRoot} className={'source-reader ' + (full ? 'full' : '')}>
+      <div className="reader-toolbar">
+        <label>
+          <BookOpen size={16} />
+          <select
+            aria-label="阅读材料"
+            value={actualMaterialId}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next === actualMaterialId) return;
+              continuity.queue();
+              void continuity
+                .flush()
+                .then(() => {
+                  const prior = continuity.latest(next);
+                  setMaterialId(next);
+                  setSelected(prior?.fragmentId ?? '');
+                  setQuery('');
+                  setTab(
+                    prior?.expanded.includes('tab:compare')
+                      ? 'compare'
+                      : prior?.expanded.includes('tab:text')
+                        ? 'text'
+                        : 'page',
+                  );
+                })
+                .catch(() => {});
+            }}
+          >
+            {materials.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        {material && (
+          <button
+            className="icon-button"
+            title="打开原始文件"
+            onClick={() => void run('material.openOriginal', { materialId: material.id })}
+          >
+            <ExternalLink size={15} />
+          </button>
+        )}
+      </div>
+      {continuity.error && (
+        <p className="inline-error">
+          {continuity.error}
+          <button onClick={continuity.retry}>重试保存位置</button>
+        </p>
+      )}
+      <label className="search-field">
+        <Search size={15} />
+        <input
+          placeholder="搜索原文或页码、段落…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
+      {material?.warnings.length ? (
+        <details data-reader-section="warnings" className="reader-warning">
+          <summary>{material.warnings.length} 条解析提示 · 点击查看</summary>
+          {material.warnings.map((w, i) => (
+            <RichText key={i} text={w} />
+          ))}
+        </details>
+      ) : null}
+      <details data-reader-section="guide" className="textbook-guide">
+        <summary>
+          <BookOpen size={14} />
+          怎样配合教材学习
+        </summary>
+        <ol>
+          <li>
+            <strong>先读一小段原文。</strong>知道它在解决什么问题；陌生内容可以先请 AI 解释或示范。
+          </li>
+          <li>
+            <strong>留下自己的判断。</strong>
+            试着解释一句、补一步推导或举个例子。卡点、反例和疑问都值得记录。
+          </li>
+          <li>
+            <strong>围绕原文求助。</strong>
+            {followup
+              ? '在下方选中页段，再点“从这段原文提问”；重要公式回到原页核对。'
+              : '已有学习会话时，可在学习桌的材料栏选中页段，再从原文提问；重要公式回到原页核对。'}
+          </li>
+          <li>
+            <strong>合上解释再试。</strong>
+            减少提示，整理关键条件和方法；之后按需要回访重构、换情境应用。
+          </li>
+        </ol>
+        <p>路线是可以调整的建议。感觉太简单可增加挑战或进入后续单元，不必反复做同一层练习。</p>
+      </details>
+      <div ref={readerBody} onScroll={continuity.queue} className="reader-body">
+        <div className="fragment-tabs">
+          {filtered.map((f) => (
+            <button
+              key={f.id}
+              className={activeFragment?.id === f.id ? 'selected' : ''}
+              onClick={() => setSelected(f.id)}
+              title={f.text.slice(0, 90)}
+            >
+              {f.pageNumber
+                ? 'PDF ' +
+                  f.pageNumber +
+                  (f.printedPageLabel ? ' · 印刷 ' + f.printedPageLabel : '')
+                : f.locator}
+            </button>
+          ))}
+        </div>
+        {!filtered.length ? (
+          <p className="reader-no-results">没有找到匹配的片段，请换个关键词。</p>
+        ) : activeFragment && material ? (
+          <>
+            <div className="source-quality-line">
+              <SourceQualityBadge fragment={activeFragment} />
+              {activeFragment.quality?.needsVerification && <span>重要公式与论证请和原页对照</span>}
+            </div>
+            {isPdf && !material.pdfMetadata && (
+              <div className="legacy-pdf-note">
+                <p>这份 PDF 来自早期版本。先在本机建立页码与质量信息，再定位公式和生成转录。</p>
+                <Button
+                  onClick={() =>
+                    void run(
+                      'material.analyzePdf',
+                      { materialId: material.id },
+                      '已重新分析本机 PDF，页码与质量提示已更新。',
+                    )
+                  }
+                >
+                  分析本机 PDF 页码与质量
+                </Button>
+              </div>
+            )}
+            {isPdf && (
+              <div className="source-view-tabs" role="tablist" aria-label="资料查看方式">
+                {(
+                  [
+                    ['page', '原始页面'],
+                    ['text', '可读文字'],
+                    ['compare', '原页与转录对照'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    role="tab"
+                    aria-selected={tab === value}
+                    className={tab === value ? 'selected' : ''}
+                    onClick={() => setTab(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {isPdf &&
+              (tab === 'page' ||
+                tab === 'compare' ||
+                (tab === 'text' && readable?.needsOriginal)) && (
+                <div className={tab === 'text' ? 'primary-original-page' : ''}>
+                  {tab === 'text' && readable?.needsOriginal && (
+                    <div className="original-reading-note">
+                      <ShieldCheck size={15} />
+                      <span>
+                        这一页的文字层含有未核对的公式或顺序。原页是当前可靠阅读依据；下方提取文字只用于搜索和对照。
+                      </span>
+                    </div>
+                  )}
+                  <PdfPageViewer
+                    key={material.id}
+                    material={material}
+                    fragment={activeFragment}
+                    snapshot={s}
+                    run={run}
+                    onPageChange={(page) => {
+                      const next = fragments.find((f) => f.pageNumber === page);
+                      if (next) setSelected(next.id);
+                    }}
+                  />
+                </div>
+              )}
+            {(!isPdf || tab === 'text' || tab === 'compare') && (
+              <article className="fragment-content">
+                <span className="source-locator">{activeFragment.locator}</span>
+                <h3>{material.title}</h3>
+                {isPdf && (
+                  <p className="extracted-label">
+                    {readable?.kind === 'confirmed'
+                      ? '人工确认的整页转录 · 可呈现 Markdown 与 LaTeX 公式'
+                      : readable?.needsOriginal
+                        ? '原始文本提取 · 仅供搜索与对照，不据此猜补公式'
+                        : '重新排版的原生文本 · 原始提取仍保留'}
+                  </p>
+                )}
+                {!isPdf ? (
+                  <RichText className="source-text" text={activeFragment.text} />
+                ) : readable?.kind === 'confirmed' ? (
+                  <RichText className="source-text confirmed-source-text" text={readable.text} />
+                ) : readable?.needsOriginal ? (
+                  <>
+                    <details data-reader-section="raw" className="raw-extraction">
+                      <summary>查看原始提取文字</summary>
+                      <PlainSourceText text={readable.text} reflow={false} />
+                    </details>
+                    {confirmedRegions.map((block) => (
+                      <section className="confirmed-region" key={block.id}>
+                        <Badge tone="green">人工确认的局部转录</Badge>
+                        {block.region && (
+                          <small>
+                            原页区域：{Math.round(block.region.x * 100)}%–
+                            {Math.round((block.region.x + block.region.width) * 100)}% ×{' '}
+                            {Math.round(block.region.y * 100)}%–
+                            {Math.round((block.region.y + block.region.height) * 100)}%
+                          </small>
+                        )}
+                        <RichText
+                          className="source-text confirmed-source-text"
+                          text={block.text ?? ''}
+                        />
+                      </section>
+                    ))}
+                  </>
+                ) : (
+                  <PlainSourceText
+                    className="source-text"
+                    text={readable?.text ?? activeFragment.text}
+                  />
+                )}
+                <div className="fragment-pagination">
+                  <Button
+                    variant="ghost"
+                    disabled={filtered.indexOf(activeFragment) <= 0}
+                    onClick={() => setSelected(filtered[filtered.indexOf(activeFragment) - 1].id)}
+                  >
+                    <ArrowLeft size={14} />
+                    上一段
+                  </Button>
+                  <small>
+                    {filtered.indexOf(activeFragment) + 1} / {filtered.length}
+                  </small>
+                  <Button
+                    variant="ghost"
+                    disabled={filtered.indexOf(activeFragment) >= filtered.length - 1}
+                    onClick={() => setSelected(filtered[filtered.indexOf(activeFragment) + 1].id)}
+                  >
+                    下一段
+                    <ArrowRight size={14} />
+                  </Button>
+                </div>
+              </article>
+            )}
+            <LocalLearningControls
+              key={activeFragment.id}
+              snapshot={s}
+              fragment={activeFragment}
+              run={run}
+            />
+            {followup && followup(activeFragment)}
+            {isPdf && tab === 'text' && <ManualTranscription fragment={activeFragment} run={run} />}
+            {isPdf && <TranscriptionPanel snapshot={s} fragment={activeFragment} run={run} />}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+function TranscriptionPanel({
+  snapshot: s,
+  fragment,
+  run,
+}: {
+  snapshot: WorkspaceSnapshot;
+  fragment: Fragment;
+  run: Run;
+}) {
+  const versions = (s.sourceTranscriptions || [])
+    .filter(
+      (t) =>
+        t.fragmentId === fragment.id ||
+        (t.materialId === fragment.materialId && t.pageNumber === fragment.pageNumber),
+    )
+    .sort((a, b) => b.version - a.version || b.createdAt.localeCompare(a.createdAt));
+  const [selectedVersion, setSelectedVersion] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const current = versions.find((v) => v.id === selectedVersion) || versions[0];
+  useEffect(() => {
+    setSelectedVersion('');
+    setEditing(false);
+    setError('');
+  }, [fragment.id]);
+  useEffect(() => {
+    setText(current?.text || '');
+    setConfirmed(false);
+    setEditing(false);
+  }, [current?.id, current?.text]);
+  return (
+    <section className="transcription-panel">
+      <div className="section-heading">
+        <h3>
+          <FileText size={15} />
+          可核对的转录版本
+        </h3>
+        {versions.length > 0 && <span className="muted tiny">{versions.length} 个版本</span>}
+      </div>
+      {!current ? (
+        <p className="muted">
+          需要时可以从原页生成转录。机器识别只是候选文本，你核对后才能标为已确认。
+        </p>
+      ) : (
+        <>
+          <div className="transcription-version">
+            <select
+              aria-label="选择转录版本"
+              value={current.id}
+              onChange={(e) => setSelectedVersion(e.target.value)}
+            >
+              {versions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  版本 {v.version} ·{' '}
+                  {v.origin === 'manual'
+                    ? '手工录入已确认'
+                    : v.status === 'confirmed'
+                      ? '人工已确认'
+                      : '机器转录待核对'}{' '}
+                  · {timeLabel(v.createdAt)}
+                </option>
+              ))}
+            </select>
+            <Badge tone={current.status === 'confirmed' ? 'green' : 'amber'}>
+              {current.status === 'confirmed' ? '人工已确认' : '待核对'}
+            </Badge>
+          </div>
+          <div className="transcription-context">
+            PDF 实际页 {current.pageNumber}
+            {current.region ? ' · 仅所选区域' : ' · 页面'}
+            {current.origin === 'manual'
+              ? ' · 手工录入'
+              : current.model
+                ? ' · ' + current.model
+                : ''}
+          </div>
+          {current.uncertainties.length > 0 && (
+            <details className="reader-warning" open>
+              <summary>识别中仍有不确定之处</summary>
+              {current.uncertainties.map((u, i) => (
+                <RichText key={i} text={u} />
+              ))}
+            </details>
+          )}
+          {editing ? (
+            <>
+              <label className="form-label">
+                对照原页修订文字与公式
+                <textarea
+                  aria-label="修订转录文字"
+                  rows={10}
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    setConfirmed(false);
+                  }}
+                />
+              </label>
+              <details className="transcription-render-preview">
+                <summary>
+                  预览修订后的文字与公式
+                  <ChevronDown size={14} />
+                </summary>
+                <RichText text={text} />
+              </details>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={confirmed}
+                  onChange={(e) => setConfirmed(e.target.checked)}
+                />
+                我已逐项对照原页，确认这份文字及公式。
+              </label>
+              <div className="transcription-actions">
+                <Button disabled={saving} onClick={() => setEditing(false)}>
+                  取消修订
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={saving || !confirmed || !text.trim()}
+                  onClick={async () => {
+                    setSaving(true);
+                    setError('');
+                    const next = await run(
+                      'material.confirmTranscription',
+                      { transcriptionId: current.id, text },
+                      '已保存新的人工确认版本，原始提取与历史版本均保留。',
+                    );
+                    setSaving(false);
+                    if (next) {
+                      setSelectedVersion('');
+                      setEditing(false);
+                    } else setError('确认版本没有保存，请查看错误原因后重试。');
+                  }}
+                >
+                  <ShieldCheck size={14} />
+                  保存人工确认版本
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <RichText className="transcription-text" text={current.text} />
+              <Button
+                onClick={() => {
+                  setText(current.text);
+                  setEditing(true);
+                  setConfirmed(false);
+                }}
+              >
+                <Check size={14} />
+                {current.status === 'confirmed' ? '修订并保留新版本' : '对照原页，修订并确认'}
+              </Button>
+            </>
+          )}
+          {error && <p className="inline-error">{error}</p>}
+        </>
+      )}
+    </section>
+  );
 }

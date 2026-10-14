@@ -1,70 +1,880 @@
 import SettingsCard from './SettingsCard';
 import WebDavSyncPanel from './WebDavSyncPanel';
 import AppearancePanel from './Appearance';
-import {useEffect,useState} from 'react';
-import {ArrowDownToLine,Check,CheckCheck,FileText,KeyRound,Leaf,Pencil,Plus,RefreshCw,ShieldCheck,Sparkles,Target,Trash2,Upload,X} from 'lucide-react';
-import type {ModelProfile,Settings,Usage,VisionSettings,WorkspaceSnapshot} from '../shared/types';
-import {Badge,Button,timeLabel,type Run} from './ui';
+import { useEffect, useState } from 'react';
+import {
+  ArrowDownToLine,
+  Check,
+  CheckCheck,
+  FileText,
+  KeyRound,
+  Leaf,
+  Pencil,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import type {
+  ModelProfile,
+  Settings,
+  Usage,
+  VisionSettings,
+  WorkspaceSnapshot,
+} from '../shared/types';
+import { Badge, Button, timeLabel, type Run } from './ui';
 import DiagnosticsPanel from './DiagnosticsPanel';
-import {ProjectTrashPanel} from './ProjectTrash';
-import {projectTrashPayload} from '../shared/projects';
-import {DEFAULT_MODEL_OUTPUT_TOKENS,MAX_MODEL_OUTPUT_TOKENS,MIN_MODEL_OUTPUT_TOKENS} from '../shared/model-limits';
-import {summarizeCacheUsage,groupCacheUsage,type CacheGrouping} from '../shared/cache-usage';
+import { ProjectTrashPanel } from './ProjectTrash';
+import { projectTrashPayload } from '../shared/projects';
+import {
+  DEFAULT_MODEL_OUTPUT_TOKENS,
+  MAX_MODEL_OUTPUT_TOKENS,
+  MIN_MODEL_OUTPUT_TOKENS,
+} from '../shared/model-limits';
+import { summarizeCacheUsage, groupCacheUsage, type CacheGrouping } from '../shared/cache-usage';
 
-type ProfileDraft=Omit<ModelProfile,'id'|'hasApiKey'>&{id?:string};
+type ProfileDraft = Omit<ModelProfile, 'id' | 'hasApiKey'> & { id?: string };
 
-export function CacheUsageSummary({usage}:{usage:readonly Usage[]}){
- const cache=summarizeCacheUsage(usage);const[grouping,setGrouping]=useState<CacheGrouping>('operation');const groups=groupCacheUsage(usage,grouping);
- return <div className="cache-usage" aria-label="本月缓存与耗时"><h3>本月缓存与耗时</h3><p className="quiet-note">本机全部模型 · 按本地月份统计</p><p><strong>{cache.hitRate===undefined?'尚无可计算的缓存命中率':(cache.hitRate*100).toFixed(1)+'% 输入命中缓存'}</strong></p><p className="quiet-note">{cache.reportedCalls} 次调用报告了缓存用量，{cache.unreportedCalls} 次未报告。{cache.hitTokens.toLocaleString()} 个输入 token 命中，{cache.missTokens.toLocaleString()} 个未命中；比例只按已报告的输入总量计算，旧记录缺失不算零命中。</p><p className="quiet-note">{cache.meanDurationMs===undefined?'尚无请求耗时记录':`${cache.durationCalls} 次有耗时记录的请求平均 ${(cache.meanDurationMs/1000).toFixed(1)} 秒（含失败和格式恢复的单次请求）`}。缓存由服务商自动决定；切换模型或改变材料可能减少命中，不为提高比例删减学习内容。</p><p className="price-source">费用仍按普通输入价格保守估算，未扣除缓存折扣；最终以服务商账单为准。</p><div className="cache-groups"><label>分类查看 <select aria-label="缓存统计分类" value={grouping} onChange={e=>setGrouping(e.target.value as CacheGrouping)}><option value="operation">按操作类型</option><option value="model">按模型配置</option><option value="thread">按连续追问支线</option></select></label><div className="usage-table"><table><thead><tr><th>分类 / 样本</th><th>输入 / 输出</th><th>命中率 / 耗时</th><th>恢复 / 费用</th></tr></thead><tbody>{groups.map(group=><tr key={group.key}><td>{group.label}<small>{group.reportedCalls} 次报告缓存，{group.unreportedCalls} 次未报告</small></td><td>{group.inputTokens.toLocaleString()} / {group.outputTokens.toLocaleString()}<small>缓存命中 {group.hitTokens.toLocaleString()} / 未命中 {group.missTokens.toLocaleString()}</small></td><td>{group.hitRate===undefined?'未知':(group.hitRate*100).toFixed(1)+'%'}<small>{group.meanDurationMs===undefined?'耗时未知':(group.meanDurationMs/1000).toFixed(1)+' 秒 / 次'}</small></td><td>{group.repairCalls} 次格式恢复<small>{group.unknownPhaseCalls} 次恢复类型未知</small><small>保守估算 ¥{group.estimatedCny.toFixed(4)}</small></td></tr>)}</tbody></table></div><p className="quiet-note">分类统计同样按输入 token 加权。输入与输出仅汇总已记录用量，失败请求可能缺少用量；历史未记录的恢复次数和支线归属保持未知。本机前缀摘要用于核对请求排列，不等于服务商缓存命中。</p></div></div>;
+export function CacheUsageSummary({ usage }: { usage: readonly Usage[] }) {
+  const cache = summarizeCacheUsage(usage);
+  const [grouping, setGrouping] = useState<CacheGrouping>('operation');
+  const groups = groupCacheUsage(usage, grouping);
+  return (
+    <div className="cache-usage" aria-label="本月缓存与耗时">
+      <h3>本月缓存与耗时</h3>
+      <p className="quiet-note">本机全部模型 · 按本地月份统计</p>
+      <p>
+        <strong>
+          {cache.hitRate === undefined
+            ? '尚无可计算的缓存命中率'
+            : (cache.hitRate * 100).toFixed(1) + '% 输入命中缓存'}
+        </strong>
+      </p>
+      <p className="quiet-note">
+        {cache.reportedCalls} 次调用报告了缓存用量，{cache.unreportedCalls} 次未报告。
+        {cache.hitTokens.toLocaleString()} 个输入 token 命中，{cache.missTokens.toLocaleString()}{' '}
+        个未命中；比例只按已报告的输入总量计算，旧记录缺失不算零命中。
+      </p>
+      <p className="quiet-note">
+        {cache.meanDurationMs === undefined
+          ? '尚无请求耗时记录'
+          : `${cache.durationCalls} 次有耗时记录的请求平均 ${(cache.meanDurationMs / 1000).toFixed(1)} 秒（含失败和格式恢复的单次请求）`}
+        。缓存由服务商自动决定；切换模型或改变材料可能减少命中，不为提高比例删减学习内容。
+      </p>
+      <p className="price-source">
+        费用仍按普通输入价格保守估算，未扣除缓存折扣；最终以服务商账单为准。
+      </p>
+      <div className="cache-groups">
+        <label>
+          分类查看{' '}
+          <select
+            aria-label="缓存统计分类"
+            value={grouping}
+            onChange={(e) => setGrouping(e.target.value as CacheGrouping)}
+          >
+            <option value="operation">按操作类型</option>
+            <option value="model">按模型配置</option>
+            <option value="thread">按连续追问支线</option>
+          </select>
+        </label>
+        <div className="usage-table">
+          <table>
+            <thead>
+              <tr>
+                <th>分类 / 样本</th>
+                <th>输入 / 输出</th>
+                <th>命中率 / 耗时</th>
+                <th>恢复 / 费用</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((group) => (
+                <tr key={group.key}>
+                  <td>
+                    {group.label}
+                    <small>
+                      {group.reportedCalls} 次报告缓存，{group.unreportedCalls} 次未报告
+                    </small>
+                  </td>
+                  <td>
+                    {group.inputTokens.toLocaleString()} / {group.outputTokens.toLocaleString()}
+                    <small>
+                      缓存命中 {group.hitTokens.toLocaleString()} / 未命中{' '}
+                      {group.missTokens.toLocaleString()}
+                    </small>
+                  </td>
+                  <td>
+                    {group.hitRate === undefined ? '未知' : (group.hitRate * 100).toFixed(1) + '%'}
+                    <small>
+                      {group.meanDurationMs === undefined
+                        ? '耗时未知'
+                        : (group.meanDurationMs / 1000).toFixed(1) + ' 秒 / 次'}
+                    </small>
+                  </td>
+                  <td>
+                    {group.repairCalls} 次格式恢复
+                    <small>{group.unknownPhaseCalls} 次恢复类型未知</small>
+                    <small>保守估算 ¥{group.estimatedCny.toFixed(4)}</small>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="quiet-note">
+          分类统计同样按输入 token
+          加权。输入与输出仅汇总已记录用量，失败请求可能缺少用量；历史未记录的恢复次数和支线归属保持未知。本机前缀摘要用于核对请求排列，不等于服务商缓存命中。
+        </p>
+      </div>
+    </div>
+  );
 }
 
-export function personalSettingsPayload(form:Settings,visionApiKey=''){
- const {monthlyBudgetCny,personalGoal,studyMinutes,confirmedPreferences,vision}=form;
- const editableVision=vision?(({hasApiKey:_key,...value})=>value)(vision):undefined;
- return {settings:{monthlyBudgetCny,personalGoal,studyMinutes,confirmedPreferences,...(editableVision?{vision:editableVision}:{})},...(visionApiKey.trim()?{visionApiKey:visionApiKey.trim()}:{})};
+export function personalSettingsPayload(form: Settings, visionApiKey = '') {
+  const { monthlyBudgetCny, personalGoal, studyMinutes, confirmedPreferences, vision } = form;
+  const editableVision = vision ? (({ hasApiKey: _key, ...value }) => value)(vision) : undefined;
+  return {
+    settings: {
+      monthlyBudgetCny,
+      personalGoal,
+      studyMinutes,
+      confirmedPreferences,
+      ...(editableVision ? { vision: editableVision } : {}),
+    },
+    ...(visionApiKey.trim() ? { visionApiKey: visionApiKey.trim() } : {}),
+  };
 }
-export function settingsAfterSnapshot(current:Settings,incoming:Settings,dirty:boolean):Settings{return dirty?current:incoming}
-
-function newProfile(active?:ModelProfile):ProfileDraft{
- return {name:'',providerName:active?.providerName??'',baseUrl:active?.baseUrl??'',model:'',maxOutputTokens:active?.maxOutputTokens??DEFAULT_MODEL_OUTPUT_TOKENS,inputPriceCnyPerMillion:active?.inputPriceCnyPerMillion??1,outputPriceCnyPerMillion:active?.outputPriceCnyPerMillion??1,priceUpdatedAt:new Date().toISOString().slice(0,10),enabled:true};
-}
-
-function profileDraft(profile:ModelProfile):ProfileDraft{
- const {hasApiKey:_key,...draft}=profile;return draft;
-}
-
-export function ModelProfilesPanel({snapshot:s,busy,run}:{snapshot:WorkspaceSnapshot;busy:boolean;run:Run}){
- const profiles=s.settings.modelProfiles??[],active=profiles.find(profile=>profile.id===s.settings.activeModelProfileId);
- const[editing,setEditing]=useState<ProfileDraft|null>(null),[apiKey,setApiKey]=useState(''),[removeId,setRemoveId]=useState('');
- useEffect(()=>{if(editing?.id&&!profiles.some(profile=>profile.id===editing.id)){setEditing(null);setApiKey('')}},[profiles,editing?.id]);
- function change<K extends keyof ProfileDraft>(key:K,value:ProfileDraft[K]){setEditing(current=>current?{...current,[key]:value}:current)}
- async function saveProfile(){
-  if(!editing)return;const profile={...editing,name:editing.name.trim(),providerName:editing.providerName.trim(),baseUrl:editing.baseUrl.trim(),model:editing.model.trim()};
-  const next=await run('settings.modelProfile.save',{profile,...(apiKey.trim()?{apiKey:apiKey.trim()}:{})},profile.id?'模型配置已保存。':'模型配置已新增。');
-  if(next){setEditing(null);setApiKey('')}
- }
- async function removeProfile(id:string){const next=await run('settings.modelProfile.remove',{id},'模型配置已删除。');if(next)setRemoveId('')}
- return <SettingsCard className="model-profiles-card" title="模型配置" description="保存多个 AI 服务或模型，需要时切换。每个配置单独保存密钥。" icon={<Sparkles size={21}/>} actions={<> <Button disabled={busy||!!editing} onClick={()=>{setEditing(newProfile(active));setApiKey('')}}><Plus size={14}/>新增模型配置</Button> </>}>
-  <p className="quiet-note">切换只影响之后发起的新请求；已经生成的路线、题目和核验仍保留原来的版本。</p>
-  <div className="model-profile-list">{profiles.map(profile=>{const current=profile.id===s.settings.activeModelProfileId;return <article className={'model-profile '+(current?'is-active':'')} key={profile.id}><div className="model-profile-main"><div><div className="model-profile-title"><strong>{profile.name}</strong>{current&&<Badge tone="green">当前使用</Badge>}{!profile.enabled&&<Badge tone="amber">已停用</Badge>}{!profile.hasApiKey&&<Badge tone="amber">待配置密钥</Badge>}</div><p>{profile.providerName} · {profile.model}</p><small>单次回复上限：{profile.maxOutputTokens??DEFAULT_MODEL_OUTPUT_TOKENS} token</small><small>{profile.baseUrl}</small></div><div className="model-profile-actions">{!current&&<Button disabled={busy||!!editing||!profile.enabled||!profile.hasApiKey} onClick={()=>void run('settings.modelProfile.activate',{id:profile.id},'之后的新请求将使用“'+profile.name+'”。')}><Check size={13}/>设为当前</Button>}<Button disabled={busy||!!editing||!profile.enabled||!profile.hasApiKey} onClick={()=>void run('settings.modelProfile.test',{id:profile.id})}><RefreshCw size={13}/>测试连接</Button><Button disabled={busy||!!editing} onClick={()=>{setEditing(profileDraft(profile));setApiKey('')}}><Pencil size={13}/>编辑</Button>{!current&&removeId!==profile.id&&<Button variant="ghost" disabled={busy||!!editing} onClick={()=>setRemoveId(profile.id)}><Trash2 size={13}/>删除配置</Button>}{!current&&removeId===profile.id&&<span className="profile-remove-confirm"><span>删除“{profile.name}”？</span><Button variant="danger" disabled={busy} onClick={()=>void removeProfile(profile.id)}>确认删除</Button><Button disabled={busy} onClick={()=>setRemoveId('')}>取消</Button></span>}</div></div></article>})}</div>
-  {!profiles.length&&!editing&&<div className="empty-profile"><KeyRound size={20}/><div><strong>还没有模型配置</strong><p>新增后可以分别保存密钥，并选择下一次请求使用哪一个。</p></div></div>}
-  {editing&&<div className="model-profile-editor"><div className="model-profile-editor-head"><div><strong>{editing.id?'编辑模型配置':'新增模型配置'}</strong><small>名称用于自己辨认；模型名和接口地址请按服务商要求填写。</small></div><button className="icon-button" aria-label="关闭模型配置编辑" onClick={()=>{setEditing(null);setApiKey('')}}><X size={17}/></button></div><div className="form-grid"><label>配置名称<input value={editing.name} onChange={e=>change('name',e.target.value)} placeholder="例如：快速学习"/></label><label>服务名称<input value={editing.providerName} onChange={e=>change('providerName',e.target.value)} placeholder="例如：DeepSeek"/></label><label>模型名称<input value={editing.model} onChange={e=>change('model',e.target.value)} placeholder="填写准确的模型名称"/></label><label>启用状态<select value={editing.enabled?'enabled':'disabled'} onChange={e=>change('enabled',e.target.value==='enabled')}><option value="enabled">启用</option><option value="disabled">停用</option></select></label><label className="span-2">接口地址<input value={editing.baseUrl} onChange={e=>change('baseUrl',e.target.value)} placeholder="https://…"/></label><label className="span-2">API 密钥<input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder={editing.id&&profiles.find(profile=>profile.id===editing.id)?.hasApiKey?'密钥已安全保存，留空保持不变':'粘贴这个配置使用的 API 密钥'}/><small>密钥由 Windows 系统保护，不进入学习记录或备份。若修改接口地址，请同时重新填写密钥。</small></label><label>单次回复上限（token）<input type="number" min={MIN_MODEL_OUTPUT_TOKENS} max={MAX_MODEL_OUTPUT_TOKENS} step="1" value={editing.maxOutputTokens??DEFAULT_MODEL_OUTPUT_TOKENS} onChange={e=>change('maxOutputTokens',Number(e.target.value))}/><small>可填 {MIN_MODEL_OUTPUT_TOKENS}—{MAX_MODEL_OUTPUT_TOKENS} 的整数，请勿超过服务商限制。此值是容量上限，实际回复按学习任务安排，不会自动用满。</small></label><label>输入价格（元 / 百万 token）<input type="number" min="0.01" step="0.01" value={editing.inputPriceCnyPerMillion||''} onChange={e=>change('inputPriceCnyPerMillion',Number(e.target.value))}/></label><label>输出价格（元 / 百万 token）<input type="number" min="0.01" step="0.01" value={editing.outputPriceCnyPerMillion||''} onChange={e=>change('outputPriceCnyPerMillion',Number(e.target.value))}/></label><label className="span-2">价格依据与核对日期<input value={editing.priceUpdatedAt} onChange={e=>change('priceUpdatedAt',e.target.value)} placeholder="例如：2026-09-12，服务商价格页"/></label></div><div className="settings-actions"><Button variant="primary" disabled={busy||!editing.name.trim()||!editing.providerName.trim()||!editing.baseUrl.trim()||!editing.model.trim()} onClick={()=>void saveProfile()}><Check size={14}/>保存配置</Button><Button disabled={busy} onClick={()=>{setEditing(null);setApiKey('')}}>取消</Button></div></div>}
- </SettingsCard>;
+export function settingsAfterSnapshot(
+  current: Settings,
+  incoming: Settings,
+  dirty: boolean,
+): Settings {
+  return dirty ? current : incoming;
 }
 
-export default function SettingsPage({snapshot:s,used,busy,run,onRestore}:{snapshot:WorkspaceSnapshot;used:number;busy:boolean;run:Run;onRestore:()=>void}){
- const[form,setForm]=useState<Settings>(s.settings),[saved,setSaved]=useState(false),[dirty,setDirty]=useState(false),[visionApiKey,setVisionApiKey]=useState('');
- useEffect(()=>{setForm(current=>settingsAfterSnapshot(current,s.settings,dirty))},[s.settings,dirty]);
- function field<K extends keyof Settings>(key:K,value:Settings[K]){setForm({...form,[key]:value});setSaved(false);setDirty(true)}
- function visionField<K extends keyof VisionSettings>(key:K,value:VisionSettings[K]){if(form.vision)field('vision',{...form.vision,[key]:value})}
- async function save(){const next=await run('settings.save',personalSettingsPayload(form,visionApiKey),'设置已保存。');if(next){setForm(next.settings);setDirty(false);setSaved(true);setVisionApiKey('')}}
- const percent=form.monthlyBudgetCny>0?Math.min(100,used/form.monthlyBudgetCny*100):0;
- return <><div className="page-heading"><div><span className="eyebrow">YOUR SPACE, YOUR PACE</span><h1>让空间，适合你</h1><p>连接你的 AI 服务，照顾好资料，也给学习留出适合的节奏。</p></div><Button variant="primary" disabled={busy} onClick={()=>void save()}>{saved?<CheckCheck size={17}/>:<Check size={17}/>} {saved?'已保存':'保存常规设置'}</Button></div>
- <div className="settings-layout"><div className="settings-main"><AppearancePanel/><ModelProfilesPanel snapshot={s} busy={busy} run={run}/>
- <SettingsCard className="vision-settings" title="原页图像识别 · 可选" description="独立于日常教学模型。只在你主动识别原页或选区时使用。" icon={<FileText size={21}/>} actions={<> <label className="toggle-label"><input type="checkbox" checked={!!form.vision?.enabled} onChange={e=>{const existing=form.vision||{providerName:'',baseUrl:'',model:'',inputPriceCnyPerMillion:1,outputPriceCnyPerMillion:1,priceUpdatedAt:'',hasApiKey:false};field('vision',{...existing,enabled:e.target.checked})}}/>{form.vision?.enabled?'已启用':'未启用'}</label> </>}><p className="quiet-note">原始 PDF 的阅读与缩放始终在本机完成。复杂公式或扫描文本确实需要重建时，再选择能够接收图像的服务；不会自动沿用教学密钥。</p>{form.vision?.enabled&&<><div className="form-grid"><label>识别服务名称<input value={form.vision.providerName} onChange={e=>visionField('providerName',e.target.value)} placeholder="你选用的视觉服务"/></label><label>支持图像的模型<input value={form.vision.model} onChange={e=>visionField('model',e.target.value)} placeholder="填写服务商的视觉模型名称"/></label><label className="span-2">识别服务接口地址<input value={form.vision.baseUrl} onChange={e=>visionField('baseUrl',e.target.value)} placeholder="https://…"/></label><label className="span-2">独立的识别 API 密钥<input type="password" autoComplete="off" spellCheck={false} value={visionApiKey} onChange={e=>{setVisionApiKey(e.target.value);setSaved(false);setDirty(true)}} placeholder={s.settings.vision?.hasApiKey?'识别密钥已保存，留空保持不变':'为识别服务单独填写密钥'}/><small>视觉服务仍单独保存，不会借用教学模型配置的密钥。</small></label><label>输入价格（元 / 百万 token）<input type="number" min="0.01" step="0.01" value={form.vision.inputPriceCnyPerMillion||''} onChange={e=>visionField('inputPriceCnyPerMillion',Number(e.target.value))}/></label><label>输出价格（元 / 百万 token）<input type="number" min="0.01" step="0.01" value={form.vision.outputPriceCnyPerMillion||''} onChange={e=>visionField('outputPriceCnyPerMillion',Number(e.target.value))}/></label><label className="span-2">价格依据与核对日期<input value={form.vision.priceUpdatedAt} onChange={e=>visionField('priceUpdatedAt',e.target.value)} placeholder="例如：2026-09-12，已按该服务的视觉输入计价核对"/></label></div><p className="price-source">识别也使用本机同一预算。图像 token 与服务商计价方式可能不同，请核对其说明；最终费用以服务商账单为准。</p></>}</SettingsCard>
- <SettingsCard title="费用与边界" description="设定这台电脑的额度，让试用成本可见。" icon={<Target size={21}/>}><div className="budget-summary"><div><small>本月预估用量</small><strong>¥ {used.toFixed(4)} <span>/ ¥ {s.settings.monthlyBudgetCny.toFixed(2)}</span></strong></div><Badge tone={percent>=90?'amber':'green'}>{percent>=90?'已接近预算':'本机调用记录'}</Badge></div><div className="budget-track"><span style={{width:percent+'%'}}/></div><p className="price-source">达到本机月预算的 90% 后暂停新的 AI 请求；每次调用按当时选择的模型配置估算，最终以服务商账单为准。</p><div className="form-grid"><label>本机每月预算（元）<input type="number" min="0.01" step="1" value={form.monthlyBudgetCny} onChange={e=>field('monthlyBudgetCny',Number(e.target.value))}/></label></div>
- <CacheUsageSummary usage={s.usage}/><details className="usage-details"><summary>查看本机调用记录（{s.usage.filter(u=>u.entryType!=='hold').length} 条）</summary><div className="usage-table"><table><thead><tr><th>时间 / 配置</th><th>输入 / 输出</th><th>预估费用</th><th>状态</th></tr></thead><tbody>{s.usage.filter(u=>u.entryType!=='hold').sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,50).map(u=>{const requested=u.requestedModel??u.model;return <tr key={u.id}><td>{timeLabel(u.createdAt)}<small>{u.profileName??'旧版配置'} · 请求：{requested}</small><small>{u.reportedModel?'服务商报告：'+u.reportedModel:'服务商未报告实际模型'}</small></td><td>{u.inputTokens} / {u.outputTokens}<small>{u.cacheHitTokens!==undefined&&u.cacheMissTokens!==undefined?`缓存：命中 ${u.cacheHitTokens} / 未命中 ${u.cacheMissTokens}`:'缓存用量未报告'}</small>{u.durationMs!==undefined&&<small>请求耗时 {(u.durationMs/1000).toFixed(1)} 秒</small>}</td><td>¥{u.estimatedCny.toFixed(4)}</td><td>{{completed:'已收到响应',reserved:'预留中',uncertain:'费用待核对',failed:'未完成'}[u.status]}{u.validationStatus==='invalid'&&<small>内容校验未通过</small>}{u.publicationStatus==='discarded'&&<small>结果未写入学习记录</small>}</td></tr>})}</tbody></table>{!s.usage.filter(u=>u.entryType!=='hold').length&&<p>还没有发起 AI 调用。</p>}</div></details></SettingsCard>
- <SettingsCard title="我的学习节奏" description="只保存你确认的目标与偏好，疲劳不会成为永久能力判断。" icon={<Leaf size={21}/>}><div className="form-grid"><label className="span-2">长期想成为怎样的自己<textarea rows={3} value={form.personalGoal} onChange={e=>field('personalGoal',e.target.value)} placeholder="例如：能够独立阅读研究、判断论证，并把理解写清楚。"/></label><label>每次希望学习多久（分钟）<input type="number" min="5" max="240" value={form.studyMinutes} onChange={e=>field('studyMinutes',Number(e.target.value))}/></label><label className="span-2">我确认的学习偏好<textarea rows={3} value={form.confirmedPreferences} onChange={e=>field('confirmedPreferences',e.target.value)} placeholder="例如：先用生活中的例子解释；一次只推进一个问题。"/></label></div></SettingsCard>
- <WebDavSyncPanel busy={busy} run={run}/><ProjectTrashPanel snapshot={s} busy={busy} onRestore={projectId=>run('project.restore',projectTrashPayload(projectId),'项目已恢复，可以继续原来的学习。')} onPurge={projectId=>run('project.purge',projectTrashPayload(projectId),'项目及其本机资料已永久删除。')}/><DiagnosticsPanel run={run} busy={busy}/><div className="settings-save-bottom"><Button variant="primary" disabled={busy} onClick={()=>void save()}><Check size={16}/>保存常规设置</Button></div></div>
- <aside><SettingsCard className="data-card" title="所学，属于你" description="完整备份、恢复及导出学习成果。" icon={<ShieldCheck size={24}/>}><div className="data-location"><small>本机资料目录</small><code>{s.dataDirectory}</code></div><div className="data-buttons"><Button disabled={busy} onClick={()=>void run('backup.create',{})}><ArrowDownToLine size={16}/>创建完整备份</Button><Button disabled={busy} onClick={onRestore}><Upload size={16}/>从备份恢复</Button><Button disabled={busy} onClick={()=>void run('export.markdown',{})}><FileText size={16}/>导出可读学习成果</Button></div><small>备份不含 API 密钥，恢复后需在本机配置。</small></SettingsCard><section className="principle-card"><span className="eyebrow">关于长期保存</span><h3>换本书，学习仍会继续。</h3><p>每个项目都有自己的材料、任务和证据。更换模型不会清空已经走过的路。</p></section></aside></div></>;
+function newProfile(active?: ModelProfile): ProfileDraft {
+  return {
+    name: '',
+    providerName: active?.providerName ?? '',
+    baseUrl: active?.baseUrl ?? '',
+    model: '',
+    maxOutputTokens: active?.maxOutputTokens ?? DEFAULT_MODEL_OUTPUT_TOKENS,
+    inputPriceCnyPerMillion: active?.inputPriceCnyPerMillion ?? 1,
+    outputPriceCnyPerMillion: active?.outputPriceCnyPerMillion ?? 1,
+    priceUpdatedAt: new Date().toISOString().slice(0, 10),
+    enabled: true,
+  };
+}
+
+function profileDraft(profile: ModelProfile): ProfileDraft {
+  const { hasApiKey: _key, ...draft } = profile;
+  return draft;
+}
+
+export function ModelProfilesPanel({
+  snapshot: s,
+  busy,
+  run,
+}: {
+  snapshot: WorkspaceSnapshot;
+  busy: boolean;
+  run: Run;
+}) {
+  const profiles = s.settings.modelProfiles ?? [],
+    active = profiles.find((profile) => profile.id === s.settings.activeModelProfileId);
+  const [editing, setEditing] = useState<ProfileDraft | null>(null),
+    [apiKey, setApiKey] = useState(''),
+    [removeId, setRemoveId] = useState('');
+  useEffect(() => {
+    if (editing?.id && !profiles.some((profile) => profile.id === editing.id)) {
+      setEditing(null);
+      setApiKey('');
+    }
+  }, [profiles, editing?.id]);
+  function change<K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) {
+    setEditing((current) => (current ? { ...current, [key]: value } : current));
+  }
+  async function saveProfile() {
+    if (!editing) return;
+    const profile = {
+      ...editing,
+      name: editing.name.trim(),
+      providerName: editing.providerName.trim(),
+      baseUrl: editing.baseUrl.trim(),
+      model: editing.model.trim(),
+    };
+    const next = await run(
+      'settings.modelProfile.save',
+      { profile, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) },
+      profile.id ? '模型配置已保存。' : '模型配置已新增。',
+    );
+    if (next) {
+      setEditing(null);
+      setApiKey('');
+    }
+  }
+  async function removeProfile(id: string) {
+    const next = await run('settings.modelProfile.remove', { id }, '模型配置已删除。');
+    if (next) setRemoveId('');
+  }
+  return (
+    <SettingsCard
+      className="model-profiles-card"
+      title="模型配置"
+      description="保存多个 AI 服务或模型，需要时切换。每个配置单独保存密钥。"
+      icon={<Sparkles size={21} />}
+      actions={
+        <>
+          {' '}
+          <Button
+            disabled={busy || !!editing}
+            onClick={() => {
+              setEditing(newProfile(active));
+              setApiKey('');
+            }}
+          >
+            <Plus size={14} />
+            新增模型配置
+          </Button>{' '}
+        </>
+      }
+    >
+      <p className="quiet-note">
+        切换只影响之后发起的新请求；已经生成的路线、题目和核验仍保留原来的版本。
+      </p>
+      <div className="model-profile-list">
+        {profiles.map((profile) => {
+          const current = profile.id === s.settings.activeModelProfileId;
+          return (
+            <article className={'model-profile ' + (current ? 'is-active' : '')} key={profile.id}>
+              <div className="model-profile-main">
+                <div>
+                  <div className="model-profile-title">
+                    <strong>{profile.name}</strong>
+                    {current && <Badge tone="green">当前使用</Badge>}
+                    {!profile.enabled && <Badge tone="amber">已停用</Badge>}
+                    {!profile.hasApiKey && <Badge tone="amber">待配置密钥</Badge>}
+                  </div>
+                  <p>
+                    {profile.providerName} · {profile.model}
+                  </p>
+                  <small>
+                    单次回复上限：{profile.maxOutputTokens ?? DEFAULT_MODEL_OUTPUT_TOKENS} token
+                  </small>
+                  <small>{profile.baseUrl}</small>
+                </div>
+                <div className="model-profile-actions">
+                  {!current && (
+                    <Button
+                      disabled={busy || !!editing || !profile.enabled || !profile.hasApiKey}
+                      onClick={() =>
+                        void run(
+                          'settings.modelProfile.activate',
+                          { id: profile.id },
+                          '之后的新请求将使用“' + profile.name + '”。',
+                        )
+                      }
+                    >
+                      <Check size={13} />
+                      设为当前
+                    </Button>
+                  )}
+                  <Button
+                    disabled={busy || !!editing || !profile.enabled || !profile.hasApiKey}
+                    onClick={() => void run('settings.modelProfile.test', { id: profile.id })}
+                  >
+                    <RefreshCw size={13} />
+                    测试连接
+                  </Button>
+                  <Button
+                    disabled={busy || !!editing}
+                    onClick={() => {
+                      setEditing(profileDraft(profile));
+                      setApiKey('');
+                    }}
+                  >
+                    <Pencil size={13} />
+                    编辑
+                  </Button>
+                  {!current && removeId !== profile.id && (
+                    <Button
+                      variant="ghost"
+                      disabled={busy || !!editing}
+                      onClick={() => setRemoveId(profile.id)}
+                    >
+                      <Trash2 size={13} />
+                      删除配置
+                    </Button>
+                  )}
+                  {!current && removeId === profile.id && (
+                    <span className="profile-remove-confirm">
+                      <span>删除“{profile.name}”？</span>
+                      <Button
+                        variant="danger"
+                        disabled={busy}
+                        onClick={() => void removeProfile(profile.id)}
+                      >
+                        确认删除
+                      </Button>
+                      <Button disabled={busy} onClick={() => setRemoveId('')}>
+                        取消
+                      </Button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {!profiles.length && !editing && (
+        <div className="empty-profile">
+          <KeyRound size={20} />
+          <div>
+            <strong>还没有模型配置</strong>
+            <p>新增后可以分别保存密钥，并选择下一次请求使用哪一个。</p>
+          </div>
+        </div>
+      )}
+      {editing && (
+        <div className="model-profile-editor">
+          <div className="model-profile-editor-head">
+            <div>
+              <strong>{editing.id ? '编辑模型配置' : '新增模型配置'}</strong>
+              <small>名称用于自己辨认；模型名和接口地址请按服务商要求填写。</small>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="关闭模型配置编辑"
+              onClick={() => {
+                setEditing(null);
+                setApiKey('');
+              }}
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <div className="form-grid">
+            <label>
+              配置名称
+              <input
+                value={editing.name}
+                onChange={(e) => change('name', e.target.value)}
+                placeholder="例如：快速学习"
+              />
+            </label>
+            <label>
+              服务名称
+              <input
+                value={editing.providerName}
+                onChange={(e) => change('providerName', e.target.value)}
+                placeholder="例如：DeepSeek"
+              />
+            </label>
+            <label>
+              模型名称
+              <input
+                value={editing.model}
+                onChange={(e) => change('model', e.target.value)}
+                placeholder="填写准确的模型名称"
+              />
+            </label>
+            <label>
+              启用状态
+              <select
+                value={editing.enabled ? 'enabled' : 'disabled'}
+                onChange={(e) => change('enabled', e.target.value === 'enabled')}
+              >
+                <option value="enabled">启用</option>
+                <option value="disabled">停用</option>
+              </select>
+            </label>
+            <label className="span-2">
+              接口地址
+              <input
+                value={editing.baseUrl}
+                onChange={(e) => change('baseUrl', e.target.value)}
+                placeholder="https://…"
+              />
+            </label>
+            <label className="span-2">
+              API 密钥
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={
+                  editing.id && profiles.find((profile) => profile.id === editing.id)?.hasApiKey
+                    ? '密钥已安全保存，留空保持不变'
+                    : '粘贴这个配置使用的 API 密钥'
+                }
+              />
+              <small>
+                密钥由 Windows 系统保护，不进入学习记录或备份。若修改接口地址，请同时重新填写密钥。
+              </small>
+            </label>
+            <label>
+              单次回复上限（token）
+              <input
+                type="number"
+                min={MIN_MODEL_OUTPUT_TOKENS}
+                max={MAX_MODEL_OUTPUT_TOKENS}
+                step="1"
+                value={editing.maxOutputTokens ?? DEFAULT_MODEL_OUTPUT_TOKENS}
+                onChange={(e) => change('maxOutputTokens', Number(e.target.value))}
+              />
+              <small>
+                可填 {MIN_MODEL_OUTPUT_TOKENS}—{MAX_MODEL_OUTPUT_TOKENS}{' '}
+                的整数，请勿超过服务商限制。此值是容量上限，实际回复按学习任务安排，不会自动用满。
+              </small>
+            </label>
+            <label>
+              输入价格（元 / 百万 token）
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={editing.inputPriceCnyPerMillion || ''}
+                onChange={(e) => change('inputPriceCnyPerMillion', Number(e.target.value))}
+              />
+            </label>
+            <label>
+              输出价格（元 / 百万 token）
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={editing.outputPriceCnyPerMillion || ''}
+                onChange={(e) => change('outputPriceCnyPerMillion', Number(e.target.value))}
+              />
+            </label>
+            <label className="span-2">
+              价格依据与核对日期
+              <input
+                value={editing.priceUpdatedAt}
+                onChange={(e) => change('priceUpdatedAt', e.target.value)}
+                placeholder="例如：2026-09-12，服务商价格页"
+              />
+            </label>
+          </div>
+          <div className="settings-actions">
+            <Button
+              variant="primary"
+              disabled={
+                busy ||
+                !editing.name.trim() ||
+                !editing.providerName.trim() ||
+                !editing.baseUrl.trim() ||
+                !editing.model.trim()
+              }
+              onClick={() => void saveProfile()}
+            >
+              <Check size={14} />
+              保存配置
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setEditing(null);
+                setApiKey('');
+              }}
+            >
+              取消
+            </Button>
+          </div>
+        </div>
+      )}
+    </SettingsCard>
+  );
+}
+
+export default function SettingsPage({
+  snapshot: s,
+  used,
+  busy,
+  run,
+  onRestore,
+}: {
+  snapshot: WorkspaceSnapshot;
+  used: number;
+  busy: boolean;
+  run: Run;
+  onRestore: () => void;
+}) {
+  const [form, setForm] = useState<Settings>(s.settings),
+    [saved, setSaved] = useState(false),
+    [dirty, setDirty] = useState(false),
+    [visionApiKey, setVisionApiKey] = useState('');
+  useEffect(() => {
+    setForm((current) => settingsAfterSnapshot(current, s.settings, dirty));
+  }, [s.settings, dirty]);
+  function field<K extends keyof Settings>(key: K, value: Settings[K]) {
+    setForm({ ...form, [key]: value });
+    setSaved(false);
+    setDirty(true);
+  }
+  function visionField<K extends keyof VisionSettings>(key: K, value: VisionSettings[K]) {
+    if (form.vision) field('vision', { ...form.vision, [key]: value });
+  }
+  async function save() {
+    const next = await run(
+      'settings.save',
+      personalSettingsPayload(form, visionApiKey),
+      '设置已保存。',
+    );
+    if (next) {
+      setForm(next.settings);
+      setDirty(false);
+      setSaved(true);
+      setVisionApiKey('');
+    }
+  }
+  const percent =
+    form.monthlyBudgetCny > 0 ? Math.min(100, (used / form.monthlyBudgetCny) * 100) : 0;
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">YOUR SPACE, YOUR PACE</span>
+          <h1>让空间，适合你</h1>
+          <p>连接你的 AI 服务，照顾好资料，也给学习留出适合的节奏。</p>
+        </div>
+        <Button variant="primary" disabled={busy} onClick={() => void save()}>
+          {saved ? <CheckCheck size={17} /> : <Check size={17} />}{' '}
+          {saved ? '已保存' : '保存常规设置'}
+        </Button>
+      </div>
+      <div className="settings-layout">
+        <div className="settings-main">
+          <AppearancePanel />
+          <ModelProfilesPanel snapshot={s} busy={busy} run={run} />
+          <SettingsCard
+            className="vision-settings"
+            title="原页图像识别 · 可选"
+            description="独立于日常教学模型。只在你主动识别原页或选区时使用。"
+            icon={<FileText size={21} />}
+            actions={
+              <>
+                {' '}
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={!!form.vision?.enabled}
+                    onChange={(e) => {
+                      const existing = form.vision || {
+                        providerName: '',
+                        baseUrl: '',
+                        model: '',
+                        inputPriceCnyPerMillion: 1,
+                        outputPriceCnyPerMillion: 1,
+                        priceUpdatedAt: '',
+                        hasApiKey: false,
+                      };
+                      field('vision', { ...existing, enabled: e.target.checked });
+                    }}
+                  />
+                  {form.vision?.enabled ? '已启用' : '未启用'}
+                </label>{' '}
+              </>
+            }
+          >
+            <p className="quiet-note">
+              原始 PDF
+              的阅读与缩放始终在本机完成。复杂公式或扫描文本确实需要重建时，再选择能够接收图像的服务；不会自动沿用教学密钥。
+            </p>
+            {form.vision?.enabled && (
+              <>
+                <div className="form-grid">
+                  <label>
+                    识别服务名称
+                    <input
+                      value={form.vision.providerName}
+                      onChange={(e) => visionField('providerName', e.target.value)}
+                      placeholder="你选用的视觉服务"
+                    />
+                  </label>
+                  <label>
+                    支持图像的模型
+                    <input
+                      value={form.vision.model}
+                      onChange={(e) => visionField('model', e.target.value)}
+                      placeholder="填写服务商的视觉模型名称"
+                    />
+                  </label>
+                  <label className="span-2">
+                    识别服务接口地址
+                    <input
+                      value={form.vision.baseUrl}
+                      onChange={(e) => visionField('baseUrl', e.target.value)}
+                      placeholder="https://…"
+                    />
+                  </label>
+                  <label className="span-2">
+                    独立的识别 API 密钥
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={visionApiKey}
+                      onChange={(e) => {
+                        setVisionApiKey(e.target.value);
+                        setSaved(false);
+                        setDirty(true);
+                      }}
+                      placeholder={
+                        s.settings.vision?.hasApiKey
+                          ? '识别密钥已保存，留空保持不变'
+                          : '为识别服务单独填写密钥'
+                      }
+                    />
+                    <small>视觉服务仍单独保存，不会借用教学模型配置的密钥。</small>
+                  </label>
+                  <label>
+                    输入价格（元 / 百万 token）
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={form.vision.inputPriceCnyPerMillion || ''}
+                      onChange={(e) =>
+                        visionField('inputPriceCnyPerMillion', Number(e.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    输出价格（元 / 百万 token）
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={form.vision.outputPriceCnyPerMillion || ''}
+                      onChange={(e) =>
+                        visionField('outputPriceCnyPerMillion', Number(e.target.value))
+                      }
+                    />
+                  </label>
+                  <label className="span-2">
+                    价格依据与核对日期
+                    <input
+                      value={form.vision.priceUpdatedAt}
+                      onChange={(e) => visionField('priceUpdatedAt', e.target.value)}
+                      placeholder="例如：2026-09-12，已按该服务的视觉输入计价核对"
+                    />
+                  </label>
+                </div>
+                <p className="price-source">
+                  识别也使用本机同一预算。图像 token
+                  与服务商计价方式可能不同，请核对其说明；最终费用以服务商账单为准。
+                </p>
+              </>
+            )}
+          </SettingsCard>
+          <SettingsCard
+            title="费用与边界"
+            description="设定这台电脑的额度，让试用成本可见。"
+            icon={<Target size={21} />}
+          >
+            <div className="budget-summary">
+              <div>
+                <small>本月预估用量</small>
+                <strong>
+                  ¥ {used.toFixed(4)} <span>/ ¥ {s.settings.monthlyBudgetCny.toFixed(2)}</span>
+                </strong>
+              </div>
+              <Badge tone={percent >= 90 ? 'amber' : 'green'}>
+                {percent >= 90 ? '已接近预算' : '本机调用记录'}
+              </Badge>
+            </div>
+            <div className="budget-track">
+              <span style={{ width: percent + '%' }} />
+            </div>
+            <p className="price-source">
+              达到本机月预算的 90% 后暂停新的 AI
+              请求；每次调用按当时选择的模型配置估算，最终以服务商账单为准。
+            </p>
+            <div className="form-grid">
+              <label>
+                本机每月预算（元）
+                <input
+                  type="number"
+                  min="0.01"
+                  step="1"
+                  value={form.monthlyBudgetCny}
+                  onChange={(e) => field('monthlyBudgetCny', Number(e.target.value))}
+                />
+              </label>
+            </div>
+            <CacheUsageSummary usage={s.usage} />
+            <details className="usage-details">
+              <summary>
+                查看本机调用记录（{s.usage.filter((u) => u.entryType !== 'hold').length} 条）
+              </summary>
+              <div className="usage-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>时间 / 配置</th>
+                      <th>输入 / 输出</th>
+                      <th>预估费用</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {s.usage
+                      .filter((u) => u.entryType !== 'hold')
+                      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                      .slice(0, 50)
+                      .map((u) => {
+                        const requested = u.requestedModel ?? u.model;
+                        return (
+                          <tr key={u.id}>
+                            <td>
+                              {timeLabel(u.createdAt)}
+                              <small>
+                                {u.profileName ?? '旧版配置'} · 请求：{requested}
+                              </small>
+                              <small>
+                                {u.reportedModel
+                                  ? '服务商报告：' + u.reportedModel
+                                  : '服务商未报告实际模型'}
+                              </small>
+                            </td>
+                            <td>
+                              {u.inputTokens} / {u.outputTokens}
+                              <small>
+                                {u.cacheHitTokens !== undefined && u.cacheMissTokens !== undefined
+                                  ? `缓存：命中 ${u.cacheHitTokens} / 未命中 ${u.cacheMissTokens}`
+                                  : '缓存用量未报告'}
+                              </small>
+                              {u.durationMs !== undefined && (
+                                <small>请求耗时 {(u.durationMs / 1000).toFixed(1)} 秒</small>
+                              )}
+                            </td>
+                            <td>¥{u.estimatedCny.toFixed(4)}</td>
+                            <td>
+                              {
+                                {
+                                  completed: '已收到响应',
+                                  reserved: '预留中',
+                                  uncertain: '费用待核对',
+                                  failed: '未完成',
+                                }[u.status]
+                              }
+                              {u.validationStatus === 'invalid' && <small>内容校验未通过</small>}
+                              {u.publicationStatus === 'discarded' && (
+                                <small>结果未写入学习记录</small>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+                {!s.usage.filter((u) => u.entryType !== 'hold').length && (
+                  <p>还没有发起 AI 调用。</p>
+                )}
+              </div>
+            </details>
+          </SettingsCard>
+          <SettingsCard
+            title="我的学习节奏"
+            description="只保存你确认的目标与偏好，疲劳不会成为永久能力判断。"
+            icon={<Leaf size={21} />}
+          >
+            <div className="form-grid">
+              <label className="span-2">
+                长期想成为怎样的自己
+                <textarea
+                  rows={3}
+                  value={form.personalGoal}
+                  onChange={(e) => field('personalGoal', e.target.value)}
+                  placeholder="例如：能够独立阅读研究、判断论证，并把理解写清楚。"
+                />
+              </label>
+              <label>
+                每次希望学习多久（分钟）
+                <input
+                  type="number"
+                  min="5"
+                  max="240"
+                  value={form.studyMinutes}
+                  onChange={(e) => field('studyMinutes', Number(e.target.value))}
+                />
+              </label>
+              <label className="span-2">
+                我确认的学习偏好
+                <textarea
+                  rows={3}
+                  value={form.confirmedPreferences}
+                  onChange={(e) => field('confirmedPreferences', e.target.value)}
+                  placeholder="例如：先用生活中的例子解释；一次只推进一个问题。"
+                />
+              </label>
+            </div>
+          </SettingsCard>
+          <WebDavSyncPanel busy={busy} run={run} />
+          <ProjectTrashPanel
+            snapshot={s}
+            busy={busy}
+            onRestore={(projectId) =>
+              run(
+                'project.restore',
+                projectTrashPayload(projectId),
+                '项目已恢复，可以继续原来的学习。',
+              )
+            }
+            onPurge={(projectId) =>
+              run('project.purge', projectTrashPayload(projectId), '项目及其本机资料已永久删除。')
+            }
+          />
+          <DiagnosticsPanel run={run} busy={busy} />
+          <div className="settings-save-bottom">
+            <Button variant="primary" disabled={busy} onClick={() => void save()}>
+              <Check size={16} />
+              保存常规设置
+            </Button>
+          </div>
+        </div>
+        <aside>
+          <SettingsCard
+            className="data-card"
+            title="所学，属于你"
+            description="完整备份、恢复及导出学习成果。"
+            icon={<ShieldCheck size={24} />}
+          >
+            <div className="data-location">
+              <small>本机资料目录</small>
+              <code>{s.dataDirectory}</code>
+            </div>
+            <div className="data-buttons">
+              <Button disabled={busy} onClick={() => void run('backup.create', {})}>
+                <ArrowDownToLine size={16} />
+                创建完整备份
+              </Button>
+              <Button disabled={busy} onClick={onRestore}>
+                <Upload size={16} />
+                从备份恢复
+              </Button>
+              <Button disabled={busy} onClick={() => void run('export.markdown', {})}>
+                <FileText size={16} />
+                导出可读学习成果
+              </Button>
+            </div>
+            <small>备份不含 API 密钥，恢复后需在本机配置。</small>
+          </SettingsCard>
+          <section className="principle-card">
+            <span className="eyebrow">关于长期保存</span>
+            <h3>换本书，学习仍会继续。</h3>
+            <p>每个项目都有自己的材料、任务和证据。更换模型不会清空已经走过的路。</p>
+          </section>
+        </aside>
+      </div>
+    </>
+  );
 }

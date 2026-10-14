@@ -9,9 +9,11 @@ function localMonth(date: Date): string {
 /** Use the same local calendar and outstanding reservations in the UI and request gate. */
 export function monthSpend(rows: BudgetRow[], month = localMonth(new Date())): number {
   return rows
-    .filter(row => row.status !== 'failed' && (
-      localMonth(new Date(row.createdAt)) === month ||
-      (row.entryType === 'hold' && row.status === 'reserved')
-    ))
+    .filter(
+      (row) =>
+        row.status !== 'failed' &&
+        (localMonth(new Date(row.createdAt)) === month ||
+          (row.entryType === 'hold' && row.status === 'reserved')),
+    )
     .reduce((sum, row) => sum + Math.max(0, row.estimatedCny), 0);
 }

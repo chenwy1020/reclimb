@@ -1,17 +1,161 @@
 import SettingsCard from './SettingsCard';
-import {useSyncExternalStore} from 'react';
-import {Monitor,Sun,Moon,RotateCcw} from 'lucide-react';
-import {APPEARANCE_KEY,DEFAULT_APPEARANCE,normalizeAppearance,readAppearance,resolveTheme,type Appearance} from './appearance-state';
-import {Button} from './ui';
-let current:Appearance={...DEFAULT_APPEARANCE},started=false;
-const listeners=new Set<()=>void>();
-let media:MediaQueryList|undefined;
-function apply(){if(typeof document==='undefined')return;const root=document.documentElement;root.dataset.theme=resolveTheme(current.mode,media?.matches??false);root.style.setProperty('--reading-size',current.fontSize+'px');root.style.setProperty('--reading-line',String(current.lineHeight));root.style.setProperty('--reader-share',current.readerPercent+'fr');root.style.setProperty('--learning-share',(100-current.readerPercent)+'fr');}
-export function initializeAppearance(){if(started||typeof window==='undefined')return;started=true;try{current=readAppearance(window.localStorage)}catch{/* Keep default appearance if browser preference storage is inaccessible. */}media=window.matchMedia('(prefers-color-scheme: dark)');media.addEventListener('change',apply);window.addEventListener('storage',e=>{if(e.key===APPEARANCE_KEY||e.key===null){try{current=readAppearance(window.localStorage)}catch{/* Keep the last usable appearance if a storage refresh fails. */}apply();listeners.forEach(fn=>fn());}});apply();}
-function update(value:Appearance){current=normalizeAppearance(value);apply();let saved=true;try{window.localStorage.setItem(APPEARANCE_KEY,JSON.stringify(current))}catch{saved=false}listeners.forEach(fn=>fn());return saved;}
-const subscribe=(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn)}};
-export default function AppearancePanel(){
- const value=useSyncExternalStore(subscribe,()=>current,()=>DEFAULT_APPEARANCE);
- const change=(patch:Partial<Appearance>)=>{const saved=update({...current,...patch});const status=document.getElementById('appearance-save-status');if(status)status.textContent=saved?'已保存到本机，立即生效。':'当前外观已生效，但本机偏好保存失败；重新打开后可能恢复默认。';};
- return <SettingsCard className="appearance-card" title="外观与阅读" description="选择适合现在的阅读方式。" icon={<Sun size={21}/>}><div className="appearance-modes" role="group" aria-label="明暗模式">{([['system','跟随系统',Monitor],['light','浅色',Sun],['dark','深色',Moon]] as const).map(([mode,label,Icon])=><Button key={mode} aria-pressed={value.mode===mode} variant={value.mode===mode?'primary':'secondary'} onClick={()=>change({mode})}><Icon size={16}/>{label}</Button>)}</div><div className="appearance-controls"><label>阅读字号 <output>{value.fontSize} px</output><input aria-label="阅读字号" type="range" min="14" max="24" step="1" value={value.fontSize} onChange={e=>change({fontSize:Number(e.target.value)})}/></label><label>阅读行距 <output>{value.lineHeight.toFixed(1)} 倍</output><input aria-label="阅读行距" type="range" min="1.4" max="2.4" step="0.1" value={value.lineHeight} onChange={e=>change({lineHeight:Number(e.target.value)})}/></label><label>材料区比例 <output>{value.readerPercent}% · 学习区 {100-value.readerPercent}%</output><input aria-label="材料区比例" type="range" min="30" max="65" step="1" value={value.readerPercent} onChange={e=>change({readerPercent:Number(e.target.value)})}/></label></div><div className="appearance-preview"><strong>阅读预览</strong><p>先看清问题，再试着说出自己的理解。公式和正文随外观调整，教材原页保留原始颜色。</p></div><p className="quiet-note" id="appearance-save-status" role="status">设置仅保存在本机，不影响教学内容或学习备份。</p><Button variant="ghost" onClick={()=>change(DEFAULT_APPEARANCE)}><RotateCcw size={14}/>恢复默认外观</Button></SettingsCard>;
+import { useSyncExternalStore } from 'react';
+import { Monitor, Sun, Moon, RotateCcw } from 'lucide-react';
+import {
+  APPEARANCE_KEY,
+  DEFAULT_APPEARANCE,
+  normalizeAppearance,
+  readAppearance,
+  resolveTheme,
+  type Appearance,
+} from './appearance-state';
+import { Button } from './ui';
+let current: Appearance = { ...DEFAULT_APPEARANCE },
+  started = false;
+const listeners = new Set<() => void>();
+let media: MediaQueryList | undefined;
+function apply() {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.dataset.theme = resolveTheme(current.mode, media?.matches ?? false);
+  root.style.setProperty('--reading-size', current.fontSize + 'px');
+  root.style.setProperty('--reading-line', String(current.lineHeight));
+  root.style.setProperty('--reader-share', current.readerPercent + 'fr');
+  root.style.setProperty('--learning-share', 100 - current.readerPercent + 'fr');
+}
+export function initializeAppearance() {
+  if (started || typeof window === 'undefined') return;
+  started = true;
+  try {
+    current = readAppearance(window.localStorage);
+  } catch {
+    /* Keep default appearance if browser preference storage is inaccessible. */
+  }
+  media = window.matchMedia('(prefers-color-scheme: dark)');
+  media.addEventListener('change', apply);
+  window.addEventListener('storage', (e) => {
+    if (e.key === APPEARANCE_KEY || e.key === null) {
+      try {
+        current = readAppearance(window.localStorage);
+      } catch {
+        /* Keep the last usable appearance if a storage refresh fails. */
+      }
+      apply();
+      listeners.forEach((fn) => fn());
+    }
+  });
+  apply();
+}
+function update(value: Appearance) {
+  current = normalizeAppearance(value);
+  apply();
+  let saved = true;
+  try {
+    window.localStorage.setItem(APPEARANCE_KEY, JSON.stringify(current));
+  } catch {
+    saved = false;
+  }
+  listeners.forEach((fn) => fn());
+  return saved;
+}
+const subscribe = (fn: () => void) => {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+};
+export default function AppearancePanel() {
+  const value = useSyncExternalStore(
+    subscribe,
+    () => current,
+    () => DEFAULT_APPEARANCE,
+  );
+  const change = (patch: Partial<Appearance>) => {
+    const saved = update({ ...current, ...patch });
+    const status = document.getElementById('appearance-save-status');
+    if (status)
+      status.textContent = saved
+        ? '已保存到本机，立即生效。'
+        : '当前外观已生效，但本机偏好保存失败；重新打开后可能恢复默认。';
+  };
+  return (
+    <SettingsCard
+      className="appearance-card"
+      title="外观与阅读"
+      description="选择适合现在的阅读方式。"
+      icon={<Sun size={21} />}
+    >
+      <div className="appearance-modes" role="group" aria-label="明暗模式">
+        {(
+          [
+            ['system', '跟随系统', Monitor],
+            ['light', '浅色', Sun],
+            ['dark', '深色', Moon],
+          ] as const
+        ).map(([mode, label, Icon]) => (
+          <Button
+            key={mode}
+            aria-pressed={value.mode === mode}
+            variant={value.mode === mode ? 'primary' : 'secondary'}
+            onClick={() => change({ mode })}
+          >
+            <Icon size={16} />
+            {label}
+          </Button>
+        ))}
+      </div>
+      <div className="appearance-controls">
+        <label>
+          阅读字号 <output>{value.fontSize} px</output>
+          <input
+            aria-label="阅读字号"
+            type="range"
+            min="14"
+            max="24"
+            step="1"
+            value={value.fontSize}
+            onChange={(e) => change({ fontSize: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          阅读行距 <output>{value.lineHeight.toFixed(1)} 倍</output>
+          <input
+            aria-label="阅读行距"
+            type="range"
+            min="1.4"
+            max="2.4"
+            step="0.1"
+            value={value.lineHeight}
+            onChange={(e) => change({ lineHeight: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          材料区比例{' '}
+          <output>
+            {value.readerPercent}% · 学习区 {100 - value.readerPercent}%
+          </output>
+          <input
+            aria-label="材料区比例"
+            type="range"
+            min="30"
+            max="65"
+            step="1"
+            value={value.readerPercent}
+            onChange={(e) => change({ readerPercent: Number(e.target.value) })}
+          />
+        </label>
+      </div>
+      <div className="appearance-preview">
+        <strong>阅读预览</strong>
+        <p>先看清问题，再试着说出自己的理解。公式和正文随外观调整，教材原页保留原始颜色。</p>
+      </div>
+      <p className="quiet-note" id="appearance-save-status" role="status">
+        设置仅保存在本机，不影响教学内容或学习备份。
+      </p>
+      <Button variant="ghost" onClick={() => change(DEFAULT_APPEARANCE)}>
+        <RotateCcw size={14} />
+        恢复默认外观
+      </Button>
+    </SettingsCard>
+  );
 }

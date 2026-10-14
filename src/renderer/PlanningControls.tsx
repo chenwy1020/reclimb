@@ -1,16 +1,256 @@
 import OperationStatus from './OperationStatus';
-import {useEffect,useRef,useState} from 'react';
-import type {Project,WorkspaceSnapshot} from '../shared/types';
-import {Button,Badge,type Run} from './ui';
-import {RichText} from './RichText';
-export default function PlanningControls({snapshot:s,project,unitId,busy,run,onSelectSession}:{snapshot:WorkspaceSnapshot;project:Project;unitId?:string;busy:boolean;run:Run;onSelectSession?:(id:string)=>void}){
- const unit=(s.learningUnits??[]).find(u=>u.id===unitId),[goal,setGoal]=useState({behavior:'',materialScope:'',allowedHelp:'',verification:''}),[text,setText]=useState(''),[reason,setReason]=useState(''),[target,setTarget]=useState(''),lock=useRef(false),[working,setWorking]=useState(false);
- useEffect(()=>{setGoal({behavior:unit?.goal?.behavior??unit?.expectedOutcome??'',materialScope:unit?.goal?.materialScope??unit?.locators.join('、')??'',allowedHelp:unit?.goal?.allowedHelp??'',verification:unit?.goal?.verification??''})},[unitId,unit?.goal?.version]);
- const proposals=(s.learningProposals??[]).filter(p=>p.projectId===project.id&&(!unitId||p.unitId===unitId)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)),local=unit&&(s.routeVersions??[]).find(r=>r.id===unit.routeVersionId)?.scope==='local',bookUnits=(s.learningUnits??[]).filter(u=>u.projectId===project.id&&u.status!=='retired'&&(s.routeVersions??[]).some(r=>r.id===u.routeVersionId&&r.status==='adopted'&&r.scope!=='local'));
- async function save(){if(lock.current)return;lock.current=true;setWorking(true);try{const result=await run('proposal.save',{projectId:project.id,unitId,requestId:crypto.randomUUID(),text,reason},'提议已保存；分析和采用由你决定。');if(result){setText('');setReason('')}}finally{lock.current=false;setWorking(false)}}
- return <section className="planning-controls"><OperationStatus snapshot={s} projectId={project.id} kinds={['proposal_analysis','local_start']} busy={busy} run={run}/><details><summary>调整目标／难度 · 我建议下一步</summary>{unit&&<details><summary>这次希望真正能做什么</summary>{([['behavior','目标行为'],['materialScope','材料范围'],['allowedHelp','允许哪些帮助'],['verification','准备怎样检验']] as const).map(([key,label])=><label key={key}>{label}<textarea rows={2} value={goal[key]} onChange={e=>setGoal({...goal,[key]:e.target.value})}/></label>)}<Button disabled={busy||!goal.behavior.trim()} onClick={()=>void run('unit.saveGoal',{projectId:project.id,unitId:unit.id,goal:{...goal,expectedVersion:unit.goal?.version??0}},'学习目标已修订，旧建议采用前会重新检查依据。')}>保存目标</Button></details>}
- <label>我建议下一步<textarea aria-label="我建议下一步" rows={2} value={text} onChange={e=>setText(e.target.value)} placeholder="例如先弄懂条件，再做一个不同情境的题"/></label><label>理由（可选）<input value={reason} onChange={e=>setReason(e.target.value)}/></label><Button disabled={busy||working||!text.trim()} onClick={()=>void save()}>先保存我的提议</Button><p className="quiet-note">仍可沿用默认推荐。分析建议不会移动当前位置，也不会增加掌握记录。</p>
- {proposals.map(p=><article className="validation-card" key={p.id}><strong>{p.text}</strong><Badge>{{saved:'已保存',analyzing:'正在分析',proposed:'待选择',adopted:'已采用',dismissed:'已放弃',stale:'依据已过期'}[p.status]}</Badge>{p.reason&&<p>{p.reason}</p>}{p.analysis&&<RichText text={p.analysis}/>}<div className="validation-toolbar">{['saved','stale'].includes(p.status)&&<Button disabled={busy} onClick={()=>void run('proposal.analyze',{proposalId:p.id})}>分析提议（调用模型）</Button>}{p.status==='proposed'&&p.targetUnitId&&<Button disabled={busy} onClick={async()=>{const next=await run('proposal.adopt',{proposalId:p.id});const project=next?.projects.find(v=>v.id===p.projectId),position=next?.learningPositions.find(v=>v.id===project?.learningPositionId);if(position?.sessionId)onSelectSession?.(position.sessionId)}}>采用建议</Button>}{!['adopted','dismissed'].includes(p.status)&&<Button disabled={busy} onClick={()=>void run('proposal.dismiss',{proposalId:p.id})}>放弃提议</Button>}</div></article>)}
- {local&&<details><summary>把当前局部单元关联到全书地图</summary><p>先建立关联提案；两边能力和证据各自保留。扩大目标范围时另建能力。</p><select aria-label="关联的全书单元" value={target} onChange={e=>setTarget(e.target.value)}><option value="">选择全书单元</option>{bookUnits.map(u=><option key={u.id} value={u.id}>{u.title}</option>)}</select><Button disabled={busy||!target} onClick={()=>void run('association.propose',{localUnitId:unit.id,bookUnitId:target,reason:'将当前局部材料与所选全书单元建立参考关联。'})}>查看关联提案</Button>{(s.routeAssociations??[]).filter(a=>a.localUnitId===unit.id&&a.status!=='dismissed').map(a=><article className="validation-card" key={a.id}><p>{unit.title} → {(s.learningUnits??[]).find(u=>u.id===a.bookUnitId)?.title}</p><p>{a.reason}</p>{a.status==='linked'?<Badge>已关联，未合并能力或复制证据</Badge>:<><Button disabled={busy} onClick={()=>void run('association.accept',{associationId:a.id})}>确认建立关联</Button><Button disabled={busy} onClick={()=>void run('association.dismiss',{associationId:a.id})}>放弃关联</Button></>}</article>)}</details>}
- </details></section>;
+import { useEffect, useRef, useState } from 'react';
+import type { Project, WorkspaceSnapshot } from '../shared/types';
+import { Button, Badge, type Run } from './ui';
+import { RichText } from './RichText';
+export default function PlanningControls({
+  snapshot: s,
+  project,
+  unitId,
+  busy,
+  run,
+  onSelectSession,
+}: {
+  snapshot: WorkspaceSnapshot;
+  project: Project;
+  unitId?: string;
+  busy: boolean;
+  run: Run;
+  onSelectSession?: (id: string) => void;
+}) {
+  const unit = (s.learningUnits ?? []).find((u) => u.id === unitId),
+    [goal, setGoal] = useState({
+      behavior: '',
+      materialScope: '',
+      allowedHelp: '',
+      verification: '',
+    }),
+    [text, setText] = useState(''),
+    [reason, setReason] = useState(''),
+    [target, setTarget] = useState(''),
+    lock = useRef(false),
+    [working, setWorking] = useState(false);
+  useEffect(() => {
+    setGoal({
+      behavior: unit?.goal?.behavior ?? unit?.expectedOutcome ?? '',
+      materialScope: unit?.goal?.materialScope ?? unit?.locators.join('、') ?? '',
+      allowedHelp: unit?.goal?.allowedHelp ?? '',
+      verification: unit?.goal?.verification ?? '',
+    });
+  }, [unitId, unit?.goal?.version]);
+  const proposals = (s.learningProposals ?? [])
+      .filter((p) => p.projectId === project.id && (!unitId || p.unitId === unitId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    local =
+      unit && (s.routeVersions ?? []).find((r) => r.id === unit.routeVersionId)?.scope === 'local',
+    bookUnits = (s.learningUnits ?? []).filter(
+      (u) =>
+        u.projectId === project.id &&
+        u.status !== 'retired' &&
+        (s.routeVersions ?? []).some(
+          (r) => r.id === u.routeVersionId && r.status === 'adopted' && r.scope !== 'local',
+        ),
+    );
+  async function save() {
+    if (lock.current) return;
+    lock.current = true;
+    setWorking(true);
+    try {
+      const result = await run(
+        'proposal.save',
+        { projectId: project.id, unitId, requestId: crypto.randomUUID(), text, reason },
+        '提议已保存；分析和采用由你决定。',
+      );
+      if (result) {
+        setText('');
+        setReason('');
+      }
+    } finally {
+      lock.current = false;
+      setWorking(false);
+    }
+  }
+  return (
+    <section className="planning-controls">
+      <OperationStatus
+        snapshot={s}
+        projectId={project.id}
+        kinds={['proposal_analysis', 'local_start']}
+        busy={busy}
+        run={run}
+      />
+      <details>
+        <summary>调整目标／难度 · 我建议下一步</summary>
+        {unit && (
+          <details>
+            <summary>这次希望真正能做什么</summary>
+            {(
+              [
+                ['behavior', '目标行为'],
+                ['materialScope', '材料范围'],
+                ['allowedHelp', '允许哪些帮助'],
+                ['verification', '准备怎样检验'],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key}>
+                {label}
+                <textarea
+                  rows={2}
+                  value={goal[key]}
+                  onChange={(e) => setGoal({ ...goal, [key]: e.target.value })}
+                />
+              </label>
+            ))}
+            <Button
+              disabled={busy || !goal.behavior.trim()}
+              onClick={() =>
+                void run(
+                  'unit.saveGoal',
+                  {
+                    projectId: project.id,
+                    unitId: unit.id,
+                    goal: { ...goal, expectedVersion: unit.goal?.version ?? 0 },
+                  },
+                  '学习目标已修订，旧建议采用前会重新检查依据。',
+                )
+              }
+            >
+              保存目标
+            </Button>
+          </details>
+        )}
+        <label>
+          我建议下一步
+          <textarea
+            aria-label="我建议下一步"
+            rows={2}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="例如先弄懂条件，再做一个不同情境的题"
+          />
+        </label>
+        <label>
+          理由（可选）
+          <input value={reason} onChange={(e) => setReason(e.target.value)} />
+        </label>
+        <Button disabled={busy || working || !text.trim()} onClick={() => void save()}>
+          先保存我的提议
+        </Button>
+        <p className="quiet-note">
+          仍可沿用默认推荐。分析建议不会移动当前位置，也不会增加掌握记录。
+        </p>
+        {proposals.map((p) => (
+          <article className="validation-card" key={p.id}>
+            <strong>{p.text}</strong>
+            <Badge>
+              {
+                {
+                  saved: '已保存',
+                  analyzing: '正在分析',
+                  proposed: '待选择',
+                  adopted: '已采用',
+                  dismissed: '已放弃',
+                  stale: '依据已过期',
+                }[p.status]
+              }
+            </Badge>
+            {p.reason && <p>{p.reason}</p>}
+            {p.analysis && <RichText text={p.analysis} />}
+            <div className="validation-toolbar">
+              {['saved', 'stale'].includes(p.status) && (
+                <Button
+                  disabled={busy}
+                  onClick={() => void run('proposal.analyze', { proposalId: p.id })}
+                >
+                  分析提议（调用模型）
+                </Button>
+              )}
+              {p.status === 'proposed' && p.targetUnitId && (
+                <Button
+                  disabled={busy}
+                  onClick={async () => {
+                    const next = await run('proposal.adopt', { proposalId: p.id });
+                    const project = next?.projects.find((v) => v.id === p.projectId),
+                      position = next?.learningPositions.find(
+                        (v) => v.id === project?.learningPositionId,
+                      );
+                    if (position?.sessionId) onSelectSession?.(position.sessionId);
+                  }}
+                >
+                  采用建议
+                </Button>
+              )}
+              {!['adopted', 'dismissed'].includes(p.status) && (
+                <Button
+                  disabled={busy}
+                  onClick={() => void run('proposal.dismiss', { proposalId: p.id })}
+                >
+                  放弃提议
+                </Button>
+              )}
+            </div>
+          </article>
+        ))}
+        {local && (
+          <details>
+            <summary>把当前局部单元关联到全书地图</summary>
+            <p>先建立关联提案；两边能力和证据各自保留。扩大目标范围时另建能力。</p>
+            <select
+              aria-label="关联的全书单元"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+            >
+              <option value="">选择全书单元</option>
+              {bookUnits.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.title}
+                </option>
+              ))}
+            </select>
+            <Button
+              disabled={busy || !target}
+              onClick={() =>
+                void run('association.propose', {
+                  localUnitId: unit.id,
+                  bookUnitId: target,
+                  reason: '将当前局部材料与所选全书单元建立参考关联。',
+                })
+              }
+            >
+              查看关联提案
+            </Button>
+            {(s.routeAssociations ?? [])
+              .filter((a) => a.localUnitId === unit.id && a.status !== 'dismissed')
+              .map((a) => (
+                <article className="validation-card" key={a.id}>
+                  <p>
+                    {unit.title} →{' '}
+                    {(s.learningUnits ?? []).find((u) => u.id === a.bookUnitId)?.title}
+                  </p>
+                  <p>{a.reason}</p>
+                  {a.status === 'linked' ? (
+                    <Badge>已关联，未合并能力或复制证据</Badge>
+                  ) : (
+                    <>
+                      <Button
+                        disabled={busy}
+                        onClick={() => void run('association.accept', { associationId: a.id })}
+                      >
+                        确认建立关联
+                      </Button>
+                      <Button
+                        disabled={busy}
+                        onClick={() => void run('association.dismiss', { associationId: a.id })}
+                      >
+                        放弃关联
+                      </Button>
+                    </>
+                  )}
+                </article>
+              ))}
+          </details>
+        )}
+      </details>
+    </section>
+  );
 }
