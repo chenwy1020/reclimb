@@ -30,6 +30,8 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm run lint
       - run: node scripts/test-profile.mjs
         id: tests
         env:
