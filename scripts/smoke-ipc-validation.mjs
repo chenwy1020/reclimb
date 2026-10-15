@@ -7,9 +7,10 @@ import {_electron as electron} from 'playwright';
 
 const require = createRequire(import.meta.url);
 const data = mkdtempSync(join(tmpdir(), 'reclimb-ipc-validation-'));
+const executable = process.env.RECLIMB_TEST_EXECUTABLE?.trim();
 const app = await electron.launch({
-  executablePath: require('electron'),
-  args: ['.'],
+  executablePath: executable || require('electron'),
+  args: executable ? [] : ['.'],
   cwd: process.cwd(),
   env: {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE')),

@@ -21,8 +21,9 @@ if(new Set(names).size!==names.length||manifest.length+1!==names.length)throw ne
 for(const item of manifest){const bytes=zip.readFile(item.path);if(!bytes||sha(bytes)!==item.sha256||sha(readFileSync(item.path))!==item.sha256)throw new Error('源码清单与交付或当前源文件不一致：'+item.path);}
 const installerHash=sha(readFileSync(installer));
 const packageReport=JSON.parse(readFileSync('output/package-verification-'+tag+'.json','utf8'));
+if(version==='0.7.1'&&(packageReport.validationStatus!=='passed'||packageReport.applicationVersion!==version||packageReport.ipcValidationChecksPassed!==13))throw new Error('0.7.1 安装包尚未通过版本、运行依赖与全部 IPC 边界检查，不能交付');
 if(packageReport.installerSha256.toLowerCase()!==installerHash||packageReport.packagedRuntimeDependenciesVerified!==true||packageReport.desktopChecksPassed!==contract.expectedChecks||packageReport.externalRequests?.length!==0)throw new Error('安装包与已验证的包不一致、缺少运行依赖，或桌面检查存在外部请求');
-const report={at:new Date().toISOString(),version,sourceFiles:manifest.length,source:{path:resolve(source),bytes:statSync(source).size,sha256:sha(readFileSync(source))},installer:{path:resolve(installer),bytes:statSync(installer).size,sha256:installerHash},sourceMatchesManifestAndWorkspace:true,personalDataExcluded:true,packagedDesktopChecks:packageReport.desktopChecksPassed};
+const report={at:new Date().toISOString(),version,sourceFiles:manifest.length,source:{path:resolve(source),bytes:statSync(source).size,sha256:sha(readFileSync(source))},installer:{path:resolve(installer),bytes:statSync(installer).size,sha256:installerHash},sourceMatchesManifestAndWorkspace:true,personalDataExcluded:true,packagedDesktopChecks:packageReport.desktopChecksPassed,...(version==='0.7.1'?{packagedIpcValidationChecks:packageReport.ipcValidationChecksPassed,applicationVersion:packageReport.applicationVersion}:{})};
 writeFileSync('output/delivery-'+tag+'.json',JSON.stringify(report,null,2));
 const checksums=[];
 for(const name of ['Reclimb-Setup-'+version+'.exe','Reclimb-Source-'+version+'.zip'])if(existsSync('release/'+name))checksums.push(sha(readFileSync('release/'+name))+'  '+name);

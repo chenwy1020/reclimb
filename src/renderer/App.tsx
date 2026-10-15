@@ -816,7 +816,7 @@ export default function App() {
             />
           )}
           <footer className="page-footer">
-            <Mountain size={14} /> 每一次独立走过的路，都会留下来。<span>重登 · 0.7.0</span>
+            <Mountain size={14} /> 每一次独立走过的路，都会留下来。<span>重登 · 0.7.1</span>
           </footer>
         </div>
       </main>
