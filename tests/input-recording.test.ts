@@ -2,7 +2,7 @@ import {afterEach,expect,it,vi} from 'vitest';
 import {mkdtempSync,writeFileSync,existsSync,readFileSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {LearningStore} from '../src/main/store';import {LearningService} from '../src/main/learning-service';import {VerificationService} from '../src/main/verification-service';import {CallRunner} from '../src/main/call-runner';import {writeBackup,readBackup} from '../src/main/backup';
 import type {Session,SessionMessage} from '../src/shared/types';
-import {parseLiveValidationArgs,runLiveValidation,assertLiveValidationPaths,writeValidationReport} from '../scripts/live-validation';
+import {parseLiveValidationArgs,runLiveValidation,assertLiveValidationPaths,writeValidationReport} from '../scripts/validation/live-validation';
 const stores:LearningStore[]=[];afterEach(()=>{for(const s of stores.splice(0))s.close();});
 async function fixture(status:'ready'|'uncertain'='ready',respond?:(input:any)=>any){
  const store=await LearningStore.open(mkdtempSync(join(tmpdir(),'reclimb-input-')));stores.push(store);store.updateSettings({monthlyBudgetCny:100});const now=new Date().toISOString();store.put('projects',{id:'p',title:'本地输入测试',goal:'保留理解过程',status:'active',createdAt:now,updatedAt:now});store.put('capabilities',{id:'c',projectId:'p',title:'比较',description:'判断',sourceIds:[],prerequisites:[],order:0});const calls:any[]=[];

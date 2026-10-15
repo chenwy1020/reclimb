@@ -9,18 +9,41 @@ import type {HandwritingTarget} from '../src/shared/handwriting';
 const servers:HandwritingServer[]=[];
 afterEach(async()=>{vi.useRealTimers();vi.restoreAllMocks();await Promise.all(servers.splice(0).map(s=>s.stop()));});
 const target=(id='target-a'):HandwritingTarget=>({id,projectId:'project',projectTitle:'自编测试',sessionId:'session',taskId:'task',title:'比较两条路径',instruction:'写出比较理由。',sourceIds:[],helpLevel:0,mode:'practice',createdAt:new Date().toISOString()});
+async function startForFetch(server:HandwritingServer){
+ // Some Windows hosts allocate ephemeral ports from a range containing Fetch-blocked ports.
+ // Rebind only that transport restriction; preserve every server or HTTP failure.
+ for(let attempt=0;attempt<5;attempt++){
+  const status=await server.start(0,'127.0.0.1');
+  try {const response=await fetch(new URL(status.urls[0]).origin);await response.arrayBuffer();return status;}
+  catch(error){
+   await server.stop();
+   if(!(error instanceof TypeError&&error.cause instanceof Error&&error.cause.message==='bad port'))throw error;
+  }
+ }
+ throw new Error('Could not allocate a Fetch-compatible test port after five attempts.');
+}
 async function fixture(){
  const directory=mkdtempSync(join(tmpdir(),'reclimb-handwriting-http-'));mkdirSync(join(directory,'assets'));writeFileSync(join(directory,'index.html'),'<!doctype html><title>本地手写</title>');writeFileSync(join(directory,'assets','app.js'),'window.handwriting=true');writeFileSync(join(directory,'app.js'),'window.handwriting=true');writeFileSync(join(directory,'style.css'),'body{color:green}');
  const targets=new Map([['target-a',target()],['target-b',target('target-b')]]);
  const saved=new Map<string,unknown>();
  const save=vi.fn((body:any)=>{if(saved.has(body.requestId)&&JSON.stringify(saved.get(body.requestId))!==JSON.stringify(body))throw new Error('同一编号不可修改内容');saved.set(body.requestId,body);return {id:body.requestId,requestId:body.requestId,targetId:body.targetId,savedAt:new Date().toISOString(),status:'saved_unassessed' as const};});
- const server=new HandwritingServer({staticDirectory:directory,workspaceId:'workspace-test',getTarget:id=>targets.get(id),save});servers.push(server);server.setTarget(target());
- const status=await server.start(0,'127.0.0.1'),url=new URL(status.urls[0]),origin=url.origin,ticket=new URLSearchParams(url.hash.slice(1)).get('ticket')!;
+ const server=new HandwritingServer({staticDirectory:directory,workspaceId:'workspace-test',getTarget:id=>targets.get(id),save});servers.push(server);
+ const status=await startForFetch(server),url=new URL(status.urls[0]),origin=url.origin,ticket=new URLSearchParams(url.hash.slice(1)).get('ticket')!;
+ server.setTarget(target());
  async function post(path:string,body:unknown,token?:string,extra:Record<string,string>={}){return fetch(origin+path,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...extra},body:JSON.stringify(body)});}
  async function pair(){const current=new URL(server.status().urls[0]);const ticket=new URLSearchParams(current.hash.slice(1)).get('ticket');const request=await (await post('/api/pair',{ticket,name:'测试 iPad'})).json();server.approve(request.requestId);const approved=await (await post('/api/pair/status',{requestId:request.requestId,pollToken:request.pollToken})).json();return {token:approved.token as string,request,approved};}
  return {server,origin,ticket,post,pair,save,saved,targets,directory};
 }
 const submission=(requestId='write-1',targetId='target-a')=>({requestId,targetId,note:'自己的推导',pages:[{id:'page-1',width:768,height:1024,strokes:[{id:'ink-1',color:'#253e31',width:2,points:[{x:0.2,y:0.3,pressure:0.5}]}]}]});
+
+it('keeps the fixture target available for pairing after rebinding a Fetch-blocked port',async()=>{
+ const probe=vi.spyOn(globalThis,'fetch').mockRejectedValueOnce(new TypeError('fetch failed',{cause:new Error('bad port')}));
+ const t=await fixture();probe.mockRestore();
+ const {token}=await t.pair();
+ const response=await fetch(t.origin+'/api/state',{headers:{Authorization:'Bearer '+token}});
+ expect(response.status).toBe(200);
+ expect(await response.json()).toMatchObject({workspaceId:'workspace-test',target:{id:'target-a',title:'比较两条路径'}});
+});
 
 it('serves only the handwriting UI and requires pairing before exposing the task',async()=>{
  const t=await fixture(),page=await fetch(t.origin);expect(await page.text()).toContain('本地手写');expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");expect(page.headers.get('referrer-policy')).toBe('no-referrer');
@@ -72,7 +95,7 @@ it('renewing pairing preserves the current device until a different device is ap
  const second=await t.pair();expect(second.token).not.toBe(first.token);expect((await fetch(t.origin+'/api/state',{headers:{Authorization:'Bearer '+first.token}})).status).toBe(401);expect((await fetch(t.origin+'/api/state',{headers:{Authorization:'Bearer '+second.token}})).status).toBe(200);
 });
 it('stopping closes connections and restarting invalidates earlier device tokens',async()=>{
- const t=await fixture(),{token}=await t.pair();await t.server.stop();expect(t.server.status()).toMatchObject({running:false,urls:[]});expect(t.server.status().connected).toBeUndefined();const next=await t.server.start(0,'127.0.0.1'),origin=new URL(next.urls[0]).origin;
+ const t=await fixture(),{token}=await t.pair();await t.server.stop();expect(t.server.status()).toMatchObject({running:false,urls:[]});expect(t.server.status().connected).toBeUndefined();const next=await startForFetch(t.server),origin=new URL(next.urls[0]).origin;
  expect((await fetch(origin+'/api/state',{headers:{Authorization:'Bearer '+token}})).status).toBe(401);
 });
 it('a busy fixed port fails explicitly instead of changing the address',async()=>{

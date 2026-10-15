@@ -2,11 +2,11 @@ import {randomUUID,createHash} from 'node:crypto';
 import {readFileSync,mkdirSync,writeFileSync,existsSync,realpathSync,linkSync,unlinkSync} from 'node:fs';
 import {resolve,dirname,isAbsolute,relative,basename,extname} from 'node:path';
 import {z} from 'zod';
-import {LearningStore} from '../src/main/store';
-import {LearningService} from '../src/main/learning-service';
-import {VerificationService} from '../src/main/verification-service';
-import {CallRunner} from '../src/main/call-runner';
-import type {Session} from '../src/shared/types';
+import {LearningStore} from '../../src/main/store';
+import {LearningService} from '../../src/main/learning-service';
+import {VerificationService} from '../../src/main/verification-service';
+import {CallRunner} from '../../src/main/call-runner';
+import type {Session} from '../../src/shared/types';
 
 // This harness never discovers the installed app, user projects or credentials.
 // Both the fixture and all paths must be selected explicitly by the operator.

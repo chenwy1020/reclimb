@@ -2,8 +2,8 @@ import AdmZip from 'adm-zip';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {sourceFiles,forbiddenSourcePath} from './source-files.mjs';
-execFileSync(process.execPath,['scripts/audit-source.mjs'],{stdio:'inherit'});
+import {sourceFiles,forbiddenSourcePath} from '../source-files.mjs';
+execFileSync(process.execPath,['scripts/validation/audit-source.mjs'],{stdio:'inherit'});
 const zip=new AdmZip(),manifest=[];
 for(const path of sourceFiles()){
  if(forbiddenSourcePath.test(path))throw new Error('Unapproved source file: '+path);

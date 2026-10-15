@@ -18,7 +18,7 @@ function Get-Sha256Hex([string]$Path) {
   } finally { $stream.Dispose() }
   return ([BitConverter]::ToString($bytes)).Replace('-','')
 }
-$workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 Set-Location -LiteralPath $workspace
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
 $pdfSourcePath = if($PdfPath) { (Resolve-Path -LiteralPath $PdfPath).Path } else { $null }
@@ -72,7 +72,7 @@ if(-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
 if(-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'The actual application executable was not found after extraction.' }
 $appAsar = Get-CheckedExtractionPath (Join-Path $applicationDirectory 'resources\app.asar')
 if(-not (Test-Path -LiteralPath $appAsar -PathType Leaf)) { throw 'The packaged app.asar was not found.' }
-& node (Join-Path $workspace 'scripts\verify-packaged-dependencies.mjs') $appAsar
+& node (Join-Path $workspace 'scripts\release\verify-packaged-dependencies.mjs') $appAsar
 if($LASTEXITCODE -ne 0) { throw ('Packaged runtime dependency validation failed with exit code ' + $LASTEXITCODE) }
 
 $previousExecutable = $env:RECLIMB_TEST_EXECUTABLE
@@ -82,7 +82,7 @@ try {
   $env:RECLIMB_TEST_EXECUTABLE = $executable
   $env:RECLIMB_TEST_PDF = $pdfSourcePath
   $env:RECLIMB_TEST_ARTIFACT_DIR = $artifactDirectory
-  & node (Join-Path $workspace ('scripts\' + $SmokeScript))
+  & node (Join-Path $workspace ('scripts\desktop\' + $SmokeScript))
   if($LASTEXITCODE -ne 0) { throw ('Packaged desktop validation failed with exit code ' + $LASTEXITCODE) }
 } finally {
   [Environment]::SetEnvironmentVariable('RECLIMB_TEST_EXECUTABLE',$previousExecutable,'Process')

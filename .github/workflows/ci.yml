@@ -32,7 +32,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run format:check
       - run: npm run lint
-      - run: node scripts/test-profile.mjs
+      - run: node scripts/validation/test-profile.mjs
         id: tests
         env:
           RECLIMB_TEST_SCOPE: ${{ github.event_name == 'schedule' && 'full' || inputs.test_scope || 'auto' }}
@@ -41,4 +41,4 @@ jobs:
         if: steps.tests.outputs.scope == 'full'
       - run: npm run test:desktop
         if: steps.tests.outputs.scope == 'targeted'
-      - run: node scripts/audit-source.mjs --tracked
+      - run: node scripts/validation/audit-source.mjs --tracked

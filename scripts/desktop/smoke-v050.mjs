@@ -21,7 +21,7 @@ const groups=[...(process.argv.includes('--current-only')?[]:accumulated),
 const reports=[];
 for(const [name,script,reportName] of groups){
  const directory=join(artifacts,name);mkdirSync(directory,{recursive:true});
- const child=spawnSync(process.execPath,['scripts/'+script],{stdio:'inherit',env:{...process.env,RECLIMB_TEST_ARTIFACT_DIR:directory}});
+ const child=spawnSync(process.execPath,['scripts/desktop/'+script],{stdio:'inherit',env:{...process.env,RECLIMB_TEST_ARTIFACT_DIR:directory}});
  if(child.error)throw child.error;if(child.status!==0)throw new Error(name+' checks failed: '+child.status);
  const report=JSON.parse(readFileSync(join(directory,reportName),'utf8'));
  if(!report.passed||report.externalRequests?.length||report.rendererErrors?.length)throw new Error(name+' report did not pass');

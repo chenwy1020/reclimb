@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $contract = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'release-contract-v071.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $reportPath = Join-Path $workspace 'output\package-verification-v071.json'
 $baseTag = $contract.suiteTag + '-base'
 $baseReportPath = Join-Path $workspace ('output\package-verification-' + $baseTag + '.json')
@@ -50,7 +50,7 @@ try {
  if($LASTEXITCODE -ne 0) { throw 'Packaged version or ZIP dependency validation failed.' }
  # Exercise the fixed IPC boundary in the exact application extracted above.
  $env:RECLIMB_TEST_EXECUTABLE = $report.executable
- & node (Join-Path $PSScriptRoot 'smoke-ipc-validation.mjs')
+ & node (Join-Path $PSScriptRoot '../desktop/smoke-ipc-validation.mjs')
  if($LASTEXITCODE -ne 0) { throw 'Packaged IPC validation failed.' }
  if((Get-InstallerHash $report.installer) -ne $report.installerSha256) { throw 'The installer changed during maintenance validation; this package cannot be delivered.' }
 

@@ -2,11 +2,11 @@ import AdmZip from 'adm-zip';
 import {readFileSync,writeFileSync,statSync,existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
-import {sourceFiles,forbiddenSourcePath} from './source-files.mjs';
+import {sourceFiles,forbiddenSourcePath} from '../source-files.mjs';
 
 const version=JSON.parse(readFileSync('package.json','utf8')).version;
 const tag='v'+version.split('.').join('');
-const contractPath='scripts/release-contract-'+tag+'.json';
+const contractPath='scripts/release/release-contract-'+tag+'.json';
 if(!existsSync(contractPath))throw new Error('缺少当前版本的交付契约：'+contractPath);
 const contract=JSON.parse(readFileSync(contractPath,'utf8'));
 if(contract.version!==version||contract.suiteTag!==tag||!Number.isInteger(contract.expectedChecks)||contract.expectedChecks<1)throw new Error('当前版本的交付契约无效');

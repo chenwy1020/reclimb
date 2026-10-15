@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
-import {sourceFiles,forbiddenSourcePath} from './source-files.mjs';
+import {sourceFiles,forbiddenSourcePath} from '../source-files.mjs';
 const allowed=new Set(sourceFiles());
 const tracked=process.argv.includes('--tracked');
 const files=tracked?execFileSync('git',['ls-files','-z'],{encoding:'utf8'}).split('\0').filter(Boolean):[...allowed];

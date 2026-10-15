@@ -1,19 +1,19 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory=$true)][string]$PdfPath,
-  [string]$Installer = 'release\Reclimb-Setup-0.3.0.exe',
+  [string]$PdfPath,
+  [string]$Installer = 'release\Reclimb-Setup-0.3.1.exe',
   [string]$SevenZip = '.builder-cache\7zip@1.0.0\7zip-win-x64-a34pt\bin\7za.exe'
 )
 $ErrorActionPreference = 'Stop'
-$workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 Set-Location -LiteralPath $workspace
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
-$pdfSourcePath = (Resolve-Path -LiteralPath $PdfPath).Path
+$pdfSourcePath = if($PdfPath) { (Resolve-Path -LiteralPath $PdfPath).Path } else { $null }
 $sevenZipPath = (Resolve-Path -LiteralPath $SevenZip).Path
 $stamp = (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $outputRoot = [IO.Path]::GetFullPath((Join-Path $workspace 'output'))
-$extractionDirectory = [IO.Path]::GetFullPath((Join-Path $outputRoot ('package-v03-' + $stamp)))
-$artifactDirectory = [IO.Path]::GetFullPath((Join-Path $outputRoot ('playwright\v03-package-' + $stamp)))
+$extractionDirectory = [IO.Path]::GetFullPath((Join-Path $outputRoot ('package-v031-' + $stamp)))
+$artifactDirectory = [IO.Path]::GetFullPath((Join-Path $outputRoot ('playwright\v031-package-' + $stamp)))
 foreach($directory in @($extractionDirectory,$artifactDirectory)) {
   if(-not $directory.StartsWith($outputRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'The output directory must remain inside this workspace output folder.' }
   if(Test-Path -LiteralPath $directory) { throw ('Refusing to overwrite an existing validation directory: ' + $directory) }
@@ -62,7 +62,7 @@ try {
   $env:RECLIMB_TEST_EXECUTABLE = $executable
   $env:RECLIMB_TEST_PDF = $pdfSourcePath
   $env:RECLIMB_TEST_ARTIFACT_DIR = $artifactDirectory
-  & node (Join-Path $workspace 'scripts\smoke-v03.mjs')
+  & node (Join-Path $workspace 'scripts\desktop\smoke-v03.mjs')
   if($LASTEXITCODE -ne 0) { throw ('Packaged desktop validation failed with exit code ' + $LASTEXITCODE) }
 } finally {
   [Environment]::SetEnvironmentVariable('RECLIMB_TEST_EXECUTABLE',$previousExecutable,'Process')
@@ -72,7 +72,7 @@ try {
 if((Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash -ne $installerHash) { throw 'The installer changed during validation; no final package report will be published.' }
 $desktopReport = Join-Path $artifactDirectory 'desktop-verification-v03.json'
 $desktop = Get-Content -LiteralPath $desktopReport -Raw | ConvertFrom-Json
-if($desktop.executable -ne $executable -or $desktop.passed -ne 45 -or @($desktop.externalRequests).Count -ne 0) { throw 'The desktop report did not satisfy the final 45-check packaged validation contract.' }
+if($desktop.executable -ne $executable -or $desktop.passed -ne 55 -or @($desktop.externalRequests).Count -ne 0) { throw 'The desktop report did not satisfy the required packaged validation contract.' }
 $report = [ordered]@{
   at = [DateTime]::UtcNow.ToString('o')
   validation = '安装包内实际应用解包运行通过'
@@ -93,5 +93,5 @@ $report = [ordered]@{
 $json = $report | ConvertTo-Json -Depth 8
 $utf8 = New-Object Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $artifactDirectory 'package-verification.json'),$json,$utf8)
-[IO.File]::WriteAllText((Join-Path $outputRoot 'package-verification-v03.json'),$json,$utf8)
+[IO.File]::WriteAllText((Join-Path $outputRoot 'package-verification-v031.json'),$json,$utf8)
 $report | ConvertTo-Json -Depth 8

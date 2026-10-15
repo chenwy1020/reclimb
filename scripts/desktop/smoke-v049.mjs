@@ -65,6 +65,8 @@ try{
 
  await draw();await pad.getByRole('button',{name:'撤销笔画',exact:true}).click();await pad.getByRole('button',{name:'重做笔画',exact:true}).click();await pad.getByRole('button',{name:'加一页',exact:true}).click();await draw();
  const note=pad.getByLabel('补充说明或疑问（选填）');await note.fill('两页原创手写推导');await saved();await pad.reload();await pad.locator('#workbench').waitFor();await saved();assert.equal(await note.inputValue(),'两页原创手写推导');assert.equal(await pad.locator('#page-label').textContent(),'2 / 2 页');
+ // Restored drafts can be saved before the two scheduled animation frames paint the canvas.
+ await pad.waitForFunction(()=>{const canvas=document.getElementById('ink-canvas');return canvas&&Array.from(canvas.getContext('2d').getImageData(1,1,1,1).data).every(value=>value===255);});
  const localWhite=await pad.locator('#ink-canvas').evaluate(c=>Array.from(c.getContext('2d').getImageData(1,1,1,1).data));assert.deepEqual(localWhite,[255,255,255,255]);record('笔迹、撤销重做、多页和补充说明经过 IndexedDB 保存及页面重载');
 
  loseReceipt=true;await pad.getByRole('button',{name:'提交这份作答',exact:true}).click();await pad.waitForFunction(()=>!document.getElementById('submit-ink').disabled&&document.getElementById('submit-ink').textContent.includes('重试'));
