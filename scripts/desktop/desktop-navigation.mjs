@@ -22,12 +22,16 @@ export async function leaveDesktopNavigation(page){
 }
 
 // Earlier workflow suites exercise the controls after explicitly opening their cards.
-export async function openSettingsCards(page){for(const card of await page.locator('.settings-card-toggle').all())if(await card.getAttribute('aria-expanded')==='false')await card.click();}
-export async function navigateDesktop(page,name,{expandSettings=true}={}){
+export async function openSettingsCards(page){for(const card of await page.locator('.settings-card-toggle:visible').all())if(await card.getAttribute('aria-expanded')==='false')await card.click();}
+export async function selectSettingsTab(page,name,{expandSettings=true}={}){
+ await page.getByRole('tab',{name,exact:true}).click();
+ if(expandSettings)await openSettingsCards(page);
+}
+export async function navigateDesktop(page,name,{expandSettings=true,settingsTab='学习'}={}){
  assert.equal(await page.getByRole('dialog').count(),0,'Close the current dialog through its real UI before navigating');
  await page.getByRole('button',{name,exact:true}).click();
  await leaveDesktopNavigation(page);
- if(name==='设置'&&expandSettings)await openSettingsCards(page);
+ if(name==='设置')await selectSettingsTab(page,settingsTab,{expandSettings});
 }
 
 // 0.6 keeps secondary desk actions available behind native disclosures.
@@ -36,4 +40,23 @@ export async function openDeskDetails(page){
  for(const selector of ['.verification-overview','.next-options','.desk-more','.attempts-history']){
   for(const detail of await page.locator(selector).all())if(await detail.isVisible()&&!(await detail.evaluate(el=>el.open)))await detail.locator(':scope > summary').click();
  }
+}
+
+
+// Open the actual drawer and its requested section through supported user controls.
+export async function openDeskTools(page,section){
+ const focus=page.getByRole('button',{name:'退出专注作答',exact:true});
+ if(await focus.isVisible())await focus.click();
+ const drawer=page.getByRole('dialog',{name:'学习工具',exact:true});
+ if(!await drawer.isVisible())await page.getByRole('button',{name:/^学习工具/}).click();
+ await drawer.waitFor();
+ if(section){const details=drawer.locator('details').filter({has:page.locator(':scope > summary').filter({hasText:section})}).first();
+  if(!await details.evaluate(element=>element.open))await details.locator(':scope > summary').click();
+ }
+ return drawer;
+}
+export async function closeDeskTools(page){
+ const drawer=page.getByRole('dialog',{name:'学习工具',exact:true});
+ if(await drawer.isVisible())await drawer.getByRole('button',{name:'关闭学习工具',exact:true}).click();
+ await drawer.waitFor({state:'hidden'});
 }

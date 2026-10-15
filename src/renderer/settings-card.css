@@ -74,3 +74,44 @@
     transition: none;
   }
 }
+.settings-sections {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.settings-section[hidden] {
+  display: none !important;
+}
+.settings-section > .settings-card {
+  margin-bottom: 18px;
+}
+.quick-setup-advanced {
+  margin: 18px 0 12px;
+}
+.quick-setup-advanced > summary {
+  cursor: pointer;
+  padding: 10px 0;
+}
+.quick-setup-budget {
+  display: grid;
+  gap: 8px;
+  max-width: 260px;
+  margin: 18px 0 10px;
+}
+.quick-setup-budget input {
+  width: 100%;
+}
+.quick-setup-result {
+  margin-bottom: 16px;
+}
+.quick-setup-error {
+  color: var(--theme-danger, #a53939);
+}
+.settings-layout.settings-by-category {
+  display: block;
+  max-width: 1000px;
+}
+.settings-tab-content {
+  min-width: 0;
+}

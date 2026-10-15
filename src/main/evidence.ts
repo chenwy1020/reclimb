@@ -9,13 +9,13 @@ import type {
 } from '../shared/types';
 import type { LearningStore } from './store';
 import {
-  evidenceStanding,
   reviewStanding,
   versionStanding,
   derivesFromDispute,
   exposureCandidates,
 } from '../shared/reliability-state';
 import { teachingContentHash } from './verification-service';
+import { scheduleAfterAssessment } from './review-scheduler';
 const DAY = 24 * 60 * 60 * 1000;
 const normalize = (text: string) =>
   text
@@ -440,43 +440,7 @@ export function finishAssessment(
         completedEvidenceId: evidence.id,
         ...(taskId ? { completedTaskId: taskId } : {}),
       });
-    // One optional pair per capability. Returns never recursively produce more returns.
-    const hasPriorSuccess = store
-      .list('evidence', attempt.projectId)
-      .some(
-        (item) =>
-          item.id !== evidence.id &&
-          item.capabilityId === capability.id &&
-          item.status !== 'needs_review' &&
-          evidenceStanding(snapshot, item).effective,
-      );
-    const hasReviews = store
-      .list('reviews', attempt.projectId)
-      .some(
-        (item) => item.capabilityId === capability.id && reviewStanding(snapshot, item).effective,
-      );
-    if (
-      met &&
-      status !== 'needs_review' &&
-      !hasPriorSuccess &&
-      !hasReviews &&
-      !reviewId &&
-      mode !== 'delayed' &&
-      mode !== 'transfer'
-    ) {
-      for (const kind of ['delayed', 'transfer'] as const)
-        store.put('reviews', {
-          id: randomUUID(),
-          projectId: attempt.projectId,
-          capabilityId: capability.id,
-          fromSessionId: session.id,
-          kind,
-          dueAt: new Date(evaluatedAt + (kind === 'delayed' ? DAY : 7 * DAY)).toISOString(),
-          status: 'pending',
-          fromActivity: JSON.parse(JSON.stringify(activity)),
-          ...(taskId ? { fromTaskId: taskId } : {}),
-        });
-    }
+    scheduleAfterAssessment(store, evidence, linked, validReturn);
     return evidence;
   });
 }

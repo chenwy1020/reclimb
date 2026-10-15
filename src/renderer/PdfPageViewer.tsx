@@ -54,9 +54,11 @@ export default function PdfPageViewer({
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const observer = new ResizeObserver((entries) =>
-      setWidth(Math.max(240, entries[0].contentRect.width - 24)),
-    );
+    const observer = new ResizeObserver((entries) => {
+      // A closed tools drawer has no layout. Keep the last real page size.
+      if (entries[0].contentRect.width > 0)
+        setWidth(Math.max(240, entries[0].contentRect.width - 24));
+    });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);

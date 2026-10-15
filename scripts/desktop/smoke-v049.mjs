@@ -1,3 +1,4 @@
+import {openDeskTools,closeDeskTools} from './desktop-navigation.mjs';
 // Focused handwriting delivery checks. Only built-in original fixtures and loopback traffic.
 import {_electron as electron,chromium} from 'playwright';
 import {applyDesktopTestWindow,navigateDesktop} from './desktop-navigation.mjs';
@@ -27,9 +28,9 @@ async function launch(){
 }
 async function desk(project='sample-reasoning'){
  await page.getByRole('button',{name:'继续上次学习',exact:true}).click();
- await page.getByLabel('当前学习项目').selectOption(project);await page.getByRole('region',{name:'iPad 手写原稿'}).waitFor();
+ await page.getByLabel('当前学习项目').selectOption(project);await page.locator('#current-task-title').waitFor();
 }
-async function openPanel(){const button=page.getByRole('button',{name:'iPad 手写',exact:true});if(await button.getAttribute('aria-expanded')!=='true')await button.click();}
+async function openPanel(){await openDeskTools(page,'手写与已保存记录');const button=page.getByRole('button',{name:'iPad 手写',exact:true});if(await button.getAttribute('aria-expanded')!=='true')await button.click();}
 async function pair(link){
  await pad.goto(link);await pad.locator('#pair-status').filter({hasText:'配对确认码'}).waitFor();
  await page.waitForFunction(async()=>!!(await window.learning.request('handwriting.status')).pending);
@@ -74,13 +75,13 @@ try{
  await pad.getByRole('button',{name:'重试发送已保存的原稿',exact:true}).click();await pad.locator('#submission-status').filter({hasText:'电脑已保存原稿'}).waitFor();assert.deepEqual(submitRequests[0],submitRequests[1]);assert.equal((await api('handwriting.list',{sessionId:originalSession})).length,1);record('电脑回执丢失后断线续写，重启页面主动原编号重试，不重复保存');
 
  await note.fill('等待回应时仍保留原任务');await saved();delayReceipt=true;await pad.getByRole('button',{name:'提交这份作答',exact:true}).click();await pad.locator('#submission-status').filter({hasText:'正在发送到电脑'}).waitFor();
- await page.getByLabel('当前学习项目').selectOption('sample-argument');await openPanel();await page.getByRole('button',{name:'发送当前任务到 iPad',exact:true}).click();await pad.getByRole('button',{name:'重新连接电脑',exact:true}).click();await pad.getByRole('button',{name:'采用这个任务',exact:true}).waitFor();assert.equal(await note.inputValue(),'等待回应时仍保留原任务');
+ await closeDeskTools(page);await page.getByLabel('当前学习项目').selectOption('sample-argument');await openPanel();await page.getByRole('button',{name:'发送当前任务到 iPad',exact:true}).click();await pad.getByRole('button',{name:'重新连接电脑',exact:true}).click();await pad.getByRole('button',{name:'采用这个任务',exact:true}).waitFor();assert.equal(await note.inputValue(),'等待回应时仍保留原任务');
  await pad.getByRole('button',{name:'采用这个任务',exact:true}).click();await pad.locator('#task-title').filter({hasText:'辨认论证的缺口并修订'}).waitFor();await note.fill('另一题的未提交草稿');await saved();assert.ok(releaseReceipt);releaseReceipt();releaseReceipt=undefined;await pad.waitForTimeout(400);assert.equal(await note.inputValue(),'另一题的未提交草稿');assert.equal((await api('handwriting.list',{sessionId:otherSession})).length,0);
  assert.equal((await snapshot()).sessions.find(session=>session.id===originalSession).draft,desktopDraft);await chooseOriginalDraft();assert.equal(await note.inputValue(),'等待回应时仍保留原任务');record('新任务不自动换稿，迟到回执不覆盖新题，电脑主任务草稿不变');
 
  await page.getByLabel('当前学习项目').selectOption('sample-reasoning');await page.getByRole('button',{name:'查看原稿',exact:true}).first().click();await page.getByRole('dialog',{name:'手写原稿',exact:true}).waitFor();await page.locator('.handwriting-original').waitFor();
  const svg=await page.locator('.handwriting-original').getAttribute('src');assert.ok(decodeURIComponent(svg).includes('fill="white"'));await page.getByRole('dialog',{name:'手写原稿',exact:true}).screenshot({path:join(artifacts,'desktop-ink-light.png')});await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();
- await navigateDesktop(page,'设置');await page.getByRole('button',{name:'深色',exact:true}).click();await navigateDesktop(page,'学习桌');await page.getByRole('button',{name:'查看原稿',exact:true}).first().click();
+ await closeDeskTools(page);await navigateDesktop(page,'设置');await page.getByRole('button',{name:'深色',exact:true}).click();await navigateDesktop(page,'学习桌');await openDeskTools(page,'手写与已保存记录');await page.getByRole('button',{name:'查看原稿',exact:true}).first().click();
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1040,800));assert.equal(await page.locator('.handwriting-original').evaluate(img=>getComputedStyle(img).filter),'none');await page.getByRole('dialog',{name:'手写原稿',exact:true}).screenshot({path:join(artifacts,'desktop-ink-dark-narrow.png')});await page.getByRole('button',{name:'关闭手写原稿',exact:true}).click();
  await pad.locator('#ink-canvas').scrollIntoViewIfNeeded();await pad.screenshot({path:join(artifacts,'companion-tablet.png'),fullPage:true});await pad.setViewportSize({width:390,height:844});assert.ok(await pad.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await pad.screenshot({path:join(artifacts,'companion-narrow.png'),fullPage:true});record('桌面原稿可查看，深浅与窄窗口保留白纸，平板页面无横向溢出');
 

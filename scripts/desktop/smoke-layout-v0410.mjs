@@ -1,3 +1,4 @@
+import {openDeskTools,closeDeskTools} from './desktop-navigation.mjs';
 // Focused desktop handwriting layout regression. Only built-in fixtures and loopback transport.
 import {_electron as electron} from 'playwright';
 import {applyDesktopTestWindow,navigateDesktop} from './desktop-navigation.mjs';
@@ -18,12 +19,12 @@ async function json(path,payload,token){
  const response=await fetch(origin+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(payload)});
  const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;
 }
-async function openPanel(){const toggle=page.getByRole('button',{name:'iPad 手写',exact:true});if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.getByAltText('iPad 配对二维码').waitFor();}
+async function openPanel(){await openDeskTools(page,'手写与已保存记录');const toggle=page.getByRole('button',{name:'iPad 手写',exact:true});if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();await page.getByAltText('iPad 配对二维码').waitFor();}
 async function checkLayout(name){
  const panel=page.getByRole('region',{name:'iPad 手写原稿'});await panel.scrollIntoViewIfNeeded();await page.mouse.move(880,80);
  const metrics=await panel.evaluate(el=>{
   const box=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
-  const parent=el.closest('.learning-panel'),p=box(parent),card=box(el);
+  const parent=el.closest('.desk-tool-section'),p=box(parent),card=box(el);
   const actionAreas=[...el.querySelectorAll('.handwriting-heading,.handwriting-history article')].map(row=>{
    const children=[...row.children].map(box);const overlaps=children.some((a,i)=>children.slice(i+1).some(b=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1));
    return {children,overlaps};
@@ -56,12 +57,12 @@ try{
  for(let i=0;i<3;i++)await json('/api/submit',{requestId:'layout-ink-'+i,targetId:target.id,pages:[{id:'layout-page-'+i,width:768,height:1024,strokes:[{id:'layout-stroke-'+i,color:'#253e31',width:3,points:[{x:.2,y:.2,pressure:.6},{x:.3,y:.4,pressure:.7}]}]}],note:'原创手写布局检查 '+i},approved.token);
  await page.getByRole('button',{name:'查看原稿',exact:true}).nth(2).waitFor();
  for(const mode of ['浅色','深色']){
-  await navigateDesktop(page,'设置');await page.getByRole('button',{name:mode,exact:true}).click();
+  await closeDeskTools(page);await navigateDesktop(page,'设置');await page.getByRole('button',{name:mode,exact:true}).click();
   await navigateDesktop(page,'学习桌');await openPanel();
   for(const width of [1540,1180,1040]){await app.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,900),width);await page.waitForFunction(width=>innerWidth<=width,width);await checkLayout((mode==='浅色'?'light':'dark')+'-'+width);}
  }
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1180,900));
- await navigateDesktop(page,'设置');await page.getByLabel('材料区比例',{exact:true}).focus();await page.keyboard.press('End');
+ await closeDeskTools(page);await navigateDesktop(page,'设置');await page.getByLabel('材料区比例',{exact:true}).focus();await page.keyboard.press('End');
  assert.equal(await page.getByLabel('材料区比例',{exact:true}).inputValue(),'65');
  await navigateDesktop(page,'学习桌');await openPanel();await checkLayout('dark-narrow-learning-column');
  // The previous screenshot's second button border was a keyboard-focus indicator; keep it.

@@ -39,6 +39,7 @@ export function SourceReader({
   projectId,
   focusId: requestedFocusId,
   restorePosition = false,
+  active = true,
   run,
   full = false,
   followup,
@@ -47,6 +48,7 @@ export function SourceReader({
   projectId: string;
   focusId?: string;
   restorePosition?: boolean;
+  active?: boolean;
   run: Run;
   full?: boolean;
   followup?: (fragment: Fragment) => ReactNode;
@@ -80,7 +82,7 @@ export function SourceReader({
   const activeFragment = filtered.find((f) => f.id === selected) || filtered[0];
   const readerRoot = useRef<HTMLDivElement>(null),
     readerBody = useRef<HTMLDivElement>(null);
-  const continuity = useReaderContinuity(s, activeFragment, tab, readerRoot, readerBody);
+  const continuity = useReaderContinuity(s, activeFragment, tab, readerRoot, readerBody, active);
   useEffect(() => {
     if (focusId) {
       setSelected(focusId);

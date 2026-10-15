@@ -267,6 +267,22 @@ const review = z.object({
   fromActivity: activitySchema.optional(),
   completedEvidenceId: id.optional(),
   completedTaskId: id.optional(),
+  schedule: z
+    .object({
+      version: z.literal(1),
+      step: z.number().int().min(0).max(4),
+      intervalDays: z.union([
+        z.literal(1),
+        z.literal(3),
+        z.literal(7),
+        z.literal(30),
+        z.literal(90),
+      ]),
+      previousReviewId: id.optional(),
+      lastEvidenceId: id.optional(),
+      needsRelearning: z.boolean().optional(),
+    })
+    .optional(),
 });
 const usage = z.object({
   id,
@@ -1413,6 +1429,23 @@ export function readBackup(file: string): {
   }
   for (const r of records.reviews) {
     const origin = match('sessions', r.fromSessionId, r.projectId);
+    if (r.schedule) {
+      if ([1, 3, 7, 30, 90][r.schedule.step] !== r.schedule.intervalDays)
+        throw new Error('回访间隔与排程阶段不一致');
+      if (r.schedule.lastEvidenceId) {
+        const basis = match('evidence', r.schedule.lastEvidenceId, r.projectId);
+        if (basis.capabilityId !== r.capabilityId) throw new Error('回访排程依据不属于同一能力');
+      }
+      if (r.schedule.previousReviewId) {
+        const previous = match('reviews', r.schedule.previousReviewId, r.projectId);
+        if (
+          previous.id === r.id ||
+          previous.capabilityId !== r.capabilityId ||
+          previous.status !== 'done'
+        )
+          throw new Error('回访排程前次记录无效');
+      }
+    }
     activitySources(r.fromActivity, r.projectId);
     match('capabilities', r.capabilityId, r.projectId);
     if (origin.capabilityId !== r.capabilityId)

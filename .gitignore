@@ -58,6 +58,7 @@ webdav-state.json
 !/docs/guides/使用说明-0.5.2.md
 !/docs/guides/使用说明-0.5.3.md
 !/docs/guides/使用说明-0.7.1.md
+!/docs/guides/使用说明-0.8.0.md
 !/docs/guides/使用说明-0.7.md
 !/docs/plans/2026-09-11-project-trash-design.md
 !/docs/plans/2026-09-11-project-trash.md
@@ -76,6 +77,10 @@ webdav-state.json
 !/docs/superpowers/plans/2026-09-30-knowledge-graph-task3-report.md
 !/docs/superpowers/plans/2026-09-30-knowledge-graph.md
 !/docs/superpowers/plans/2026-10-15-review-remediation.md
+!/docs/superpowers/plans/2026-10-15-product-review.md
+!/docs/superpowers/specs/2026-10-15-product-review-design.md
+!/docs/superpowers/product-review-2026-10-15.md
+!/docs/fixtures/product-evaluation/README.md
 !/docs/superpowers/review-2026-10-15.md
 !/docs/superpowers/specs/2026-09-30-knowledge-graph-design.md
 !/docs/verification/验证记录-0.3.1.md
@@ -96,4 +101,5 @@ webdav-state.json
 !/docs/verification/验证记录-0.5.3.md
 !/docs/verification/验证记录-0.6.md
 !/docs/verification/验证记录-0.7.1.md
+!/docs/verification/验证记录-0.8.0.md
 !/docs/verification/验证记录-0.7.md

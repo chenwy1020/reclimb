@@ -30,7 +30,7 @@ await new Promise(done=>server.listen(0,'127.0.0.1',done));const localOrigin='ht
 const api=(action,payload={})=>page.evaluate(({action,payload})=>window.learning.request(action,payload),{action,payload});
 const record=name=>{results.push(name);console.log('PASS '+name)};
 const panel=()=>page.getByRole('region',{name:'WebDAV 备份与多电脑接续',exact:true});
-async function settings(){await navigateDesktop(page,'设置',{expandSettings:false});await panel().getByRole('button',{name:'WebDAV 备份与多电脑接续',exact:true}).click();}
+async function settings(){await navigateDesktop(page,'设置',{expandSettings:false,settingsTab:'数据与同步'});await panel().getByRole('button',{name:'WebDAV 备份与多电脑接续',exact:true}).click();}
 async function launch(){
  if(app)await app.close();app=await electron.launch({executablePath:executable||require('electron'),args:executable?[]:['.'],cwd:root,env:{...Object.fromEntries(Object.entries(process.env).filter(([k])=>k!=='ELECTRON_RUN_AS_NODE')),RECLIMB_DATA_DIR:data,RECLIMB_DEV_URL:''},timeout:45000});page=await app.firstWindow();page.setDefaultTimeout(20000);await applyDesktopTestWindow(app,page);
  await app.evaluate((_electron,origin)=>{const real=globalThis.fetch;globalThis.fetch=(input,options)=>{const url=new URL(String(input));if(url.origin!=='https://dav.jianguoyun.com')throw new Error('Test blocked nonfixture network');return real(origin+url.pathname,options);};},localOrigin);

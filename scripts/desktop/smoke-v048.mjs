@@ -1,6 +1,6 @@
 // Focused settings-card spacing check; isolated local data, no AI or private materials.
 import {_electron as electron} from 'playwright';
-import {applyDesktopTestWindow,navigateDesktop} from './desktop-navigation.mjs';
+import {applyDesktopTestWindow,navigateDesktop,selectSettingsTab} from './desktop-navigation.mjs';
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {resolve, join} from 'node:path';
@@ -14,24 +14,28 @@ mkdirSync(artifacts,{recursive:true});mkdirSync(dataDirectory,{recursive:true});
 const results=[],measurements=[],externalRequests=[],rendererErrors=[];
 let app,page;
 const api=(action,payload={})=>page.evaluate(({action,payload})=>window.learning.request(action,payload),{action,payload});
-async function settings(){await navigateDesktop(page,'设置');await page.getByRole('heading',{name:'让空间，适合你',exact:true}).waitFor();}
+async function settings(){await navigateDesktop(page,'设置');await page.getByRole('heading',{name:'设置',exact:true}).waitFor();}
 async function checkLayout(name){
- await page.locator('.diagnostics-card').scrollIntoViewIfNeeded();
- await page.mouse.move(950,100);
- await page.locator('.sidebar.is-collapsed').waitFor();
- const layout=await page.locator('.settings-main').evaluate(main=>{
-  const cards=[...main.querySelectorAll(':scope > .settings-card')];
-  const bounds=cards.map(card=>{const r=card.getBoundingClientRect();return {title:card.querySelector('h2')?.textContent,top:r.top,bottom:r.bottom,left:r.left,right:r.right,marginBottom:getComputedStyle(card).marginBottom};});
-  const trash=main.querySelector('.project-trash-card').getBoundingClientRect();
-  const diagnostics=main.querySelector('.diagnostics-card').getBoundingClientRect();
-  return {bounds,gaps:bounds.slice(1).map((card,i)=>card.top-bounds[i].bottom),trashGap:diagnostics.top-trash.bottom,viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth};
- });
- measurements.push({name,...layout});
- await page.screenshot({path:join(artifacts,name+'.png'),scale:'css'});
- assert.equal(layout.bounds.length,8,'All seven original settings cards plus the new sync card must remain accessible');
- assert.ok(layout.gaps.every(gap=>gap>=16),name+': card separation must remain visible: '+JSON.stringify(layout.gaps));
- assert.ok(layout.bounds.every(card=>card.left>=0&&card.right<=layout.viewport+1),name+': cards must stay inside the window');
- assert.ok(layout.scrollWidth<=layout.viewport+1,name+': no page-wide horizontal overflow');
+ for(const [tab,id,expected] of [['学习','learning',2],['AI 与费用','ai',4],['数据与同步','data',4]]){
+  await selectSettingsTab(page,tab);
+  const section=page.locator('#settings-'+id);
+  await section.locator(':scope > .settings-card').last().scrollIntoViewIfNeeded();
+  await page.mouse.move(950,100);
+  await page.locator('.sidebar.is-collapsed').waitFor();
+  const layout=await section.evaluate(main=>{
+   const cards=[...main.querySelectorAll(':scope > .settings-card')];
+   const bounds=cards.map(card=>{const r=card.getBoundingClientRect();return {title:card.querySelector('h2')?.textContent,top:r.top,bottom:r.bottom,left:r.left,right:r.right,marginBottom:getComputedStyle(card).marginBottom};});
+   const trash=main.querySelector('.project-trash-card')?.getBoundingClientRect();
+   const diagnostics=main.querySelector('.diagnostics-card')?.getBoundingClientRect();
+   return {bounds,gaps:bounds.slice(1).map((card,i)=>card.top-bounds[i].bottom),trashGap:trash&&diagnostics?diagnostics.top-trash.bottom:undefined,viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth};
+  });
+  measurements.push({name,tab,...layout});
+  await page.screenshot({path:join(artifacts,name+'-'+id+'.png'),scale:'css'});
+  assert.equal(layout.bounds.length,expected,tab+': all settings cards remain reachable in their category');
+  assert.ok(layout.gaps.every(gap=>gap>=16),name+' '+tab+': card separation must remain visible: '+JSON.stringify(layout.gaps));
+  assert.ok(layout.bounds.every(card=>card.left>=0&&card.right<=layout.viewport+1),name+' '+tab+': cards must stay inside the window');
+  assert.ok(layout.scrollWidth<=layout.viewport+1,name+' '+tab+': no page-wide horizontal overflow');
+ }
  console.log('PASS '+name);results.push(name);
 }
 try{
@@ -45,6 +49,7 @@ try{
  await page.getByRole('button',{name:'浅色',exact:true}).click();
  await page.getByLabel('长期想成为怎样的自己').fill('布局验证：保留尚未保存的输入。');
  await checkLayout('light-settings-spacing');
+ await selectSettingsTab(page,'学习');
  await page.getByRole('button',{name:'深色',exact:true}).click();
  await checkLayout('dark-settings-spacing');
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1040,800));
@@ -53,7 +58,7 @@ try{
  assert.equal(await page.getByLabel('长期想成为怎样的自己').inputValue(),'布局验证：保留尚未保存的输入。');
  const fixture=await api('project.create',{title:'原创布局检查项目',goal:'仅检查删除卡片展开后的布局'});
  await api('project.trash',{id:fixture.projects.find(project=>project.title==='原创布局检查项目').id});
- await page.reload();await settings();
+ await page.reload();await settings();await selectSettingsTab(page,'数据与同步');
  await page.locator('.project-trash-card').getByRole('button',{name:'永久删除',exact:true}).click();
  await page.getByRole('button',{name:'预览本机诊断',exact:true}).click();
  await page.getByText('当前没有可预览的诊断记录。',{exact:true}).waitFor();

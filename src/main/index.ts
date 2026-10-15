@@ -17,7 +17,10 @@ import { HandwritingService } from './handwriting-service';
 import { HandwritingFeedbackService } from './handwriting-recognition';
 import { HandwritingServer, getHandwritingAddresses } from './handwriting-server';
 import { readableExport } from './readable-export';
-import { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, Notification } from 'electron';
+import { LocalReviewReminder } from './review-reminders';
+import { reconcileReviewSchedule } from './review-scheduler';
+import { dueReviewSummary, REVIEW_MINUTES } from '../shared/review-schedule';
 import {
   mkdirSync,
   readFileSync,
@@ -84,6 +87,8 @@ let win: BrowserWindow | undefined,
   visionCredentialFile: string,
   wasmPath: string;
 const workspaceGate = new WorkspaceTransitionGate();
+let reviewReminder: LocalReviewReminder | undefined;
+let reviewReminderTimer: ReturnType<typeof setInterval> | undefined;
 let syncService: WebDavSyncService;
 let validationService: ValidationService, validationRunner: CallRunner;
 let syncInitializationError = '';
@@ -153,6 +158,7 @@ function makeService() {
 }
 function snapshot(): WorkspaceSnapshot {
   reconcileDerivedState(store);
+  reconcileReviewSchedule(store);
   const s = store.snapshot({ includeHandwriting: false }),
     profiles = s.settings.modelProfiles ?? [],
     configured = credentials.configured(profiles);
@@ -410,6 +416,11 @@ async function handleRequest(action: DesktopAction, p: any = {}): Promise<unknow
   )
     throw new Error('图像识别正在进行，请稍后继续。文字和手写草稿仍可保存。');
   switch (action) {
+    case 'reminder.get':
+      return reviewReminder?.configuration() ?? { enabled: false, time: '19:00' };
+    case 'reminder.configure':
+      if (!reviewReminder) throw new Error('提醒设置尚未就绪。');
+      return reviewReminder.configure(p);
     case 'workspace.snapshot':
       return snapshot();
     case 'knowledge.view':
@@ -1299,6 +1310,7 @@ app
       : join(app.getAppPath(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
     store = await LearningStore.open(workspaceDir, wasmPath);
     makeService();
+    reviewReminder = new LocalReviewReminder(join(root, 'review-reminder.json'));
     try {
       syncService = new WebDavSyncService({
         directory: join(root, 'webdav-sync'),
@@ -1413,6 +1425,32 @@ app
     win.once('ready-to-show', () => win?.show());
     if (process.env.RECLIMB_DEV_URL) await win.loadURL(process.env.RECLIMB_DEV_URL);
     else await win.loadFile(join(__dirname, '../renderer/index.html'));
+    const remind = () => {
+      if (!reviewReminder) return;
+      try {
+        workspaceGate.assertAvailable();
+        const due = dueReviewSummary(store.snapshot({ includeHandwriting: false }));
+        reviewReminder.tick(due.count, new Date(), (count) => {
+          if (!Notification.isSupported()) return false;
+          const notification = new Notification({
+            title: '重登 · 今天的回访',
+            body: `有 ${count} 项回访到期，约 ${count * REVIEW_MINUTES} 分钟。`,
+          });
+          notification.on('click', () => {
+            if (win?.isMinimized()) win.restore();
+            win?.show();
+            win?.focus();
+          });
+          notification.show();
+          return true;
+        });
+      } catch {
+        // Notification delivery or a locked preference file must not interrupt learning.
+      }
+    };
+    reviewReminderTimer = setInterval(remind, 60000);
+    reviewReminderTimer.unref();
+    remind();
     app.on('second-instance', () => {
       if (win?.isMinimized()) win.restore();
       win?.focus();
@@ -1423,6 +1461,7 @@ app
     app.quit();
   });
 app.on('before-quit', () => {
+  if (reviewReminderTimer) clearInterval(reviewReminderTimer);
   void handwritingServer?.stop();
 });
 app.on('window-all-closed', () => app.quit());

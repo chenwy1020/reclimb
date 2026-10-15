@@ -10,7 +10,7 @@ import { LearningService } from '../src/main/learning-service';
 import type { Activity } from '../src/shared/types';
 const stores: LearningStore[] = [];
 afterEach(() => { for (const store of stores.splice(0)) store.close(); });
-const task = (instruction = '两条连接相同端点的路径最高能量分别为3和5。哪条提供更小的上界？说明比较的是路径上的哪个量。'): Activity => ({ title: '比较路径的最高能量', instruction, kind: 'selection', rubric: ['识别每条路径的最高能量', '比较这两个最高值'], sourceIds: ['f'], referenceAnswer: '比较的是各路径最高能量，选择最高能量为3的路径。', assessmentBasis: 'source' });
+const task = (instruction = '两条连接相同端点的路径最高能量分别为3和5。哪条提供更小的上界？说明比较的是路径上的哪个量。'): Activity => ({ title: '比较路径的最高能量', instruction, kind: 'selection', rubric: ['识别每条路径的最高能量', '比较这两个最高值'], sourceIds: ['f'], referenceAnswer: '比较的是各路径最高能量，选择最高能量为3的路径。', assessmentBasis: 'source', workSize: 'short' });
 const plan = (instruction?: string) => ({ steps: [
   { action: 'explain', title: '从泛函到一个实数', content: '泛函把一个函数或状态对应到一个实数。沿一条路径会经过不同状态，因此也会得到一串能量值。', sourceIds: ['f'] },
   { action: 'demonstrate', title: '先看不同例子', content: '若两条路径的最高能量分别为2和4，选择最高值较小的路径，其上界是2。这里先在路径上取最高，再比较路径。', sourceIds: ['f'] },
@@ -29,6 +29,16 @@ async function setup(respond: (input: any) => unknown | Promise<unknown>,reviewe
   const service = new LearningService(store, () => 'local-test-key', () => provider); return { store, service, inputs, requests };
 }
 const assessment = (input: any) => ({ outcome: 'met', feedback: '你正确比较了两个最高值。', criteria: input.activity.rubric.map((criterion: string) => ({ criterion, result: 'met', reason: '有明确比较' })), limitations: [], sourceIds: ['f'] });
+
+it('keeps a return to one brief retrieval task even when the normal study session is long',async()=>{
+ const t=await setup(input=>({steps:[{action:'check',title:'短回访',content:'先选方法并说明依据。',sourceIds:['f'],activity:task()}]}));
+ t.store.updateSettings({studyMinutes:60});
+ await t.service.start('p','c','delayed');
+ const input=t.inputs.find(item=>item.mode==='delayed');
+ expect(input.minutes).toBe(4);
+ expect(input.returnTask).toMatchObject({minutes:4,maxCriteria:2,workSize:'short'});
+ expect(input.returnTask.instruction).toContain('3–5 分钟');
+});
 
 describe('continuous teaching', () => {
   it('saves an explicit starting point without changing the long-term goal or inventing evidence', async () => {
@@ -108,7 +118,7 @@ it('keeps an unsuccessfully evaluated return attributed to its original review a
 });
 
 it('checks semantic transfer rather than publishing a merely reworded task',async()=>{
- const t=await setup(input=>'answer' in input?assessment(input):input.newActivity?{changedSituation:'只替换数字',sharedPrinciple:'比较最大值',requiredAdaptation:'无新增适配',verdict:'same_task',reason:'仍是完全相同的已给出最高值比较'}:input.mode==='transfer'?{steps:[{action:'check',title:'候选迁移',content:'另一个题目',sourceIds:['f'],activity:task('把最高能量改成7与9后比较。')}]}:plan());const origin=await t.service.start('p','c');await t.service.nextStep(origin.id,'continue');await t.service.nextStep(origin.id,'continue');await t.service.submit(origin.id,'选择较小最高值','transfer-origin');const due=t.store.list('reviews').find(r=>r.kind==='transfer')!;t.store.put('reviews',{...due,dueAt:'2026-01-01T00:00:00Z'});const count=t.store.list('sessions').length;
+ const t=await setup(input=>'answer' in input?assessment(input):input.newActivity?{changedSituation:'只替换数字',sharedPrinciple:'比较最大值',requiredAdaptation:'无新增适配',verdict:'same_task',reason:'仍是完全相同的已给出最高值比较'}:input.mode==='transfer'?{steps:[{action:'check',title:'候选迁移',content:'另一个题目',sourceIds:['f'],activity:task('把最高能量改成7与9后比较。')}]}:plan());const origin=await t.service.start('p','c');await t.service.nextStep(origin.id,'continue');await t.service.nextStep(origin.id,'continue');await t.service.submit(origin.id,'选择较小最高值','transfer-origin');const initial=t.store.list('reviews').find(r=>r.kind==='delayed')!;const due={...initial,kind:'transfer' as const,dueAt:'2026-01-01T00:00:00Z'};t.store.put('reviews',due);const count=t.store.list('sessions').length;
  await expect(t.service.start('p','c','transfer',due.id)).rejects.toThrow('表面变化');expect(t.store.list('sessions')).toHaveLength(count);expect(t.store.get('reviews',due.id)?.status).toBe('pending');expect(t.inputs.some(input=>input.oldActivity&&input.newActivity)).toBe(true);
 });
 

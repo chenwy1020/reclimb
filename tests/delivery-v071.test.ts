@@ -6,19 +6,10 @@ import {expect,it} from 'vitest';
 const {sourceFiles}=await import(pathToFileURL(resolve('scripts/source-files.mjs')).href);
 const {selectTestProfile}=await import(pathToFileURL(resolve('scripts/validation/test-profile.mjs')).href);
 
-it('aligns the maintenance version, installed app label and full-regression delivery contract',()=>{
- const pkg=JSON.parse(readFileSync('package.json','utf8'));
- const lock=JSON.parse(readFileSync('package-lock.json','utf8'));
+it('preserves the historical 0.7.1 full-regression delivery contract',()=>{
  const contract=JSON.parse(readFileSync('scripts/release/release-contract-v071.json','utf8'));
- expect(pkg.version).toBe('0.7.1');
- expect(lock.version).toBe(pkg.version);
- expect(lock.packages[''].version).toBe(pkg.version);
- expect(readFileSync('src/renderer/App.tsx','utf8')).toContain(`重登 · ${pkg.version}`);
- expect(contract).toEqual({version:pkg.version,suiteTag:'v071',expectedChecks:10,smokeScript:'smoke-v070.mjs',desktopReportName:'desktop-verification-v070.json',testScope:'full',targetTests:[]});
- expect(selectTestProfile(pkg.version)).toEqual({scope:contract.testScope,tests:contract.targetTests});
- expect(pkg.scripts['verify:package']).toContain('scripts/release/verify-package-v071.ps1');
- expect(pkg.scripts['test:desktop']).toContain(contract.smokeScript);
- expect(pkg.scripts['test:desktop:full']).toContain('smoke-ipc-validation.mjs');
+ expect(contract).toEqual({version:'0.7.1',suiteTag:'v071',expectedChecks:10,smokeScript:'smoke-v070.mjs',desktopReportName:'desktop-verification-v070.json',testScope:'full',targetTests:[]});
+ expect(selectTestProfile(contract.version)).toEqual({scope:contract.testScope,tests:contract.targetTests});
 });
 
 it('ships the maintenance verification entry point, dependency checks and upgrade guidance',()=>{
@@ -34,6 +25,6 @@ it('ships the maintenance verification entry point, dependency checks and upgrad
  expect(verifier).toContain('$contract.version');
  expect(verifier).toContain('$env:RECLIMB_TEST_EXECUTABLE = $report.executable');
  expect(verifier).toContain('smoke-ipc-validation.mjs');
- const readme=readFileSync('README.md','utf8');
- for(const file of ['docs/guides/使用说明-0.7.1.md','docs/verification/验证记录-0.7.1.md'])expect(readme).toContain(`](${file})`);
+ const index=readFileSync('docs/README.md','utf8');
+ for(const file of ['guides/使用说明-0.7.1.md','verification/验证记录-0.7.1.md'])expect(index).toContain(`](${file})`);
 });

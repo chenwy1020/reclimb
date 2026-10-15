@@ -670,39 +670,23 @@ export default function App() {
               onSeed={async () => {
                 const next = await run('sample.seed', {}, '内置练习示例已加入，可离线阅读与作答。');
                 const seeded = next ? visibleProjects(next.projects)[0] : undefined;
-                if (seeded) setProjectId(seeded.id);
+                if (seeded) await navigate('desk', seeded.id);
               }}
               onReview={reviewLesson}
               run={run}
             />
           )}
           {page !== 'home' && page !== 'settings' && (
-            <div className="page-heading">
-              <div>
-                <span className="eyebrow">
-                  {page === 'route'
-                    ? 'MAKE A PATH'
-                    : page === 'desk'
-                      ? 'LEARN BY DOING'
-                      : 'EVIDENCE OF GROWTH'}
-                </span>
+            <div
+              className={
+                'page-heading compact-page-heading' + (page === 'desk' ? ' desk-page-heading' : '')
+              }
+            >
+              {page !== 'desk' && (
                 <h1>
-                  {page === 'route'
-                    ? '让目标，有路可走'
-                    : page === 'desk'
-                      ? '把这一步，走扎实'
-                      : page === 'validation'
-                        ? '用独立任务检验学习'
-                        : '看见真实发生的成长'}
+                  {page === 'route' ? '学习路线' : page === 'validation' ? '独立验证' : '能力记录'}
                 </h1>
-                <p>
-                  {page === 'route'
-                    ? '从材料到能力，每一步都知道为什么。'
-                    : page === 'desk'
-                      ? '理解、亲自尝试，再一点点放开扶手。'
-                      : '记录你做到了什么，以及当时得到过多少帮助。'}
-                </p>
-              </div>
+              )}
               <div className="heading-actions">
                 {availableProjects.length > 0 && (
                   <label className="project-picker">
@@ -816,7 +800,7 @@ export default function App() {
             />
           )}
           <footer className="page-footer">
-            <Mountain size={14} /> 每一次独立走过的路，都会留下来。<span>重登 · 0.7.1</span>
+            <Mountain size={14} /> 每一次独立走过的路，都会留下来。<span>重登 · 0.8.0</span>
           </footer>
         </div>
       </main>

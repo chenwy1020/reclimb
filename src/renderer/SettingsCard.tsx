@@ -10,6 +10,7 @@ export default function SettingsCard({
   actions,
   children,
   className = '',
+  defaultOpen = false,
 }: {
   title: string;
   description: string;
@@ -17,8 +18,9 @@ export default function SettingsCard({
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(defaultOpen),
     contentId = useId(),
     descriptionId = useId();
   return (

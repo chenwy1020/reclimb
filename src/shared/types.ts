@@ -274,6 +274,14 @@ export interface Review {
   fromActivity?: Activity;
   completedEvidenceId?: string;
   completedTaskId?: string;
+  schedule?: {
+    version: 1;
+    step: number;
+    intervalDays: number;
+    previousReviewId?: string;
+    lastEvidenceId?: string;
+    needsRelearning?: boolean;
+  };
 }
 export interface VisionSettings {
   enabled: boolean;
@@ -426,6 +434,8 @@ export interface WorkspaceSnapshot {
   dataDirectory: string;
 }
 export type DesktopAction =
+  | 'reminder.get'
+  | 'reminder.configure'
   | 'knowledge.view'
   | 'knowledge.confirm'
   | 'knowledge.retract'

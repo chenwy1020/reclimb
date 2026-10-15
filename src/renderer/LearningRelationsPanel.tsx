@@ -15,6 +15,7 @@ import {
 import { Badge, Button, evidenceLabels, outcomeLabels, type Run } from './ui';
 import { RichText } from './RichText';
 import './knowledge-graph.css';
+import { layoutKnowledgeNodes } from './knowledge-graph-layout';
 
 type Navigate = (projectId: string, sessionId?: string) => void;
 const relationLabels: Record<KnowledgeRelationKind, string> = {
@@ -46,6 +47,7 @@ interface PanelProps {
   onSource: (id: string) => void;
   onNavigate?: Navigate;
   compact?: boolean;
+  suppressFeedbackAttemptIds?: string[];
 }
 
 export default function LearningRelationsPanel({
@@ -57,6 +59,7 @@ export default function LearningRelationsPanel({
   onSource,
   onNavigate,
   compact = false,
+  suppressFeedbackAttemptIds,
 }: PanelProps) {
   const [selection, setSelection] = useState(capabilityId ?? '');
   const available = s.capabilities.filter(
@@ -108,6 +111,7 @@ export default function LearningRelationsPanel({
               snapshot={s}
               project={project}
               target={selected}
+              suppressFeedbackAttemptIds={suppressFeedbackAttemptIds}
               busy={busy}
               run={run}
               onSource={onSource}
@@ -128,6 +132,7 @@ function KnowledgeContent({
   run,
   onSource,
   onNavigate,
+  suppressFeedbackAttemptIds,
 }: Omit<PanelProps, 'capabilityId' | 'compact'> & { target: Capability }) {
   const [search, setSearch] = useState(''),
     [sourceId, setSourceId] = useState(''),
@@ -232,7 +237,12 @@ function KnowledgeContent({
           <summary>
             当前能力的具体表现 <span>{currentEvidence.length}</span>
           </summary>
-          <KnowledgeEvidenceList entries={currentEvidence} snapshot={s} onNavigate={onNavigate} />
+          <KnowledgeEvidenceList
+            entries={currentEvidence}
+            snapshot={s}
+            onNavigate={onNavigate}
+            suppressFeedbackAttemptIds={suppressFeedbackAttemptIds}
+          />
         </details>
       )}
       <section className="knowledge-section">
@@ -308,6 +318,7 @@ function KnowledgeContent({
                 <h4>旧项目留下的具体表现</h4>
                 <KnowledgeEvidenceList
                   entries={candidate.evidence}
+                  suppressFeedbackAttemptIds={suppressFeedbackAttemptIds}
                   snapshot={s}
                   onNavigate={onNavigate}
                 />
@@ -456,8 +467,10 @@ export function KnowledgeEvidenceList({
   entries,
   snapshot: s,
   onNavigate,
+  suppressFeedbackAttemptIds = [],
 }: {
   entries: KnowledgeEvidenceView[];
+  suppressFeedbackAttemptIds?: string[];
   snapshot: WorkspaceSnapshot;
   onNavigate?: Navigate;
 }) {
@@ -488,7 +501,11 @@ export function KnowledgeEvidenceList({
               <span>{outcomeLabels[e.assessment.outcome]}</span>
             </div>
             {activity && <strong>{activity.title}</strong>}
-            <RichText text={e.assessment.feedback} />
+            {suppressFeedbackAttemptIds.includes(e.attemptId) ? (
+              <p className="knowledge-note">评价已在本次反馈或历史尝试中展示。</p>
+            ) : (
+              <RichText text={e.assessment.feedback} />
+            )}
             {!effective && (
               <p className="knowledge-warning">{reason || '这条旧依据需要重新核对。'}</p>
             )}
@@ -780,29 +797,26 @@ export function KnowledgeLocalGraph({ view }: { view: KnowledgeView }) {
           shown.some((node) => node.id === edge.from) && shown.some((node) => node.id === edge.to),
       )
       .slice(0, 24);
-  const column = (kind: string) =>
-    ['fragment', 'material', 'source'].includes(kind)
-      ? 0
-      : ['attempt', 'session', 'teachingVersion', 'teaching_version'].includes(kind)
-        ? 1
-        : kind === 'evidence'
-          ? 2
-          : 3;
-  const counts = [0, 0, 0, 0],
-    positions = new Map(
-      shown.map((node) => {
-        const col = column(node.kind),
-          row = counts[col]++;
-        return [node.id, { x: col * 210 + 8, y: row * 86 + 20 }];
-      }),
-    );
-  const height = Math.max(...counts, 1) * 86 + 20;
+  const { positions, height, width } = layoutKnowledgeNodes(shown);
   return (
     <details className="knowledge-section knowledge-graph">
-      <summary>局部关联图与文字说明</summary>
-      <p className="knowledge-note">沿来源、具体作答和证据查看联系；连线不表示能力已经掌握。</p>
-      <div className="knowledge-graph-scroll">
-        <svg viewBox={'0 0 840 ' + height} aria-hidden="true" focusable="false">
+      <summary>证据溯源图与文字说明</summary>
+      <p className="knowledge-note">
+        查看材料、原作答与表现记录的来源。连线含义见下方完整文字说明，也可将鼠标停在线上查看。
+      </p>
+      <div
+        className="knowledge-graph-scroll"
+        tabIndex={0}
+        role="region"
+        aria-label="可横向和纵向滚动的证据溯源图"
+      >
+        <svg
+          viewBox={'0 0 ' + width + ' ' + height}
+          width={width}
+          height={height}
+          aria-hidden="true"
+          focusable="false"
+        >
           {edges.map((edge) => {
             const from = positions.get(edge.from)!,
               to = positions.get(edge.to)!;
@@ -811,30 +825,25 @@ export function KnowledgeLocalGraph({ view }: { view: KnowledgeView }) {
                 <path
                   d={
                     'M' +
-                    (from.x + 185) +
+                    (from.x + from.width) +
                     ',' +
-                    (from.y + 27) +
+                    (from.y + from.height / 2) +
                     ' C' +
-                    (from.x + 205) +
+                    (from.x + from.width + 48) +
                     ',' +
-                    (from.y + 27) +
+                    (from.y + from.height / 2) +
                     ' ' +
                     (to.x - 20) +
                     ',' +
-                    (to.y + 27) +
+                    (to.y + to.height / 2) +
                     ' ' +
                     to.x +
                     ',' +
-                    (to.y + 27)
+                    (to.y + to.height / 2)
                   }
-                />
-                <text
-                  x={(from.x + 185 + to.x) / 2}
-                  y={(from.y + to.y) / 2 + 17}
-                  textAnchor="middle"
                 >
-                  {edge.label.slice(0, 12)}
-                </text>
+                  <title>{edge.label}</title>
+                </path>
               </g>
             );
           })}
@@ -842,9 +851,13 @@ export function KnowledgeLocalGraph({ view }: { view: KnowledgeView }) {
             const pos = positions.get(node.id)!;
             return (
               <g key={node.id}>
-                <rect x={pos.x} y={pos.y} width="184" height="55" rx="8" />
-                <text className="knowledge-node-label" x={pos.x + 12} y={pos.y + 32}>
-                  {node.label.length > 11 ? node.label.slice(0, 10) + '…' : node.label}
+                <rect x={pos.x} y={pos.y} width={pos.width} height={pos.height} rx="8" />
+                <text className="knowledge-node-label" x={pos.x + 12} y={pos.y + 24}>
+                  {pos.lines.map((line, index) => (
+                    <tspan key={index} x={pos.x + 12} dy={index ? 18 : 0}>
+                      {line}
+                    </tspan>
+                  ))}
                 </text>
                 <title>{node.label}</title>
               </g>

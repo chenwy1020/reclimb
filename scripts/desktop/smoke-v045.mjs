@@ -5,7 +5,7 @@ import {mkdirSync,writeFileSync,existsSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {createServer} from 'node:http';
 import {createRequire} from 'node:module';
-import {openDeskDetails} from './desktop-navigation.mjs';
+import {openDeskDetails,openDeskTools,closeDeskTools} from './desktop-navigation.mjs';
 
 const require=createRequire(import.meta.url),root=process.cwd(),stamp=Date.now().toString();
 const executable=process.env.RECLIMB_TEST_EXECUTABLE?.trim();
@@ -60,8 +60,8 @@ async function launch(){
  await page.getByRole('heading',{name:'你好，今天想往前走哪一步？'}).waitFor();
 }
 async function close(){if(app){await app.close();app=undefined;}}
-async function enterDesk(){await page.getByRole('button',{name:'继续上次学习',exact:true}).click();await page.mouse.move(900,100);await settle();}
-async function confused(label){await page.getByRole('button',{name:'这里没跟上',exact:true}).click();await page.getByRole('button',{name:label,exact:false}).click();await settle();}
+async function enterDesk(){await page.getByRole('button',{name:'继续上次学习',exact:true}).first().click();await page.mouse.move(900,100);await settle();}
+async function confused(label){await openDeskTools(page,'求助与追问');await page.getByRole('button',{name:'这里没跟上',exact:true}).click();await page.getByRole('button',{name:label,exact:false}).click();await settle();}
 const target=session=>({taskId:session.activity.id,stepId:session.teaching.current.id,version:session.teachingVersionId,upcoming:session.teaching.upcoming,draft:session.draft,checkpoint:session.checkpoint});
 try{
  await launch();let s=await snapshot();assert.equal(s.projects.length,0);assert.equal(s.settings.hasApiKey,false);record('隔离档案从空项目启动，未读取个人资料或真实密钥');
@@ -84,8 +84,8 @@ try{
  await confused('信息有点多，慢一点');active=await session();assert.deepEqual(target(active),expected);assert.equal(calls.at(-1).confusionKind,'overload');assert.equal(calls.at(-1).confusionCount,2);assert.equal(active.teaching.confusionCount,2);assert.equal(active.helpEvents.at(-1).scope,'navigation');assert.equal((await snapshot()).answerExposures.length,beforeNavigation);record('再次卡壳改为节奏支持，次数持续保存且导航不冒充答案帮助');
  failHelp=true;const beforeFailure=await session();await confused('我不明白为什么成立');active=await session();assert.deepEqual(target(active),expected);assert.equal(active.helpEvents.length,beforeFailure.helpEvents.length);assert.equal(active.teaching.confusionCount,2);assert.equal(await page.locator('.confusion-choices').count(),1);assert.ok(await page.getByRole('button',{name:'我不明白为什么成立',exact:false}).isEnabled());record('帮助调用失败保留原任务、草稿和成功计数，选择器保留重试入口');
  failHelp=false;await page.getByRole('button',{name:'我不明白为什么成立',exact:false}).click();await settle();active=await session();assert.deepEqual(target(active),expected);assert.equal(active.teaching.confusionCount,3);assert.equal(calls.at(-1).confusionCount,3);assert.equal(active.helpEvents.length,beforeFailure.helpEvents.length+1);assert.equal((await snapshot()).evidence.length,0);assert.equal(await page.locator('.confusion-choices').count(),0);record('原入口可以重试并获得不同解释，失败不重复写帮助或产生评价');
- await page.getByRole('button',{name:'换一个更小的入口',exact:true}).click();await settle();active=await session();assert.notEqual(active.activity.id,expected.taskId);assert.ok(active.activity.instruction.length>500);assert.equal(active.teaching.returnStep.id,expected.stepId);assert.equal((await api('session.verification',{sessionId})).canAssess,true);const smaller=calls.findLast(input=>input.intent==='smaller');assert.equal(smaller.smallerLimits.maxInstruction,2400);record('主动换小任务仍保留完整长资料，减少操作负荷并经过核验');
- const beforeReturn=calls.length;await page.getByRole('button',{name:'回到原来这一步',exact:true}).click();await settle();active=await session();assert.equal(active.activity.id,expected.taskId);assert.equal(active.teaching.current.id,expected.stepId);assert.equal(active.teachingVersionId,expected.version);assert.equal(active.draft,draft);assert.equal(calls.length,beforeReturn);assert.ok(await page.getByRole('button',{name:'提交这次尝试',exact:true}).isEnabled());record('可返回原学习任务和完整草稿，返回本身不调用模型');
+ await openDeskTools(page,'调整学习安排');await openDeskDetails(page);await page.getByRole('button',{name:'换一个更小的入口',exact:true}).click();await settle();active=await session();assert.notEqual(active.activity.id,expected.taskId);assert.ok(active.activity.instruction.length>500);assert.equal(active.teaching.returnStep.id,expected.stepId);assert.equal((await api('session.verification',{sessionId})).canAssess,true);const smaller=calls.findLast(input=>input.intent==='smaller');assert.equal(smaller.smallerLimits.maxInstruction,2400);record('主动换小任务仍保留完整长资料，减少操作负荷并经过核验');
+ const beforeReturn=calls.length;await closeDeskTools(page);await page.getByRole('button',{name:'回到原来这一步',exact:true}).click();await settle();active=await session();assert.equal(active.activity.id,expected.taskId);assert.equal(active.teaching.current.id,expected.stepId);assert.equal(active.teachingVersionId,expected.version);assert.equal(active.draft,draft);assert.equal(calls.length,beforeReturn);assert.ok(await page.getByRole('button',{name:'提交这次尝试',exact:true}).isEnabled());record('可返回原学习任务和完整草稿，返回本身不调用模型');
  await close();await launch();await enterDesk();active=await session();assert.equal(active.activity.id,expected.taskId);assert.equal(active.teaching.current.id,expected.stepId);assert.equal(active.draft,draft);assert.equal(active.messages.filter(message=>message.role==='assistant'&&message.kind==='confused').length,3);assert.equal((await snapshot()).evidence.length,0);record('重启后原学习位置、草稿和三次成功帮助保持完整');
  await page.screenshot({path:join(artifacts,'stuck-support.png'),fullPage:true});await close();assert.deepEqual(rendererErrors,[]);assert.deepEqual(externalRequests,[]);record('桌面无渲染异常，全部模型请求只访问本机模拟服务');
  const report={at:new Date().toISOString(),executable:executable||'development-electron',passed:results.length,results,localMockRequests:calls.length,externalRequests,stderr,network:'仅127.0.0.1模拟服务，无真实AI调用或个人数据',limitations:['仅针对本次帮助流程和相邻缩步行为，不是全量功能验收。','模拟响应验证软件行为，不证明真实教学有效性或数学正确性。'],artifacts};

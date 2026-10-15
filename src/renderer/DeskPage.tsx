@@ -1,3 +1,6 @@
+import './desk.css';
+import { DeskTools } from './DeskTools';
+import { TaskFeedback } from './TaskFeedback';
 import PlanningControls from './PlanningControls';
 import LearningRelationsPanel, { KnowledgeImpactNotice } from './LearningRelationsPanel';
 import OperationStatus from './OperationStatus';
@@ -108,6 +111,9 @@ export default function DeskPage({
   onRecord: RecordLocalInput;
   onRespond: RespondToInput;
 }) {
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [focusChoice, setFocusChoice] = useState<{ key: string; enabled: boolean }>();
+  const draftInputRef = useRef<HTMLTextAreaElement>(null);
   const verification = useVerification(session, s);
   const submissionRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const [explore, setExplore] = useState('');
@@ -230,33 +236,405 @@ export default function DeskPage({
         m.kind !== 'review_solution' &&
         (!session.teaching || m.kind !== 'teaching'),
     ) || [];
+  const currentFeedback = canAttempt
+    ? attempts.find(
+        (a) => a.assessment && (a.taskId === taskId || (!a.taskId && !session?.teaching)),
+      )
+    : undefined;
+  const historicalAttempts = attempts.filter((a) => a.id !== currentFeedback?.id);
+  const savedFeedback = new Set(
+    attempts.filter((a) => a.assessment).map((a) => a.assessment!.feedback.trim()),
+  );
+  const teachingHistory = session?.teaching?.history ?? [];
+  const pendingInputs =
+    session?.messages.filter(
+      (message) =>
+        message.role === 'user' && message.inputId && message.responseState !== 'completed',
+    ).length ?? 0;
+  const focusKey = [session?.id, taskId, step?.action].join('|');
+  const independent =
+    !!session &&
+    (session.teaching?.guidance === 'independent' ||
+      step?.action === 'check' ||
+      session.mode === 'delayed' ||
+      session.mode === 'transfer' ||
+      (s.validationRuns ?? []).some((item) => item.sessionId === session.id));
+  const focused = canAttempt && (focusChoice?.key === focusKey ? focusChoice.enabled : independent);
+  function insertSymbol(symbol: string) {
+    const input = draftInputRef.current;
+    const start = input?.selectionStart ?? draft.length;
+    const end = input?.selectionEnd ?? start;
+    onDraft(draft.slice(0, start) + symbol + draft.slice(end));
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + symbol.length, start + symbol.length);
+    });
+  }
+  function toggleFocus() {
+    setFocusChoice({ key: focusKey, enabled: !focused });
+    setToolsOpen(false);
+  }
   return (
-    <>
+    <div className="desk-workspace" data-focus={focused}>
       <div className="desk-toolbar">
         <div className="desk-project">
-          <span className="book-tile small">
-            <BookOpen size={18} />
-          </span>
-          <div>
-            <strong>{project.title}</strong>
-            {unit && (
-              <small>
-                {unit.title} · {unitPhaseLabels[unit.phase]}
-              </small>
-            )}
-          </div>
-          {session && (
-            <Badge tone={session.status === 'paused' ? 'amber' : 'green'}>
-              {session.status === 'paused'
-                ? '先休息一下'
-                : session.teaching?.guidance === 'independent'
-                  ? '正在独立尝试'
-                  : session.teaching
-                    ? '有人陪着走'
-                    : '正在学习'}
-            </Badge>
+          <BookOpen size={17} />
+          <strong>{project.title}</strong>
+          {unit && <small>{unit.title}</small>}
+        </div>
+        <div className="desk-quick-actions">
+          {canAttempt && session && (
+            <Button variant="ghost" onClick={toggleFocus}>
+              {focused ? '退出专注作答' : '专注作答'}
+            </Button>
+          )}
+          {!focused && (
+            <Button
+              aria-expanded={toolsOpen}
+              aria-controls="desk-tools"
+              onClick={() => setToolsOpen(true)}
+            >
+              学习工具{pendingInputs > 0 ? ` · ${pendingInputs} 条待回应` : ''}
+            </Button>
           )}
         </div>
+      </div>
+      <section className="learning-panel" aria-labelledby="current-task-title">
+        {!session || !activity ? (
+          <Empty
+            icon={Compass}
+            title="先找一个能够进入的小地方"
+            action={
+              <Button variant="primary" disabled={busy} onClick={() => void onStart()}>
+                <Play size={16} />
+                从我的起点开始
+              </Button>
+            }
+          >
+            从材料中的一个问题开始。
+          </Empty>
+        ) : (
+          <>
+            <div className="task-status-row">
+              <Badge tone="green">
+                {session.status === 'paused'
+                  ? '已暂停'
+                  : step
+                    ? phaseLabels[step.action]
+                    : '亲自尝试'}
+              </Badge>
+              <button
+                className="verification-badge text-button"
+                disabled={focused}
+                onClick={() => setToolsOpen(true)}
+                title="打开学习工具查看核验依据"
+              >
+                <ShieldCheck size={14} />
+                {verification.error
+                  ? '核验待重读'
+                  : verification.loading
+                    ? '正在读取核验'
+                    : verification.view?.canAssess
+                      ? '题目已核对'
+                      : '可保存 · 待核验'}
+              </button>
+            </div>
+            <div className="activity guided-activity">
+              {step && (step.action === 'explain' || step.action === 'demonstrate') && (
+                <p className="quiet-note">AI 讲解 · 例子可能是补充说明，请用引用核对原理。</p>
+              )}
+              <h2 id="current-task-title">
+                {step?.action === 'feedback' ? activity.title : step?.title || activity.title}
+              </h2>
+              {activity.demand && (
+                <div className="task-demand">
+                  <Badge>
+                    {
+                      {
+                        recognize: '辨认',
+                        explain: '解释',
+                        calculate: '计算',
+                        derive: '推导',
+                        compare: '比较',
+                        integrate: '综合应用',
+                        transfer: '迁移应用',
+                        synthesize: '提炼方法',
+                      }[activity.demand.kind]
+                    }{' '}
+                    ·{' '}
+                    {
+                      {
+                        1: '单步判断',
+                        2: '少量步骤',
+                        3: '多步联系',
+                        4: '复杂综合',
+                        5: '开放问题',
+                      }[activity.demand.complexity]
+                    }
+                  </Badge>
+                  <span>
+                    {{ 1: '熟悉情境', 2: '有所变化的情境', 3: '新的情境' }[activity.demand.novelty]}{' '}
+                    ·{' '}
+                    {activity.demand.scaffolding === 'independent'
+                      ? '独立完成'
+                      : activity.demand.scaffolding === 'supported'
+                        ? '有限支持'
+                        : '带领完成'}
+                  </span>
+                </div>
+              )}
+              {step && (step.action !== 'feedback' || !currentFeedback) ? (
+                <RichText text={step.content} />
+              ) : null}
+              {canAttempt &&
+                (!step ||
+                  (step.action === 'feedback' && !!currentFeedback) ||
+                  step.content.trim() !== activity.instruction.trim()) && (
+                  <RichText text={activity.instruction} />
+                )}{' '}
+              {activity.workSize === 'extended' && (
+                <Badge tone="neutral">这是一项可跨会话完成的任务</Badge>
+              )}
+              {activity.milestones?.length ? (
+                <ol className="task-milestones">
+                  {activity.milestones.map((milestone, index) => (
+                    <li key={index}>
+                      <span>{index + 1}</span>
+                      <RichText text={milestone} />
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              {!focused && (
+                <SourceLinks
+                  ids={step?.sourceIds.length ? step.sourceIds : activity.sourceIds}
+                  snapshot={s}
+                  onSource={onSource}
+                />
+              )}
+            </div>
+            <KnowledgeImpactNotice
+              snapshot={s}
+              projectId={project.id}
+              capabilityId={session.capabilityId}
+              teachingVersionId={session.teachingVersionId ?? activity.teachingVersionId}
+            />
+            {session.teaching?.returnStep && (
+              <div className="return-banner">
+                <Compass size={16} />
+                <span>你正在一条探索支线。原来的任务与草稿仍在。</span>
+                <Button variant="ghost" disabled={busy} onClick={() => void next('return')}>
+                  <ArrowLeft size={14} />
+                  回到原来这一步
+                </Button>
+              </div>
+            )}
+            {session.status === 'paused' ? (
+              <div className="pause-card">
+                <Leaf size={25} />
+                <h3>先歇一会儿，路还在。</h3>
+                <RichText text={session.checkpoint || '当前步骤、草稿与未解问题已经保存在本机。'} />
+                <Button
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run('session.resume', { id: session.id }, '已经回到原来的学习位置。')
+                  }
+                >
+                  <Play size={15} />
+                  回到这一步
+                </Button>
+              </div>
+            ) : (
+              <>
+                {canAttempt ? (
+                  <div className="draft-section">
+                    <div className="section-heading">
+                      <h3>
+                        {step?.action === 'feedback'
+                          ? '根据反馈，修订这次尝试'
+                          : step?.action === 'check'
+                            ? '这次，我自己试试'
+                            : '我在这一小步的想法'}
+                      </h3>
+                      <span
+                        className={
+                          'save-state ' + (draftStatus.includes('失败') ? 'save-error' : '')
+                        }
+                      >
+                        <span />
+                        {draftStatus}
+                      </span>
+                    </div>
+                    <textarea
+                      ref={draftInputRef}
+                      aria-label="我的尝试"
+                      className="draft-input"
+                      placeholder="先留下你已经能判断的一部分。可以用一句话、一个式子、一小段推导，或写出目前卡住的地方。"
+                      value={draft}
+                      onChange={(e) => onDraft(e.target.value)}
+                      onBlur={onSave}
+                    />
+                    <div className="draft-bottom">
+                      <span>
+                        {draft.length} 字 ·{' '}
+                        {session.helpLevel > 0
+                          ? '这道任务获得过帮助，会保留具体条件'
+                          : '这道任务尚未获得直接提示'}
+                      </span>
+                      <Button
+                        variant="primary"
+                        disabled={recording || !draft.trim()}
+                        onClick={() => void record('attempt', draft)}
+                      >
+                        <ArrowRight size={16} />
+                        {recording
+                          ? '正在保存…'
+                          : step?.action === 'feedback'
+                            ? '提交这次修订'
+                            : '提交这次尝试'}
+                      </Button>
+                    </div>
+                    <details className="draft-preview">
+                      <summary>公式工具与实时预览</summary>
+                      <div className="math-tools" aria-label="常用公式">
+                        {[
+                          '$\\alpha$',
+                          '$\\leq$',
+                          '$\\sum_{n=1}^{N}$',
+                          '$\\frac{a}{b}$',
+                          '$\\sqrt{x}$',
+                        ].map((symbol) => (
+                          <Button key={symbol} onClick={() => insertSymbol(symbol)}>
+                            {symbol}
+                          </Button>
+                        ))}
+                      </div>
+                      <div aria-live="polite">
+                        <RichText text={draft || '输入后在这里核对公式。'} />
+                      </div>
+                    </details>
+                    <LocalRecordNotice
+                      receipt={receipt}
+                      recording={recording}
+                      error={recordError}
+                      availability={availability}
+                      canAssess={verification.view?.canAssess}
+                    />
+                  </div>
+                ) : (
+                  <div className="no-test-note">
+                    <Leaf size={16} />
+                    <span>
+                      {step?.action === 'demonstrate'
+                        ? '这一段先跟着示范走，不需要立刻证明掌握。'
+                        : '这一段是在建立理解，不需要提交答案。'}
+                      阅读经历会保留，不会算作能力证据。
+                    </span>
+                  </div>
+                )}
+
+                {(!canAttempt || !currentFeedback) && (
+                  <div className="next-actions">
+                    <Button
+                      variant={canAttempt ? 'secondary' : 'primary'}
+                      disabled={busy}
+                      onClick={() => void next('continue')}
+                    >
+                      {canAttempt ? '按当前理解继续' : '继续下一步'}
+                      <ArrowRight size={15} />
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+            {currentFeedback?.assessment && (
+              <TaskFeedback
+                attempt={currentFeedback}
+                activity={activity}
+                snapshot={s}
+                onSource={onSource}
+                onContinue={() => void next('continue')}
+                busy={busy || session.status === 'paused'}
+              />
+            )}
+            <div className="session-footer">
+              <span>
+                <ShieldCheck size={14} />
+                步骤、草稿与过程保存在本机
+              </span>
+              {session.status !== 'paused' && (
+                <button
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(
+                      'session.pause',
+                      { id: session.id },
+                      '已暂停，当前步骤与探索分支均保留。',
+                    )
+                  }
+                >
+                  <Pause size={14} />
+                  先休息一下
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </section>
+      <DeskTools open={toolsOpen && !focused} onClose={() => setToolsOpen(false)}>
+        {!s.settings.hasApiKey && (
+          <div className="setup-inline">
+            <Sparkles size={18} />
+            <span>可以离线阅读、保存想法。解释、共同尝试与评价需要配置 AI 服务。</span>
+            <button className="text-button" onClick={onSettings}>
+              前往设置
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        )}
+        <OperationStatus
+          snapshot={s}
+          projectId={project.id}
+          sessionId={session?.id}
+          kinds={['input_response']}
+          busy={busy}
+          run={run}
+        />
+        <section className="reader-panel">
+          <div className="panel-label">
+            <FileText size={16} />
+            <h2>材料与原页</h2>
+            <span>随时回去核对</span>
+          </div>
+          <SourceReader
+            active={toolsOpen && !focused}
+            restorePosition
+            snapshot={s}
+            projectId={project.id}
+            focusId={step?.sourceIds[0] || activity?.sourceIds[0]}
+            run={run}
+            followup={
+              session
+                ? (fragment) => (
+                    <FollowupBox
+                      key={session.id + fragment.id}
+                      sessionId={session.id}
+                      anchor={{ kind: 'source', id: fragment.id }}
+                      title={fragment.locator}
+                      snapshot={s}
+                      busy={busy}
+                      onRecord={onRecord}
+                      onRespond={onRespond}
+                      onSettings={onSettings}
+                      onSource={onSource}
+                    />
+                  )
+                : undefined
+            }
+          />
+        </section>
         <details className="desk-more">
           <summary>切换会话与更多操作</summary>
           <div className="desk-controls">
@@ -302,543 +680,11 @@ export default function DeskPage({
             </Button>
           </div>
         </details>
-      </div>
-      {!s.settings.hasApiKey && (
-        <div className="setup-inline">
-          <Sparkles size={18} />
-          <span>可以离线阅读、保存想法。解释、共同尝试与评价需要配置 AI 服务。</span>
-          <button className="text-button" onClick={onSettings}>
-            前往设置
-            <ArrowRight size={14} />
-          </button>
-        </div>
-      )}
-      <OperationStatus
-        snapshot={s}
-        projectId={project.id}
-        sessionId={session?.id}
-        kinds={['input_response']}
-        busy={busy}
-        run={run}
-      />
-      <div className="desk-columns">
-        <section className="reader-panel">
-          <div className="panel-label">
-            <FileText size={16} />
-            <h2>材料与原页</h2>
-            <span>随时回去核对</span>
-          </div>
-          <SourceReader
-            restorePosition
-            snapshot={s}
-            projectId={project.id}
-            focusId={step?.sourceIds[0] || activity?.sourceIds[0]}
-            run={run}
-            followup={
-              session
-                ? (fragment) => (
-                    <FollowupBox
-                      key={session.id + fragment.id}
-                      sessionId={session.id}
-                      anchor={{ kind: 'source', id: fragment.id }}
-                      title={fragment.locator}
-                      snapshot={s}
-                      busy={busy}
-                      onRecord={onRecord}
-                      onRespond={onRespond}
-                      onSettings={onSettings}
-                      onSource={onSource}
-                    />
-                  )
-                : undefined
-            }
-          />
-        </section>
-        <section className="learning-panel">
-          {!session || !activity ? (
-            <Empty
-              icon={Compass}
-              title="先找一个能够进入的小地方"
-              action={
-                <Button variant="primary" disabled={busy} onClick={() => void onStart()}>
-                  <Play size={16} />
-                  从我的起点开始
-                </Button>
-              }
-            >
-              陌生的内容可以先解释、看一个例子，再尝试其中一小步。无需先证明自己已经会了。
-            </Empty>
-          ) : (
-            <>
-              <PlanningControls
-                snapshot={s}
-                project={project}
-                unitId={unit?.id}
-                busy={busy}
-                run={run}
-                onSelectSession={onSelectSession}
-              />
-              <KnowledgeImpactNotice
-                snapshot={s}
-                projectId={project.id}
-                capabilityId={session.capabilityId}
-                teachingVersionId={session.teachingVersionId ?? activity.teachingVersionId}
-              />
-              <LearningRelationsPanel
-                compact
-                snapshot={s}
-                project={project}
-                capabilityId={session.capabilityId}
-                busy={busy}
-                run={run}
-                onSource={onSource}
-                onNavigate={onKnowledgeNavigate}
-              />
-              <div className="teaching-location">
-                <span className="eyebrow">
-                  {unit ? unitPhaseLabels[unit.phase] : '这一刻，只走眼前的一步'}
-                </span>
-                <Badge tone="green">{step ? phaseLabels[step.action] : '亲自尝试'}</Badge>
-                <div className="activity-purpose">
-                  <Target size={15} />
-                  <span>围绕：{unit?.coreQuestion || capability?.title || project.goal}</span>
-                </div>
-                {position?.nextRequirement && (
-                  <p className="position-reason">这一步应增加的要求：{position.nextRequirement}</p>
-                )}
-              </div>
-              {session.teaching?.returnStep && (
-                <div className="return-banner">
-                  <Compass size={16} />
-                  <span>你正在一条探索支线。原来的任务与草稿仍在。</span>
-                  <Button variant="ghost" disabled={busy} onClick={() => void next('return')}>
-                    <ArrowLeft size={14} />
-                    回到原来这一步
-                  </Button>
-                </div>
-              )}
-              <ReliabilityPanel
-                session={session}
-                snapshot={s}
-                view={verification.view}
-                error={verification.error}
-                busy={busy}
-                run={run}
-                onSolution={onSolution}
-                onRefresh={verification.refresh}
-                loading={verification.loading}
-                onSource={onSource}
-              />
-              <div className="activity guided-activity">
-                {step && (step.action === 'explain' || step.action === 'demonstrate') && (
-                  <p className="quiet-note">AI 讲解 · 例子可能是补充说明，请用引用核对原理。</p>
-                )}
-                <h2>{step?.title || activity.title}</h2>
-                {activity.demand && (
-                  <div className="task-demand">
-                    <Badge>
-                      {
-                        {
-                          recognize: '辨认',
-                          explain: '解释',
-                          calculate: '计算',
-                          derive: '推导',
-                          compare: '比较',
-                          integrate: '综合应用',
-                          transfer: '迁移应用',
-                          synthesize: '提炼方法',
-                        }[activity.demand.kind]
-                      }{' '}
-                      ·{' '}
-                      {
-                        {
-                          1: '单步判断',
-                          2: '少量步骤',
-                          3: '多步联系',
-                          4: '复杂综合',
-                          5: '开放问题',
-                        }[activity.demand.complexity]
-                      }
-                    </Badge>
-                    <span>
-                      {
-                        { 1: '熟悉情境', 2: '有所变化的情境', 3: '新的情境' }[
-                          activity.demand.novelty
-                        ]
-                      }{' '}
-                      ·{' '}
-                      {activity.demand.scaffolding === 'independent'
-                        ? '独立完成'
-                        : activity.demand.scaffolding === 'supported'
-                          ? '有限支持'
-                          : '带领完成'}
-                    </span>
-                  </div>
-                )}
-                {step ? <RichText text={step.content} /> : null}
-                {canAttempt && (!step || step.content.trim() !== activity.instruction.trim()) && (
-                  <RichText text={activity.instruction} />
-                )}{' '}
-                {activity.workSize === 'extended' && (
-                  <Badge tone="neutral">这是一项可跨会话完成的任务</Badge>
-                )}
-                {activity.milestones?.length ? (
-                  <ol className="task-milestones">
-                    {activity.milestones.map((milestone, index) => (
-                      <li key={index}>
-                        <span>{index + 1}</span>
-                        <RichText text={milestone} />
-                      </li>
-                    ))}
-                  </ol>
-                ) : null}
-                <SourceLinks
-                  ids={step?.sourceIds.length ? step.sourceIds : activity.sourceIds}
-                  snapshot={s}
-                  onSource={onSource}
-                />
-                {canAttempt && (
-                  <details className="rubric" open>
-                    <summary>做到这些，就留下了本次表现</summary>
-                    <ul>
-                      {activity.rubric.map((r, i) => (
-                        <li key={i}>
-                          <span>{i + 1}</span>
-                          <RichText text={r} />
-                        </li>
-                      ))}
-                    </ul>
-                    <small>
-                      {activity.assessmentBasis === 'ai'
-                        ? '这是 AI 拟定的标准；缺少直接材料依据时会保留不确定性。'
-                        : '结合材料内容与本次标准核对，不能据此宣布全面掌握。'}
-                    </small>
-                  </details>
-                )}
-                {step && (
-                  <FollowupBox
-                    key={[session.id, step.id, step.teachingVersionId].join('|')}
-                    sessionId={session.id}
-                    anchor={{
-                      kind: 'step',
-                      id: step.id,
-                      teachingVersionId: step.teachingVersionId ?? session.teachingVersionId,
-                    }}
-                    title={step.title}
-                    snapshot={s}
-                    busy={busy}
-                    onRecord={onRecord}
-                    onRespond={onRespond}
-                    onSettings={onSettings}
-                    onSource={onSource}
-                    allowExample
-                  />
-                )}
-              </div>
-              {session.status === 'paused' ? (
-                <div className="pause-card">
-                  <Leaf size={25} />
-                  <h3>先歇一会儿，路还在。</h3>
-                  <RichText
-                    text={session.checkpoint || '当前步骤、草稿与未解问题已经保存在本机。'}
-                  />
-                  <Button
-                    variant="primary"
-                    disabled={busy}
-                    onClick={() =>
-                      void run('session.resume', { id: session.id }, '已经回到原来的学习位置。')
-                    }
-                  >
-                    <Play size={15} />
-                    回到这一步
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <HandwritingPanel
-                    session={session}
-                    snapshot={s}
-                    busy={busy}
-                    run={run}
-                    onSettings={onSettings}
-                    onSource={onSource}
-                    onRecord={onRecord}
-                  />
-                  {canAttempt ? (
-                    <div className="draft-section">
-                      <div className="section-heading">
-                        <h3>
-                          {step?.action === 'feedback'
-                            ? '根据反馈，修订这次尝试'
-                            : step?.action === 'check'
-                              ? '这次，我自己试试'
-                              : '我在这一小步的想法'}
-                        </h3>
-                        <span
-                          className={
-                            'save-state ' + (draftStatus.includes('失败') ? 'save-error' : '')
-                          }
-                        >
-                          <span />
-                          {draftStatus}
-                        </span>
-                      </div>
-                      <textarea
-                        aria-label="我的尝试"
-                        className="draft-input"
-                        placeholder="先留下你已经能判断的一部分。可以用一句话、一个式子、一小段推导，或写出目前卡住的地方。"
-                        value={draft}
-                        onChange={(e) => onDraft(e.target.value)}
-                        onBlur={onSave}
-                      />
-                      {draft && (
-                        <details className="draft-preview">
-                          <summary>预览文字与公式</summary>
-                          <RichText text={draft} />
-                        </details>
-                      )}
-                      <div className="draft-bottom">
-                        <span>
-                          {draft.length} 字 ·{' '}
-                          {session.helpLevel > 0
-                            ? '这道任务获得过帮助，会保留具体条件'
-                            : '这道任务尚未获得直接提示'}
-                        </span>
-                        <Button
-                          variant="primary"
-                          disabled={recording || !draft.trim()}
-                          onClick={() => void record('attempt', draft)}
-                        >
-                          <ArrowRight size={16} />
-                          {recording
-                            ? '正在保存…'
-                            : step?.action === 'feedback'
-                              ? '提交这次修订'
-                              : '提交这次尝试'}
-                        </Button>
-                      </div>
-                      <LocalRecordNotice
-                        receipt={receipt}
-                        recording={recording}
-                        error={recordError}
-                        availability={availability}
-                        canAssess={verification.view?.canAssess}
-                      />
-                    </div>
-                  ) : (
-                    <div className="no-test-note">
-                      <Leaf size={16} />
-                      <span>
-                        {step?.action === 'demonstrate'
-                          ? '这一段先跟着示范走，不需要立刻证明掌握。'
-                          : '这一段是在建立理解，不需要提交答案。'}
-                        阅读经历会保留，不会算作能力证据。
-                      </span>
-                    </div>
-                  )}
-                  {!canAttempt && (
-                    <div className="draft-section note-section">
-                      <div className="section-heading">
-                        <h3>留下一点理解或疑问</h3>
-                      </div>
-                      <textarea
-                        aria-label="我的学习笔记"
-                        className="draft-input"
-                        value={note}
-                        onChange={(e) => setNote(e.target.value)}
-                        placeholder="记下你刚理解的意思，或仍没跟上的地方…"
-                      />
-                      <div className="draft-bottom">
-                        <span>学习笔记不作为能力证据</span>
-                        <Button
-                          variant="primary"
-                          disabled={recording || !note.trim()}
-                          onClick={() => void record('note', note)}
-                        >
-                          保存这条笔记
-                        </Button>
-                      </div>
-                      <LocalRecordNotice
-                        receipt={receipt}
-                        recording={recording}
-                        error={recordError}
-                        availability={availability}
-                        kind="note"
-                      />
-                    </div>
-                  )}
-                  <div className="next-actions">
-                    <Button
-                      variant={canAttempt && step?.action !== 'feedback' ? 'secondary' : 'primary'}
-                      disabled={busy}
-                      onClick={() => void next('continue')}
-                    >
-                      {canAttempt ? '按当前理解继续' : '继续下一步'}
-                      <ArrowRight size={15} />
-                    </Button>
-                    <details className="next-options">
-                      <summary>调整目标／难度</summary>
-                      <Button disabled={busy} onClick={() => void next('challenge')}>
-                        太简单，增加挑战
-                      </Button>
-                      <Button disabled={busy} onClick={() => void next('advance')}>
-                        进入下一单元
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => {
-                          setShowUnderstanding((value) => !value);
-                          setUnderstandingPhase('synthesize');
-                        }}
-                      >
-                        整理我的理解
-                      </Button>
-                      <Button variant="ghost" disabled={busy} onClick={() => void next('smaller')}>
-                        换一个更小的入口
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => void next('independent')}
-                      >
-                        我想自己试一次
-                      </Button>
-                    </details>
-                  </div>
-                  {showUnderstanding && (
-                    <section className="understanding-panel">
-                      <div className="section-heading">
-                        <div>
-                          <h3>理解稿：在读厚与读薄之间往返</h3>
-                          <p className="section-caption">
-                            保存自己的解释、例子、反例、推导和疑问。AI
-                            整理始终标明来源，不会成为你的能力证据。
-                          </p>
-                        </div>
-                        <select
-                          aria-label="理解稿阶段"
-                          value={understandingPhase}
-                          onChange={(event) =>
-                            setUnderstandingPhase(event.target.value as 'expand' | 'synthesize')
-                          }
-                        >
-                          <option value="expand">读厚 · 补联系与边界</option>
-                          <option value="synthesize">读薄 · 重组核心骨架</option>
-                        </select>
-                      </div>
-                      <input
-                        aria-label="理解稿标题"
-                        value={understandingTitle}
-                        onChange={(event) => setUnderstandingTitle(event.target.value)}
-                        placeholder="给这版理解起一个名字"
-                      />
-                      <textarea
-                        aria-label="我的理解稿"
-                        value={understandingText}
-                        onChange={(event) => setUnderstandingText(event.target.value)}
-                        placeholder={
-                          understandingPhase === 'expand'
-                            ? '写下自己的解释、例子、反例、推导、联系或仍未解决的问题…'
-                            : '不用复述全书，试着重组核心问题、关键条件、证明骨架和方法边界…'
-                        }
-                      />
-                      <div className="understanding-actions">
-                        <Button
-                          variant="ghost"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(
-                              'understanding.suggest',
-                              {
-                                projectId: project.id,
-                                unitId: unit?.id,
-                                phase: understandingPhase,
-                              },
-                              'AI 整理建议已另存为一版，并标记为 AI 内容。',
-                            )
-                          }
-                        >
-                          请 AI 整理一份建议
-                        </Button>
-                        <Button
-                          variant="primary"
-                          disabled={busy || !understandingText.trim()}
-                          onClick={async () => {
-                            const saved = await run(
-                              'understanding.save',
-                              {
-                                projectId: project.id,
-                                unitId: unit?.id,
-                                phase: understandingPhase,
-                                title: understandingTitle,
-                                text: understandingText,
-                                sourceIds: activity.sourceIds,
-                                sourceInputIds: [],
-                                basedOnDraftId,
-                              },
-                              '这版理解已保存。',
-                            );
-                            if (saved) {
-                              setUnderstandingText('');
-                              setBasedOnDraftId(undefined);
-                            }
-                          }}
-                        >
-                          保存我的这一版
-                        </Button>
-                      </div>
-                      {understandingDrafts.length > 0 && (
-                        <div className="understanding-history">
-                          <h4>这个单元已有的理解版本</h4>
-                          {understandingDrafts.map((item) => (
-                            <article key={item.id}>
-                              <div>
-                                <Badge
-                                  tone={
-                                    item.blocks.some((block) => block.author === 'ai')
-                                      ? 'amber'
-                                      : 'green'
-                                  }
-                                >
-                                  {item.blocks.some((block) => block.author === 'ai')
-                                    ? 'AI 建议'
-                                    : item.blocks.some(
-                                          (block) => block.author === 'learner_edited_ai',
-                                        )
-                                      ? '我修订了 AI 建议'
-                                      : '我的原述'}
-                                </Badge>
-                                <strong>{item.title}</strong>
-                                <small>
-                                  第 {item.version} 版 · {item.phase === 'expand' ? '读厚' : '读薄'}
-                                </small>
-                              </div>
-                              {item.blocks.map((block) => (
-                                <RichText key={block.id} text={block.text} />
-                              ))}
-                              {item.blocks.some((block) => block.author === 'ai') && (
-                                <Button
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setUnderstandingText(
-                                      item.blocks.map((block) => block.text).join('\n\n'),
-                                    );
-                                    setBasedOnDraftId(item.id);
-                                    setUnderstandingTitle(item.title + '（我的修订）');
-                                  }}
-                                >
-                                  以这份建议为底稿修订
-                                </Button>
-                              )}
-                            </article>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-                  )}
-                </>
-              )}
+
+        {session && activity && (
+          <>
+            <details className="desk-tool-section">
+              <summary>求助与追问</summary>
               <div className="help-area">
                 <div className="help-title">
                   <Lightbulb size={17} />
@@ -891,25 +737,25 @@ export default function DeskPage({
                   </div>
                 )}
               </div>
-              {session.teaching?.upcoming.length ? (
-                <details className="upcoming-steps">
-                  <summary>
-                    <Compass size={16} />
-                    接下来可能这样走
-                    <ChevronDown size={15} />
-                  </summary>
-                  <p>只预告近处；你也可以探索、换方向或暂停。</p>
-                  {session.teaching.upcoming.slice(0, 4).map((up, i) => (
-                    <div key={up.id}>
-                      <span>{i + 1}</span>
-                      <div>
-                        <strong>{up.title}</strong>
-                        <small>{phaseLabels[up.action]}</small>
-                      </div>
-                    </div>
-                  ))}
-                </details>
-              ) : null}
+              {step && (
+                <FollowupBox
+                  key={[session.id, step.id, step.teachingVersionId].join('|')}
+                  sessionId={session.id}
+                  anchor={{
+                    kind: 'step',
+                    id: step.id,
+                    teachingVersionId: step.teachingVersionId ?? session.teachingVersionId,
+                  }}
+                  title={step.title}
+                  snapshot={s}
+                  busy={busy}
+                  onRecord={onRecord}
+                  onRespond={onRespond}
+                  onSettings={onSettings}
+                  onSource={onSource}
+                  allowExample
+                />
+              )}
               {teaching.length > 0 && (
                 <div className="conversation">
                   <h3>
@@ -950,103 +796,6 @@ export default function DeskPage({
                     </article>
                   ))}
                 </div>
-              )}
-              <InputHistory
-                key={session.id}
-                snapshot={s}
-                session={session}
-                onRecord={onRecord}
-                busy={busy}
-                onRespond={onRespond}
-                onSettings={onSettings}
-                onSource={onSource}
-              />
-              {attempts.find((a) => a.taskId === taskId && a.assessment) && (
-                <section className="recent-feedback">
-                  <h3>最近反馈</h3>
-                  <RichText
-                    text={
-                      attempts.find((a) => a.taskId === taskId && a.assessment)?.assessment
-                        ?.feedback
-                    }
-                  />
-                </section>
-              )}
-              {attempts.length > 0 && (
-                <details className="attempts-history">
-                  <summary>历史尝试与完整评价（{attempts.length}）</summary>
-                  <section className="attempt-history">
-                    <div className="section-heading">
-                      <h3>这段学习留下的尝试</h3>
-                      <span className="muted tiny">{attempts.length} 次 · 分别保留任务条件</span>
-                    </div>
-                    {attempts.map((a, i) => (
-                      <details className="attempt-card" key={a.id} open={i === 0}>
-                        <summary>
-                          <span>
-                            {a.assessment
-                              ? outcomeLabels[a.assessment.outcome]
-                              : '尝试已保存 · 评价尚未完成'}
-                          </span>
-                          <small>
-                            {timeLabel(a.submittedAt)} ·{' '}
-                            {a.helpLevel ? '当前题获得过帮助' : '当前题无直接提示'}
-                          </small>
-                          <ChevronDown size={16} />
-                        </summary>
-                        <div className="attempt-task-label">
-                          {a.activitySnapshot?.title || activity.title}
-                          {a.taskId && a.taskId !== taskId && <Badge>之前的任务</Badge>}
-                        </div>
-                        {a.activitySnapshot && (
-                          <details className="attempt-original-task">
-                            <summary>查看当时的任务与条件</summary>
-                            <RichText text={a.activitySnapshot.instruction} />
-                            <SourceLinks
-                              ids={a.activitySnapshot.sourceIds}
-                              snapshot={s}
-                              onSource={onSource}
-                            />
-                          </details>
-                        )}
-                        {s.evidence
-                          .filter((e) => e.attemptId === a.id)
-                          .map((e) => (
-                            <EvidenceCorrection key={e.id} snapshot={s} evidence={e} />
-                          ))}
-                        <RichText className="attempt-text" text={a.text} />
-                        {a.assessment ? (
-                          <AssessmentView
-                            assessment={a.assessment}
-                            snapshot={s}
-                            onSource={onSource}
-                          />
-                        ) : (
-                          <div className="retry-assessment">
-                            <p className="quiet-note">
-                              作答与当时的任务条件已保留。可以重新评价这次尝试，当前步骤与草稿仍会留下。
-                            </p>
-                            <Button
-                              disabled={recording}
-                              onClick={() =>
-                                void onRecord(session.id, {
-                                  text: a.text,
-                                  requestId: a.requestId,
-                                  kind: 'attempt',
-                                  taskId: a.taskId,
-                                  stepId: a.stepId,
-                                  teachingVersionId: a.teachingVersionId,
-                                }).catch((e) => setRecordError(String(e.message || e)))
-                              }
-                            >
-                              重试这次评价
-                            </Button>
-                          </div>
-                        )}
-                      </details>
-                    ))}
-                  </section>
-                </details>
               )}
               <div className="exploration">
                 <button className="explore-toggle" onClick={() => setShowExplore(!showExplore)}>
@@ -1117,17 +866,289 @@ export default function DeskPage({
                   </div>
                 )}
               </div>
-              {session.teaching?.history.length ? (
+            </details>
+            <details className="desk-tool-section">
+              <summary>笔记与理解稿</summary>
+              {!canAttempt && (
+                <div className="draft-section note-section">
+                  <div className="section-heading">
+                    <h3>留下一点理解或疑问</h3>
+                  </div>
+                  <textarea
+                    aria-label="我的学习笔记"
+                    className="draft-input"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="记下你刚理解的意思，或仍没跟上的地方…"
+                  />
+                  <div className="draft-bottom">
+                    <span>学习笔记不作为能力证据</span>
+                    <Button
+                      variant="secondary"
+                      disabled={recording || !note.trim()}
+                      onClick={() => void record('note', note)}
+                    >
+                      保存这条笔记
+                    </Button>
+                  </div>
+                  <LocalRecordNotice
+                    receipt={receipt}
+                    recording={recording}
+                    error={recordError}
+                    availability={availability}
+                    kind="note"
+                  />
+                </div>
+              )}
+              {showUnderstanding && (
+                <section className="understanding-panel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>理解稿：在读厚与读薄之间往返</h3>
+                      <p className="section-caption">
+                        保存自己的解释、例子、反例、推导和疑问。AI
+                        整理始终标明来源，不会成为你的能力证据。
+                      </p>
+                    </div>
+                    <select
+                      aria-label="理解稿阶段"
+                      value={understandingPhase}
+                      onChange={(event) =>
+                        setUnderstandingPhase(event.target.value as 'expand' | 'synthesize')
+                      }
+                    >
+                      <option value="expand">读厚 · 补联系与边界</option>
+                      <option value="synthesize">读薄 · 重组核心骨架</option>
+                    </select>
+                  </div>
+                  <input
+                    aria-label="理解稿标题"
+                    value={understandingTitle}
+                    onChange={(event) => setUnderstandingTitle(event.target.value)}
+                    placeholder="给这版理解起一个名字"
+                  />
+                  <textarea
+                    aria-label="我的理解稿"
+                    value={understandingText}
+                    onChange={(event) => setUnderstandingText(event.target.value)}
+                    placeholder={
+                      understandingPhase === 'expand'
+                        ? '写下自己的解释、例子、反例、推导、联系或仍未解决的问题…'
+                        : '不用复述全书，试着重组核心问题、关键条件、证明骨架和方法边界…'
+                    }
+                  />
+                  <div className="understanding-actions">
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(
+                          'understanding.suggest',
+                          {
+                            projectId: project.id,
+                            unitId: unit?.id,
+                            phase: understandingPhase,
+                          },
+                          'AI 整理建议已另存为一版，并标记为 AI 内容。',
+                        )
+                      }
+                    >
+                      请 AI 整理一份建议
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={busy || !understandingText.trim()}
+                      onClick={async () => {
+                        const saved = await run(
+                          'understanding.save',
+                          {
+                            projectId: project.id,
+                            unitId: unit?.id,
+                            phase: understandingPhase,
+                            title: understandingTitle,
+                            text: understandingText,
+                            sourceIds: activity.sourceIds,
+                            sourceInputIds: [],
+                            basedOnDraftId,
+                          },
+                          '这版理解已保存。',
+                        );
+                        if (saved) {
+                          setUnderstandingText('');
+                          setBasedOnDraftId(undefined);
+                        }
+                      }}
+                    >
+                      保存我的这一版
+                    </Button>
+                  </div>
+                  {understandingDrafts.length > 0 && (
+                    <div className="understanding-history">
+                      <h4>这个单元已有的理解版本</h4>
+                      {understandingDrafts.map((item) => (
+                        <article key={item.id}>
+                          <div>
+                            <Badge
+                              tone={
+                                item.blocks.some((block) => block.author === 'ai')
+                                  ? 'amber'
+                                  : 'green'
+                              }
+                            >
+                              {item.blocks.some((block) => block.author === 'ai')
+                                ? 'AI 建议'
+                                : item.blocks.some((block) => block.author === 'learner_edited_ai')
+                                  ? '我修订了 AI 建议'
+                                  : '我的原述'}
+                            </Badge>
+                            <strong>{item.title}</strong>
+                            <small>
+                              第 {item.version} 版 · {item.phase === 'expand' ? '读厚' : '读薄'}
+                            </small>
+                          </div>
+                          {item.blocks.map((block) => (
+                            <RichText key={block.id} text={block.text} />
+                          ))}
+                          {item.blocks.some((block) => block.author === 'ai') && (
+                            <Button
+                              variant="ghost"
+                              onClick={() => {
+                                setUnderstandingText(
+                                  item.blocks.map((block) => block.text).join('\n\n'),
+                                );
+                                setBasedOnDraftId(item.id);
+                                setUnderstandingTitle(item.title + '（我的修订）');
+                              }}
+                            >
+                              以这份建议为底稿修订
+                            </Button>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+              <Button variant="ghost" onClick={() => setShowUnderstanding((value) => !value)}>
+                整理我的理解
+              </Button>
+            </details>
+            <details className="desk-tool-section">
+              <summary>手写与已保存记录</summary>
+              <HandwritingPanel
+                session={session}
+                snapshot={s}
+                busy={busy}
+                run={run}
+                onSettings={onSettings}
+                onSource={onSource}
+                onRecord={onRecord}
+              />
+              <InputHistory
+                key={session.id}
+                snapshot={s}
+                session={session}
+                onRecord={onRecord}
+                busy={busy}
+                onRespond={onRespond}
+                onSettings={onSettings}
+                onSource={onSource}
+              />
+              {historicalAttempts.length > 0 && (
+                <details className="attempts-history">
+                  <summary>历史尝试与完整评价（{historicalAttempts.length}）</summary>
+                  <section className="attempt-history">
+                    <div className="section-heading">
+                      <h3>这段学习留下的尝试</h3>
+                      <span className="muted tiny">
+                        {historicalAttempts.length} 次 · 分别保留任务条件
+                      </span>
+                    </div>
+                    {historicalAttempts.map((a, i) => (
+                      <details className="attempt-card" key={a.id} open={i === 0}>
+                        <summary>
+                          <span>
+                            {a.assessment
+                              ? outcomeLabels[a.assessment.outcome]
+                              : '尝试已保存 · 评价尚未完成'}
+                          </span>
+                          <small>
+                            {timeLabel(a.submittedAt)} ·{' '}
+                            {a.helpLevel ? '当前题获得过帮助' : '当前题无直接提示'}
+                          </small>
+                          <ChevronDown size={16} />
+                        </summary>
+                        <div className="attempt-task-label">
+                          {a.activitySnapshot?.title || activity.title}
+                          {a.taskId && a.taskId !== taskId && <Badge>之前的任务</Badge>}
+                        </div>
+                        {a.activitySnapshot && (
+                          <details className="attempt-original-task">
+                            <summary>查看当时的任务与条件</summary>
+                            <RichText text={a.activitySnapshot.instruction} />
+                            <SourceLinks
+                              ids={a.activitySnapshot.sourceIds}
+                              snapshot={s}
+                              onSource={onSource}
+                            />
+                          </details>
+                        )}
+                        {s.evidence
+                          .filter((e) => e.attemptId === a.id)
+                          .map((e) => (
+                            <EvidenceCorrection key={e.id} snapshot={s} evidence={e} />
+                          ))}
+                        <RichText className="attempt-text" text={a.text} />
+                        {a.assessment ? (
+                          <AssessmentView
+                            assessment={a.assessment}
+                            snapshot={s}
+                            onSource={onSource}
+                          />
+                        ) : (
+                          <div className="retry-assessment">
+                            <p className="quiet-note">
+                              作答与当时的任务条件已保留。可以重新评价这次尝试，当前步骤与草稿仍会留下。
+                            </p>
+                            <Button
+                              disabled={recording}
+                              onClick={() =>
+                                void onRecord(session.id, {
+                                  text: a.text,
+                                  requestId: a.requestId,
+                                  kind: 'attempt',
+                                  taskId: a.taskId,
+                                  stepId: a.stepId,
+                                  teachingVersionId: a.teachingVersionId,
+                                }).catch((e) => setRecordError(String(e.message || e)))
+                              }
+                            >
+                              重试这次评价
+                            </Button>
+                          </div>
+                        )}
+                      </details>
+                    ))}
+                  </section>
+                </details>
+              )}
+              {teachingHistory.length ? (
                 <details className="teaching-history">
                   <summary>
-                    已经走过的解释与示范 <span>{session.teaching.history.length}</span>
+                    已经走过的解释与示范 <span>{teachingHistory.length}</span>
                     <ChevronDown size={15} />
                   </summary>
-                  {session.teaching.history.map((h, index) => (
+                  {teachingHistory.map((h, index) => (
                     <article key={[h.id, h.teachingVersionId, index].join('|')}>
                       <Badge>{phaseLabels[h.action]}</Badge>
                       <h3>{h.title}</h3>
-                      <RichText text={h.content} />
+                      {h.action === 'feedback' && savedFeedback.has(h.content.trim()) ? (
+                        <p className="quiet-note">
+                          这次评价见本次反馈或历史尝试，以下保留当时的追问。
+                        </p>
+                      ) : (
+                        <RichText text={h.content} />
+                      )}
                       <SourceLinks ids={h.sourceIds} snapshot={s} onSource={onSource} />
                       <FollowupBox
                         key={session.id}
@@ -1151,32 +1172,124 @@ export default function DeskPage({
                   ))}
                 </details>
               ) : null}
-              <div className="session-footer">
-                <span>
-                  <ShieldCheck size={14} />
-                  步骤、草稿与过程保存在本机
+            </details>
+            <details className="desk-tool-section">
+              <summary>调整学习安排</summary>
+              <div className="teaching-location">
+                <span className="eyebrow">
+                  {unit ? unitPhaseLabels[unit.phase] : '这一刻，只走眼前的一步'}
                 </span>
-                {session.status !== 'paused' && (
-                  <button
-                    className="text-button"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        'session.pause',
-                        { id: session.id },
-                        '已暂停，当前步骤与探索分支均保留。',
-                      )
-                    }
-                  >
-                    <Pause size={14} />
-                    先休息一下
-                  </button>
+                <Badge tone="green">{step ? phaseLabels[step.action] : '亲自尝试'}</Badge>
+                <div className="activity-purpose">
+                  <Target size={15} />
+                  <span>围绕：{unit?.coreQuestion || capability?.title || project.goal}</span>
+                </div>
+                {position?.nextRequirement && (
+                  <p className="position-reason">这一步应增加的要求：{position.nextRequirement}</p>
                 )}
               </div>
-            </>
-          )}
-        </section>
-      </div>
-    </>
+              <PlanningControls
+                snapshot={s}
+                project={project}
+                unitId={unit?.id}
+                busy={busy}
+                run={run}
+                onSelectSession={onSelectSession}
+              />
+              <details className="next-options">
+                <summary>调整目标／难度</summary>
+                <Button disabled={busy} onClick={() => void next('challenge')}>
+                  太简单，增加挑战
+                </Button>
+                <Button disabled={busy} onClick={() => void next('advance')}>
+                  进入下一单元
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setShowUnderstanding((value) => !value);
+                    setUnderstandingPhase('synthesize');
+                  }}
+                >
+                  整理我的理解
+                </Button>
+                <Button variant="ghost" disabled={busy} onClick={() => void next('smaller')}>
+                  换一个更小的入口
+                </Button>
+                <Button variant="ghost" disabled={busy} onClick={() => void next('independent')}>
+                  我想自己试一次
+                </Button>
+              </details>
+              {session.teaching?.upcoming.length ? (
+                <details className="upcoming-steps">
+                  <summary>
+                    <Compass size={16} />
+                    接下来可能这样走
+                    <ChevronDown size={15} />
+                  </summary>
+                  <p>只预告近处；你也可以探索、换方向或暂停。</p>
+                  {session.teaching.upcoming.slice(0, 4).map((up, i) => (
+                    <div key={up.id}>
+                      <span>{i + 1}</span>
+                      <div>
+                        <strong>{up.title}</strong>
+                        <small>{phaseLabels[up.action]}</small>
+                      </div>
+                    </div>
+                  ))}
+                </details>
+              ) : null}
+            </details>
+            <details className="desk-tool-section">
+              <summary>核验与疑问</summary>
+              {canAttempt && (
+                <details className="rubric">
+                  <summary>做到这些，就留下了本次表现</summary>
+                  <ul>
+                    {activity.rubric.map((r, i) => (
+                      <li key={i}>
+                        <span>{i + 1}</span>
+                        <RichText text={r} />
+                      </li>
+                    ))}
+                  </ul>
+                  <small>
+                    {activity.assessmentBasis === 'ai'
+                      ? '这是 AI 拟定的标准；缺少直接材料依据时会保留不确定性。'
+                      : '结合材料内容与本次标准核对，不能据此宣布全面掌握。'}
+                  </small>
+                </details>
+              )}
+              <ReliabilityPanel
+                session={session}
+                snapshot={s}
+                view={verification.view}
+                error={verification.error}
+                busy={busy}
+                run={run}
+                onSolution={onSolution}
+                onRefresh={verification.refresh}
+                loading={verification.loading}
+                onSource={onSource}
+              />
+            </details>
+            <LearningRelationsPanel
+              suppressFeedbackAttemptIds={attempts
+                .filter((attempt) => attempt.assessment)
+                .map((attempt) => attempt.id)}
+              compact
+              snapshot={s}
+              project={project}
+              capabilityId={session.capabilityId}
+              busy={busy}
+              run={run}
+              onSource={onSource}
+              onNavigate={onKnowledgeNavigate}
+            />
+          </>
+        )}
+      </DeskTools>
+    </div>
   );
 }

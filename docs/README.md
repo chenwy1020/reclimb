@@ -1,13 +1,16 @@
 # 文档索引
 
-当前版本为 **0.7.1 维护预发行版**。从 [0.7.1 使用说明](guides/使用说明-0.7.1.md)了解安装与本轮修复，从 [0.7 使用说明](guides/使用说明-0.7.md)了解学习关联功能；可复现检查范围与未验证事项分别见各版验证记录。
+当前版本为 **0.8.0 产品整改预发行版**。从 [0.8.0 使用说明](guides/使用说明-0.8.0.md)了解安装、学习台与回访，从 [0.7 使用说明](guides/使用说明-0.7.md)了解学习关联功能；可复现检查范围与未验证事项分别见各版验证记录。
 
 [返回项目入口](../README.md) · [脚本与开发命令](../scripts/README.md)
+
+本轮产品整改见[第二轮产品评审处理记录](superpowers/product-review-2026-10-15.md)：学习台减负、连续回访与本机提醒、首次配置、原创模型评测。已发布的 0.7.1 标签及安装包保留。
 
 ## 当前版本与近期基线
 
 | 版本 | 使用与设计 | 验证与实施依据 |
 | --- | --- | --- |
+| **0.8.0** | [使用说明](guides/使用说明-0.8.0.md) | [验证记录](verification/验证记录-0.8.0.md)、[产品评审处理记录](superpowers/product-review-2026-10-15.md)、[实施计划](superpowers/plans/2026-10-15-product-review.md) |
 | **0.7.1** | [使用说明](guides/使用说明-0.7.1.md) | [验证记录](verification/验证记录-0.7.1.md)、[评估逐项处理记录](superpowers/review-2026-10-15.md)、[修复计划](superpowers/plans/2026-10-15-review-remediation.md) |
 | **0.7** | [学习关联使用说明](guides/使用说明-0.7.md)、[知识图谱设计](superpowers/specs/2026-09-30-knowledge-graph-design.md) | [验证记录](verification/验证记录-0.7.md)、[实施计划](superpowers/plans/2026-09-30-knowledge-graph.md)、[实施进度](superpowers/plans/2026-09-30-knowledge-graph-progress.md) |
 | **0.6** | [整改方案](plans/重登-0.6-整改方案.md)、[产品审查总结](design/重登-产品审查总结.md) | [验证记录](verification/验证记录-0.6.md)；本版没有独立使用说明，相关功能与边界见整改方案 |

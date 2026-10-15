@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
-import {mkdtempSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
 import {createRequire} from 'node:module';
 import {_electron as electron} from 'playwright';
 
 const require = createRequire(import.meta.url);
 const data = mkdtempSync(join(tmpdir(), 'reclimb-ipc-validation-'));
 const executable = process.env.RECLIMB_TEST_EXECUTABLE?.trim();
+const artifacts = resolve(process.env.RECLIMB_TEST_ARTIFACT_DIR?.trim() || 'output/playwright/ipc-validation');
+const externalRequests = [];
+let passed = 0, completed = false;
 const app = await electron.launch({
   executablePath: executable || require('electron'),
   args: executable ? [] : ['.'],
@@ -22,6 +25,7 @@ const app = await electron.launch({
 
 try {
   const page = await app.firstWindow();
+  page.on('request', request => { if (/^https?:/.test(request.url())) externalRequests.push(request.url()); });
   await page.getByRole('heading', {name: '你好，今天想往前走哪一步？'}).waitFor();
   const api = (action, payload = {}) => page.evaluate(
     ({action, payload}) => window.learning.request(action, payload),
@@ -71,6 +75,7 @@ try {
   for (const [action, payload] of invalid) {
     await assert.rejects(api(action, payload));
     assert.deepEqual(protectedRecords(await api('workspace.snapshot')), protectedRecords(before), action + ' must reject invalid input before saving help or exposure');
+    passed++;
     console.log('PASS malformed ' + action + ' leaves independent-task records unchanged');
   }
   await api('session.help', {sessionId, kind: 'answer'});
@@ -78,7 +83,12 @@ try {
   assert.equal(after.sessions.find(item => item.id === sessionId).helpLevel, 4);
   assert.ok(after.validationRuns.find(item => item.id === run.id).exposures.some(item => item.kind === 'answer'));
   assert.equal(after.usage.length, 0);
+  assert.deepEqual(externalRequests, []);
+  passed++;
+  completed = true;
   console.log('PASS valid answer request preserves help/exposure tracking without model calls');
 } finally {
   await app.close();
+  mkdirSync(artifacts, {recursive: true});
+  writeFileSync(join(artifacts, 'ipc-validation.json'), JSON.stringify({at:new Date().toISOString(),validationStatus:completed?'passed':'failed',passed,executable:executable||'development-electron',externalRequests}, null, 2));
 }

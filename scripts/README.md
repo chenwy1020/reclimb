@@ -8,6 +8,8 @@
 | 类型检查、构建应用 | `npm run build` |
 | 运行全部单元测试 | `npm test` |
 | 当前版本桌面检查 | `npm run test:desktop` |
+| 产品评审布局与交互检查 | `npm run test:desktop:product` |
+| 原创模型评测（默认离线校验） | `npm run evaluate:product -- --workspace <新账本绝对路径> --config <配置绝对路径> --fixture <案例绝对路径> --report <新报告绝对路径> --cap 3` |
 | 累计桌面回归检查 | `npm run test:desktop:full` |
 | 按发布契约选择测试范围 | `npm run test:patch` |
 | 创建 Windows 安装包 | `npm run package` |

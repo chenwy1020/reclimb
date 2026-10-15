@@ -46,7 +46,7 @@ export function teachingContentHash(
     )
     .digest('hex');
 }
-export const REVIEW_POLICY_VERSION = '0.3.1-source-contract-1';
+export const REVIEW_POLICY_VERSION = '0.8.0-public-task-contract-2';
 function blocker(
   code: VerificationBlockerCode,
   source?: TeachingSource,
@@ -414,7 +414,7 @@ export class VerificationService {
             ? { issue: options.dispute.issue, messages: options.dispute.messages }
             : undefined,
           instruction:
-            '返回status,summary,issues,privateSolution,branches,exposureRelations,sourceChecks,assessmentFindings,mathChecks。所有关联编号只能选择本次提供的真实ID；不要用步骤序号、标题或自编编号代替step.id。issues无法定位单一步骤时省略stepId，不能编造。sourceChecks对每个仍有OCR、未核、待核或其余部分未验证警告的来源逐项列出；即使其中某个选区已经人工确认，也不能把整页其他公式当作已确认。逐项给出sourceId、consistency、usesCriticalSymbols、independentlyEstablished和reason。consistency明确写consistent/conflicting/uncertain/not_used；若来源与题设、示范或标准矛盾，必须conflicting，不能用肯定性summary覆盖。例如来源只给出≥α，而任务强制要求>α时必须指出条件冲突；不要把这类实质差异说成格式差异。若关键符号仍依赖不清楚的OCR且不能独立确立，不得ready；独立确立必须说明依据，不能把来源ID存在当内容可靠。若提供disputedAssessments，独立核对旧评审是否误判等价表达或合理质疑；逐条按evidenceId返回uphold/invalidate/uncertain，不因题目本身有效就维护错误评价。branches.condition指题设中的客观条件，不是用户答对或答错；核验时没有用户答案，不能以其未来表现决定条件适用性。同一criterionIndex在当前固定题设中不得同时applies与does_not_apply，无法判定时写unknown。branches逐项说明条件是否适用及对应criterionIndexes（从0开始）；expectedBehavior写可接受答案，包括有效质疑/不适用。对每个给定exposureId判断same_task/different_task/uncertain；只换名称、数字排列或把同一道已讲题缩成填空不算新独立任务。mathChecks只形式化可确定的算术，不能用计算通过代替核对自然语言前提。',
+            '返回status,summary,issues,privateSolution,branches,exposureRelations,sourceChecks,assessmentFindings,mathChecks。所有关联编号只能选择本次提供的真实ID；不要用步骤序号、标题或自编编号代替step.id。issues无法定位单一步骤时省略stepId，不能编造。sourceChecks对每个仍有OCR、未核、待核或其余部分未验证警告的来源逐项列出；即使其中某个选区已经人工确认，也不能把整页其他公式当作已确认。逐项给出sourceId、consistency、usesCriticalSymbols、independentlyEstablished和reason。consistency明确写consistent/conflicting/uncertain/not_used；若来源与题设、示范或标准矛盾，必须conflicting，不能用肯定性summary覆盖。例如来源只给出≥α，而任务强制要求>α时必须指出条件冲突；不要把这类实质差异说成格式差异。若关键符号仍依赖不清楚的OCR且不能独立确立，不得ready；独立确立必须说明依据，不能把来源ID存在当内容可靠。若提供disputedAssessments，独立核对旧评审是否误判等价表达或合理质疑；逐条按evidenceId返回uphold/invalidate/uncertain，不因题目本身有效就维护错误评价。branches.condition指题设中的客观条件，不是用户答对或答错；核验时没有用户答案，不能以其未来表现决定条件适用性。核验对象是当前题目要求作出的判断，不是所有可能追问。若题目要求判断能否推出、信息是否足够或指出缺少的条件，信息不足本身可以是合法结论；没有给定某条件是已知事实，应核对这一结论能否由题设确立，不得仅因无法确定所谈对象的真实值就把题目判为不可评分。若题目却强求缺条件下的唯一数值或确定结论，仍须标记相关unknown并阻断，不能猜补前提。只列影响当前任务可完成性或公开标准的条件分支，不为不影响当前判断的额外假设制造unknown；若现有事实已足以推出当前所问结论，要说明该不变性依据。发现真实相关未知条件时必须保留unknown，不得为绕过闸门删除分支、清空criterionIndexes或改标does_not_apply。同一criterionIndex在当前固定题设中不得同时applies与does_not_apply，无法判定时写unknown。branches逐项说明条件是否适用及对应criterionIndexes（从0开始）；expectedBehavior写可接受答案，包括有效质疑/不适用。expectedBehavior只解释公开题干和rubric要求的可接受表现，不得增加公开题干和rubric未要求的必述句或额外评价要求。公式、数值关系或等价表述已清楚体现的条件使用可作为依据，不要求逐字重述；若公开任务明确要求说明某条件为何必要，仍需真实逻辑解释，不能仅凭正确结果替代。对每个给定exposureId判断same_task/different_task/uncertain；只换名称、数字排列或把同一道已讲题缩成填空不算新独立任务。mathChecks只形式化可确定的算术，不能用计算通过代替核对自然语言前提。',
         },
         {
           settings,

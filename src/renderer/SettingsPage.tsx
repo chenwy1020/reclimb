@@ -2,6 +2,8 @@ import SettingsCard from './SettingsCard';
 import WebDavSyncPanel from './WebDavSyncPanel';
 import AppearancePanel from './Appearance';
 import { useEffect, useState } from 'react';
+import ReviewReminderSettings from './ReviewReminderSettings';
+import QuickSetup from './QuickSetup';
 import {
   ArrowDownToLine,
   Check,
@@ -419,50 +421,55 @@ export function ModelProfilesPanel({
                 密钥由 Windows 系统保护，不进入学习记录或备份。若修改接口地址，请同时重新填写密钥。
               </small>
             </label>
-            <label>
-              单次回复上限（token）
-              <input
-                type="number"
-                min={MIN_MODEL_OUTPUT_TOKENS}
-                max={MAX_MODEL_OUTPUT_TOKENS}
-                step="1"
-                value={editing.maxOutputTokens ?? DEFAULT_MODEL_OUTPUT_TOKENS}
-                onChange={(e) => change('maxOutputTokens', Number(e.target.value))}
-              />
-              <small>
-                可填 {MIN_MODEL_OUTPUT_TOKENS}—{MAX_MODEL_OUTPUT_TOKENS}{' '}
-                的整数，请勿超过服务商限制。此值是容量上限，实际回复按学习任务安排，不会自动用满。
-              </small>
-            </label>
-            <label>
-              输入价格（元 / 百万 token）
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={editing.inputPriceCnyPerMillion || ''}
-                onChange={(e) => change('inputPriceCnyPerMillion', Number(e.target.value))}
-              />
-            </label>
-            <label>
-              输出价格（元 / 百万 token）
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={editing.outputPriceCnyPerMillion || ''}
-                onChange={(e) => change('outputPriceCnyPerMillion', Number(e.target.value))}
-              />
-            </label>
-            <label className="span-2">
-              价格依据与核对日期
-              <input
-                value={editing.priceUpdatedAt}
-                onChange={(e) => change('priceUpdatedAt', e.target.value)}
-                placeholder="例如：2026-09-12，服务商价格页"
-              />
-            </label>
           </div>
+          <details className="quick-setup-advanced">
+            <summary>高级设置 · 回复上限与费用估算</summary>
+            <div className="form-grid">
+              <label>
+                单次回复上限（token）
+                <input
+                  type="number"
+                  min={MIN_MODEL_OUTPUT_TOKENS}
+                  max={MAX_MODEL_OUTPUT_TOKENS}
+                  step="1"
+                  value={editing.maxOutputTokens ?? DEFAULT_MODEL_OUTPUT_TOKENS}
+                  onChange={(e) => change('maxOutputTokens', Number(e.target.value))}
+                />
+                <small>
+                  可填 {MIN_MODEL_OUTPUT_TOKENS}—{MAX_MODEL_OUTPUT_TOKENS}{' '}
+                  的整数，请勿超过服务商限制。此值是容量上限，实际回复按学习任务安排，不会自动用满。
+                </small>
+              </label>
+              <label>
+                输入价格（元 / 百万 token）
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={editing.inputPriceCnyPerMillion || ''}
+                  onChange={(e) => change('inputPriceCnyPerMillion', Number(e.target.value))}
+                />
+              </label>
+              <label>
+                输出价格（元 / 百万 token）
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={editing.outputPriceCnyPerMillion || ''}
+                  onChange={(e) => change('outputPriceCnyPerMillion', Number(e.target.value))}
+                />
+              </label>
+              <label className="span-2">
+                价格依据与核对日期
+                <input
+                  value={editing.priceUpdatedAt}
+                  onChange={(e) => change('priceUpdatedAt', e.target.value)}
+                  placeholder="例如：2026-09-12，服务商价格页"
+                />
+              </label>
+            </div>
+          </details>
           <div className="settings-actions">
             <Button
               variant="primary"
@@ -511,6 +518,9 @@ export default function SettingsPage({
     [saved, setSaved] = useState(false),
     [dirty, setDirty] = useState(false),
     [visionApiKey, setVisionApiKey] = useState('');
+  const [section, setSection] = useState<'learning' | 'ai' | 'data'>(
+    s.settings.hasApiKey ? 'learning' : 'ai',
+  );
   useEffect(() => {
     setForm((current) => settingsAfterSnapshot(current, s.settings, dirty));
   }, [s.settings, dirty]);
@@ -541,8 +551,7 @@ export default function SettingsPage({
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">YOUR SPACE, YOUR PACE</span>
-          <h1>让空间，适合你</h1>
+          <h1>设置</h1>
           <p>连接你的 AI 服务，照顾好资料，也给学习留出适合的节奏。</p>
         </div>
         <Button variant="primary" disabled={busy} onClick={() => void save()}>
@@ -550,9 +559,89 @@ export default function SettingsPage({
           {saved ? '已保存' : '保存常规设置'}
         </Button>
       </div>
-      <div className="settings-layout">
-        <div className="settings-main">
+      <div className="settings-sections" role="tablist" aria-label="设置分类">
+        {(
+          [
+            ['learning', '学习'],
+            ['ai', 'AI 与费用'],
+            ['data', '数据与同步'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            id={'settings-tab-' + id}
+            type="button"
+            role="tab"
+            aria-selected={section === id}
+            aria-controls={'settings-' + id}
+            className={'button ' + (section === id ? 'button-primary' : 'button-secondary')}
+            onClick={() => setSection(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="settings-layout settings-by-category">
+        <section
+          id="settings-learning"
+          className="settings-section"
+          role="tabpanel"
+          aria-labelledby="settings-tab-learning"
+          hidden={section !== 'learning'}
+        >
           <AppearancePanel />
+          <SettingsCard
+            title="我的学习节奏"
+            description="只保存你确认的目标与偏好，疲劳不会成为永久能力判断。"
+            icon={<Leaf size={21} />}
+          >
+            <div className="form-grid">
+              <label className="span-2">
+                长期想成为怎样的自己
+                <textarea
+                  rows={3}
+                  value={form.personalGoal}
+                  onChange={(e) => field('personalGoal', e.target.value)}
+                  placeholder="例如：能够独立阅读研究、判断论证，并把理解写清楚。"
+                />
+              </label>
+              <label>
+                每次希望学习多久（分钟）
+                <input
+                  type="number"
+                  min="5"
+                  max="240"
+                  value={form.studyMinutes}
+                  onChange={(e) => field('studyMinutes', Number(e.target.value))}
+                />
+              </label>
+              <label className="span-2">
+                我确认的学习偏好
+                <textarea
+                  rows={3}
+                  value={form.confirmedPreferences}
+                  onChange={(e) => field('confirmedPreferences', e.target.value)}
+                  placeholder="例如：先用生活中的例子解释；一次只推进一个问题。"
+                />
+              </label>
+            </div>
+          </SettingsCard>
+          <ReviewReminderSettings busy={busy} />
+        </section>
+        <section
+          id="settings-ai"
+          className="settings-section"
+          role="tabpanel"
+          aria-labelledby="settings-tab-ai"
+          hidden={section !== 'ai'}
+        >
+          <QuickSetup
+            snapshot={s}
+            busy={busy}
+            run={run}
+            monthlyBudgetCny={form.monthlyBudgetCny}
+            onBudgetChange={(value) => field('monthlyBudgetCny', value)}
+          />
           <ModelProfilesPanel snapshot={s} busy={busy} run={run} />
           <SettingsCard
             className="vision-settings"
@@ -782,66 +871,14 @@ export default function SettingsPage({
               </div>
             </details>
           </SettingsCard>
-          <SettingsCard
-            title="我的学习节奏"
-            description="只保存你确认的目标与偏好，疲劳不会成为永久能力判断。"
-            icon={<Leaf size={21} />}
-          >
-            <div className="form-grid">
-              <label className="span-2">
-                长期想成为怎样的自己
-                <textarea
-                  rows={3}
-                  value={form.personalGoal}
-                  onChange={(e) => field('personalGoal', e.target.value)}
-                  placeholder="例如：能够独立阅读研究、判断论证，并把理解写清楚。"
-                />
-              </label>
-              <label>
-                每次希望学习多久（分钟）
-                <input
-                  type="number"
-                  min="5"
-                  max="240"
-                  value={form.studyMinutes}
-                  onChange={(e) => field('studyMinutes', Number(e.target.value))}
-                />
-              </label>
-              <label className="span-2">
-                我确认的学习偏好
-                <textarea
-                  rows={3}
-                  value={form.confirmedPreferences}
-                  onChange={(e) => field('confirmedPreferences', e.target.value)}
-                  placeholder="例如：先用生活中的例子解释；一次只推进一个问题。"
-                />
-              </label>
-            </div>
-          </SettingsCard>
-          <WebDavSyncPanel busy={busy} run={run} />
-          <ProjectTrashPanel
-            snapshot={s}
-            busy={busy}
-            onRestore={(projectId) =>
-              run(
-                'project.restore',
-                projectTrashPayload(projectId),
-                '项目已恢复，可以继续原来的学习。',
-              )
-            }
-            onPurge={(projectId) =>
-              run('project.purge', projectTrashPayload(projectId), '项目及其本机资料已永久删除。')
-            }
-          />
-          <DiagnosticsPanel run={run} busy={busy} />
-          <div className="settings-save-bottom">
-            <Button variant="primary" disabled={busy} onClick={() => void save()}>
-              <Check size={16} />
-              保存常规设置
-            </Button>
-          </div>
-        </div>
-        <aside>
+        </section>
+        <section
+          id="settings-data"
+          className="settings-section"
+          role="tabpanel"
+          aria-labelledby="settings-tab-data"
+          hidden={section !== 'data'}
+        >
           <SettingsCard
             className="data-card"
             title="所学，属于你"
@@ -873,7 +910,23 @@ export default function SettingsPage({
             <h3>换本书，学习仍会继续。</h3>
             <p>每个项目都有自己的材料、任务和证据。更换模型不会清空已经走过的路。</p>
           </section>
-        </aside>
+          <WebDavSyncPanel busy={busy} run={run} />
+          <ProjectTrashPanel
+            snapshot={s}
+            busy={busy}
+            onRestore={(projectId) =>
+              run(
+                'project.restore',
+                projectTrashPayload(projectId),
+                '项目已恢复，可以继续原来的学习。',
+              )
+            }
+            onPurge={(projectId) =>
+              run('project.purge', projectTrashPayload(projectId), '项目及其本机资料已永久删除。')
+            }
+          />
+          <DiagnosticsPanel run={run} busy={busy} />
+        </section>
       </div>
     </>
   );

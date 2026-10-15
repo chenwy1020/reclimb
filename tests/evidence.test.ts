@@ -25,15 +25,15 @@ function addSession(store: LearningStore, id: string, createdAt: string, extra: 
 function review(store: LearningStore, kind: Review['kind']) { return store.list('reviews').find(r => r.kind === kind)!; }
 afterEach(() => { for (const store of opened.splice(0)) store.close(); });
 describe('finishAssessment', () => {
-  it('records a first independent success atomically and schedules exactly two optional returns', async () => {
+  it('records a first independent success atomically and schedules the first continuous return', async () => {
     const store = await fixture(); const evidence = finishAssessment(store, 'a-s', good, start);
     expect(evidence.status).toBe('independent'); expect(store.get('attempts', 'a-s')?.assessment).toEqual(good);
-    expect(store.list('reviews')).toHaveLength(2); expect(review(store, 'delayed').dueAt).toBe(later); expect(review(store, 'transfer').dueAt).toBe('2026-09-14T00:00:00.000Z');
+    expect(store.list('reviews')).toHaveLength(1); expect(review(store, 'delayed').dueAt).toBe(later);
     expect(store.list('reviews').every(r => r.status === 'pending')).toBe(true);
   });
   it('deduplicates repeated assessment calls without replacing prior evidence', async () => {
     const store = await fixture(); const first = finishAssessment(store, 'a-s', good, start); const retry = finishAssessment(store, 'a-s', { ...good, outcome: 'not_yet' }, later);
-    expect(retry).toEqual(first); expect(store.list('evidence')).toHaveLength(1); expect(store.list('reviews')).toHaveLength(2);
+    expect(retry).toEqual(first); expect(store.list('evidence')).toHaveLength(1); expect(store.list('reviews')).toHaveLength(1);
   });
   it('uses submitted help level and never rewrites independence after later help', async () => {
     const store = await fixture(); const session = store.get('sessions', 's')!; store.put('sessions', { ...session, helpLevel: 4 });
@@ -59,8 +59,8 @@ describe('finishAssessment', () => {
     addSession(store, 'helped', later, { mode: 'delayed', dueReviewId: due.id }); const attempt = store.get('attempts', 'a-helped')!; store.put('attempts', { ...attempt, helpLevel: 2 });
     expect(finishAssessment(store, attempt.id, good, later).status).toBe('assisted'); expect(store.get('reviews', due.id)?.status).toBe('pending');
   });
-  it('requires a changed task and explicit transfer review without creating an endless review chain', async () => {
-    const store = await fixture(); finishAssessment(store, 'a-s', good, start); const due = review(store, 'transfer');
+  it('requires a changed task and explicit transfer review before advancing the continuous schedule', async () => {
+    const store = await fixture(); finishAssessment(store, 'a-s', good, start); const due = { ...review(store, 'delayed'), kind: 'transfer' as const }; store.put('reviews', due);
     addSession(store, 'same', later, { mode: 'transfer', dueReviewId: due.id }); const same = finishAssessment(store, 'a-same', good, later); expect(same.status).toBe('independent'); expect(same.assessment.limitations.length).toBeGreaterThan(0);
     const changed = addSession(store, 'changed', later, { mode: 'transfer', dueReviewId: due.id }); store.put('sessions', { ...changed, activity: { ...changed.activity, instruction: '在一个新的生活场景中应用并说明理由',transferCheck:{verdict:'valid',changedSituation:'从解释概念转为有干扰信息的实际判断',sharedPrinciple:'同一概念的适用条件',requiredAdaptation:'先从实际情境选择相关条件再应用',reason:'要求重新建模而不只是改写原题'} } });
     expect(finishAssessment(store, 'a-changed', good, later).status).toBe('transfer'); expect(store.get('reviews', due.id)?.completedSessionId).toBe('changed'); expect(store.list('reviews')).toHaveLength(2);
@@ -100,10 +100,10 @@ describe('evidence boundary conditions', () => {
       expect(evidence.status).toBe('independent'); expect(evidence.assessment.limitations.join('')).toContain('没有关联');
     }
   });
-  it('never creates extra returns after an assisted first success or another ordinary session', async () => {
+  it('never duplicates a pending return after an assisted first success or another ordinary session', async () => {
     const store = await fixture(); store.put('attempts', { ...store.get('attempts', 'a-s')!, helpLevel: 3 });
-    expect(finishAssessment(store, 'a-s', good, start).status).toBe('assisted'); expect(store.list('reviews')).toHaveLength(2);
-    addSession(store, 'independent-later', later); finishAssessment(store, 'a-independent-later', good, later); expect(store.list('reviews')).toHaveLength(2);
+    expect(finishAssessment(store, 'a-s', good, start).status).toBe('assisted'); expect(store.list('reviews')).toHaveLength(1);
+    addSession(store, 'independent-later', later); finishAssessment(store, 'a-independent-later', good, later); expect(store.list('reviews')).toHaveLength(1);
   });
   it('rejects foreign sessions, review records and original material owners', async () => {
     const store = await fixture(); const session = store.get('sessions', 's')!;
@@ -215,15 +215,15 @@ describe('task-scoped evidence in continuous teaching', () => {
     const store=await fixture();const original=store.get('sessions','s')!;const frozen={...original.activity,id:'old-task'};
     store.put('attempts',{...store.get('attempts','a-s')!,taskId:'old-task',stepId:'old-step',activitySnapshot:frozen});
     store.put('sessions',{...original,activity:{...original.activity,id:'new-task',instruction:'新的诊断任务',rubric:['诊断错误']},helpLevel:0});
-    const result=finishAssessment(store,'a-s',good,start);expect(result.status).toBe('independent');expect(result.activitySnapshot).toEqual(frozen);expect(result.taskId).toBe('old-task');expect(store.get('sessions','s')?.helpLevel).toBe(0);expect(store.get('sessions','s')?.helpEvents.at(-1)).toMatchObject({taskId:'old-task',scope:'current_task'});expect(review(store,'transfer').fromActivity).toEqual(frozen);
+    const result=finishAssessment(store,'a-s',good,start);expect(result.status).toBe('independent');expect(result.activitySnapshot).toEqual(frozen);expect(result.taskId).toBe('old-task');expect(store.get('sessions','s')?.helpLevel).toBe(0);expect(store.get('sessions','s')?.helpEvents.at(-1)).toMatchObject({taskId:'old-task',scope:'current_task'});expect(review(store,'delayed').fromActivity).toEqual(frozen);
   });
   it('does not infer transfer from different wording or an absent semantic check', async () => {
-    const store=await fixture();finishAssessment(store,'a-s',good,start);const due=review(store,'transfer');
+    const store=await fixture();finishAssessment(store,'a-s',good,start);const due={...review(store,'delayed'),kind:'transfer' as const};store.put('reviews',due);
     const s=addSession(store,'paraphrase',later,{mode:'transfer',dueReviewId:due.id});store.put('sessions',{...s,activity:{...s.activity,instruction:'请说一说此概念为什么成立'}});
     const result=finishAssessment(store,'a-paraphrase',good,later);expect(result.status).toBe('independent');expect(result.assessment.limitations.join('')).toContain('迁移');expect(store.get('reviews',due.id)?.status).toBe('pending');
   });
   it('requires concrete adaptation even if a model says valid', async () => {
-    const store=await fixture();finishAssessment(store,'a-s',good,start);const due=review(store,'transfer');const s=addSession(store,'empty-check',later,{mode:'transfer',dueReviewId:due.id});
+    const store=await fixture();finishAssessment(store,'a-s',good,start);const due={...review(store,'delayed'),kind:'transfer' as const};store.put('reviews',due);const s=addSession(store,'empty-check',later,{mode:'transfer',dueReviewId:due.id});
     store.put('sessions',{...s,activity:{...s.activity,instruction:'更换数字再作答',transferCheck:{verdict:'valid',changedSituation:'',sharedPrinciple:'同一原理',requiredAdaptation:'',reason:'新的题目'}}});
     expect(finishAssessment(store,'a-empty-check',good,later).status).toBe('independent');
   });

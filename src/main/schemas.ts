@@ -207,6 +207,7 @@ export function teachingPlanSchemaFor(
     maxInstruction?: number;
     maxContent?: number;
     maxSteps?: number;
+    workSize?: 'short';
   } = {},
   allowedSourceIds?: string[],
   independent = false,
@@ -228,6 +229,10 @@ export function teachingPlanSchemaFor(
       .max(limits.maxInstruction ?? 2400)
       .describe(taskInputDescription),
     sourceIds: generatedSourceIds(allowedSourceIds, 30),
+    workSize:
+      limits.workSize === 'short'
+        ? z.literal('short').describe('本次是一项短验证，预计3–5分钟完成，不展开整节课或长任务。')
+        : generatedActivitySchema.shape.workSize,
   });
   return z
     .object({

@@ -1,5 +1,6 @@
 import { VerificationBasis } from './VerificationBasis';
-import { evidenceStanding, reviewStanding } from '../shared/reliability-state';
+import { evidenceStanding } from '../shared/reliability-state';
+import { reviewQueue } from '../shared/review-schedule';
 import { visibleProjects } from '../shared/projects';
 import { EvidenceCorrection } from './Reliability';
 import { useState } from 'react';
@@ -37,6 +38,7 @@ import {
 } from './ui';
 import { SourceLinks } from './Materials';
 import { RichText } from './RichText';
+import './review-schedule.css';
 export function AssessmentView({
   assessment: a,
   snapshot,
@@ -108,11 +110,8 @@ export default function EvidencePage({
   const displayed = evidence
     .filter((e) => filter === 'all' || (e.status === filter && evidenceStanding(s, e).effective))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const reviews = s.reviews
-    .filter(
-      (r) => r.projectId === project.id && r.status !== 'done' && reviewStanding(s, r).effective,
-    )
-    .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+  const reviews = reviewQueue(s).filter((r) => r.projectId === project.id);
+  const capabilityIds = [...new Set(displayed.map((e) => e.capabilityId))];
   const visibleProjectIds = new Set(visibleProjects(s.projects).map((item) => item.id));
   const crossEvidence = s.evidence.filter(
     (e) =>
@@ -186,99 +185,164 @@ export default function EvidencePage({
           </div>
           {displayed.length ? (
             <div className="evidence-list">
-              {displayed.map((e) => {
-                const attempt = s.attempts.find((a) => a.id === e.attemptId);
-                const session = s.sessions.find((x) => x.id === e.sessionId);
-                const activity =
-                  e.activitySnapshot || attempt?.activitySnapshot || session?.activity;
-                const evidenceMode = attempt?.mode ?? session?.mode;
-                const standing = evidenceStanding(s, e);
+              {capabilityIds.map((capabilityId) => {
+                const capability = s.capabilities.find((c) => c.id === capabilityId);
+                const records = effective.filter((e) => e.capabilityId === capabilityId);
+                const nextReview = reviews
+                  .filter((r) => r.capabilityId === capabilityId)
+                  .sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
+                const stages: [string, boolean][] = [
+                  ['尝试', evidence.some((e) => e.capabilityId === capabilityId)],
+                  ['有帮助', records.some((e) => e.status === 'assisted')],
+                  [
+                    '独立',
+                    records.some(
+                      (e) =>
+                        e.status === 'independent' ||
+                        e.status === 'delayed' ||
+                        e.status === 'transfer',
+                    ),
+                  ],
+                  ['延迟', records.some((e) => e.status === 'delayed')],
+                  ['迁移', records.some((e) => e.status === 'transfer')],
+                ];
                 return (
-                  <details
-                    className={
-                      'evidence-card ' + (!standing.effective ? 'historical-evidence' : '')
-                    }
-                    key={e.id}
+                  <article
+                    className="capability-record-group"
+                    data-capability-id={capabilityId}
+                    key={capabilityId}
                   >
-                    <summary>
-                      <div>
-                        {!standing.effective && <Badge tone="amber">暂不作为能力依据</Badge>}
-                        <span className={standing.effective ? '' : 'evidence-original-badge'}>
-                          <Badge
-                            tone={
-                              e.status === 'needs_review'
-                                ? 'amber'
-                                : e.status === 'assisted'
-                                  ? 'neutral'
-                                  : 'green'
+                    <header className="capability-record-header">
+                      <h3>
+                        {capability?.title || '能力表现'}{' '}
+                        {capability?.archived && <Badge tone="neutral">历史路线</Badge>}
+                      </h3>
+                      <small>
+                        {nextReview
+                          ? `下次回访：${dateLabel(nextReview.dueAt)} · 约 4 分钟`
+                          : project.status === 'paused' || capability?.archived
+                            ? '回访已暂停'
+                            : '下次回访：完成独立尝试后安排'}
+                      </small>
+                    </header>
+                    <ol className="capability-progress" aria-label="能力进度">
+                      {stages.map(([label, reached]) => (
+                        <li
+                          key={label}
+                          className={reached ? 'stage-reached' : 'stage-pending'}
+                          title={reached ? '已有有效记录' : '尚无有效记录'}
+                        >
+                          {label}
+                          {reached ? ' ✓' : ''}
+                        </li>
+                      ))}
+                    </ol>
+                    {nextReview?.schedule?.needsRelearning && (
+                      <p className="review-relearning">先复习这次暴露的缺口，再独立做一道新题。</p>
+                    )}
+                    {displayed
+                      .filter((e) => e.capabilityId === capabilityId)
+                      .map((e) => {
+                        const attempt = s.attempts.find((a) => a.id === e.attemptId);
+                        const session = s.sessions.find((x) => x.id === e.sessionId);
+                        const activity =
+                          e.activitySnapshot || attempt?.activitySnapshot || session?.activity;
+                        const evidenceMode = attempt?.mode ?? session?.mode;
+                        const standing = evidenceStanding(s, e);
+                        return (
+                          <details
+                            className={
+                              'evidence-card ' + (!standing.effective ? 'historical-evidence' : '')
                             }
+                            key={e.id}
                           >
-                            {standing.effective ? '' : '原记录 · '}
-                            {evidenceLabels[e.status]}
-                          </Badge>
-                        </span>
-                        <h3>
-                          {s.capabilities.find((c) => c.id === e.capabilityId)?.title || '能力表现'}{' '}
-                          {s.capabilities.find((c) => c.id === e.capabilityId)?.archived && (
-                            <Badge tone="neutral">历史路线</Badge>
-                          )}
-                        </h3>
-                        <RichText text={activity?.title} />
-                        <small>
-                          {timeLabel(e.createdAt)} · 当前任务直接帮助 {e.helpLevel} ·{' '}
-                          {evidenceMode ? modeLabels[evidenceMode] : '学习活动'}
-                        </small>
-                      </div>
-                      <ChevronDown size={18} />
-                    </summary>
-                    <EvidenceCorrection snapshot={s} evidence={e} />
-                    <VerificationBasis snapshot={s} versionId={e.teachingVersionId} />
-                    <div className="evidence-detail">
-                      <div className="evidence-task">
-                        <strong>当时的任务</strong>
-                        <RichText text={activity?.instruction || '未找到关联任务'} />
-                      </div>
-                      <div className="evidence-boundary">
-                        本记录仅描述这一道任务、这次作答和当时的帮助条件。看过概念或示范的经历会保留，但不会自动证明更广的能力。
-                      </div>
-                      <div className="evidence-work">
-                        <strong>我的具体表现</strong>
-                        <RichText text={attempt?.text || '未找到关联作答'} />
-                      </div>
-                      {session && session.helpEvents.length > 0 && (
-                        <div className="help-log">
-                          <strong>当时获得的帮助</strong>
-                          {session.helpEvents
-                            .filter(
-                              (h) =>
-                                (!h.taskId || !e.taskId || h.taskId === e.taskId) &&
-                                h.createdAt <= (attempt?.submittedAt || e.createdAt),
-                            )
-                            .map((h) => (
-                              <span key={h.id}>
-                                {helpLabels[h.kind]}
-                                {h.scope
-                                  ? '（' +
-                                    {
-                                      concept: '概念解释',
-                                      other_example: '其他示例',
-                                      current_task: '当前题支持',
-                                      navigation: '导航与探索',
-                                    }[h.scope] +
-                                    '）'
-                                  : ''}{' '}
-                                · {timeLabel(h.createdAt)}
-                              </span>
-                            ))}
-                        </div>
-                      )}
-                      <AssessmentView assessment={e.assessment} snapshot={s} onSource={onSource} />
-                      <button className="text-button" onClick={() => onSession(e.sessionId)}>
-                        查看完整学习过程
-                        <ArrowRight size={14} />
-                      </button>
-                    </div>
-                  </details>
+                            <summary>
+                              <div>
+                                {!standing.effective && (
+                                  <Badge tone="amber">暂不作为能力依据</Badge>
+                                )}
+                                <span
+                                  className={standing.effective ? '' : 'evidence-original-badge'}
+                                >
+                                  <Badge
+                                    tone={
+                                      e.status === 'needs_review'
+                                        ? 'amber'
+                                        : e.status === 'assisted'
+                                          ? 'neutral'
+                                          : 'green'
+                                    }
+                                  >
+                                    {standing.effective ? '' : '原记录 · '}
+                                    {evidenceLabels[e.status]}
+                                  </Badge>
+                                </span>
+                                <RichText text={activity?.title} />
+                                <small>
+                                  {timeLabel(e.createdAt)} · 当前任务直接帮助 {e.helpLevel} ·{' '}
+                                  {evidenceMode ? modeLabels[evidenceMode] : '学习活动'}
+                                </small>
+                              </div>
+                              <ChevronDown size={18} />
+                            </summary>
+                            <EvidenceCorrection snapshot={s} evidence={e} />
+                            <VerificationBasis snapshot={s} versionId={e.teachingVersionId} />
+                            <div className="evidence-detail">
+                              <div className="evidence-task">
+                                <strong>当时的任务</strong>
+                                <RichText text={activity?.instruction || '未找到关联任务'} />
+                              </div>
+                              <div className="evidence-boundary">
+                                本记录仅描述这一道任务、这次作答和当时的帮助条件。看过概念或示范的经历会保留，但不会自动证明更广的能力。
+                              </div>
+                              <div className="evidence-work">
+                                <strong>我的具体表现</strong>
+                                <RichText text={attempt?.text || '未找到关联作答'} />
+                              </div>
+                              {session && session.helpEvents.length > 0 && (
+                                <div className="help-log">
+                                  <strong>当时获得的帮助</strong>
+                                  {session.helpEvents
+                                    .filter(
+                                      (h) =>
+                                        (!h.taskId || !e.taskId || h.taskId === e.taskId) &&
+                                        h.createdAt <= (attempt?.submittedAt || e.createdAt),
+                                    )
+                                    .map((h) => (
+                                      <span key={h.id}>
+                                        {helpLabels[h.kind]}
+                                        {h.scope
+                                          ? '（' +
+                                            {
+                                              concept: '概念解释',
+                                              other_example: '其他示例',
+                                              current_task: '当前题支持',
+                                              navigation: '导航与探索',
+                                            }[h.scope] +
+                                            '）'
+                                          : ''}{' '}
+                                        · {timeLabel(h.createdAt)}
+                                      </span>
+                                    ))}
+                                </div>
+                              )}
+                              <AssessmentView
+                                assessment={e.assessment}
+                                snapshot={s}
+                                onSource={onSource}
+                              />
+                              <button
+                                className="text-button"
+                                onClick={() => onSession(e.sessionId)}
+                              >
+                                查看完整学习过程
+                                <ArrowRight size={14} />
+                              </button>
+                            </div>
+                          </details>
+                        );
+                      })}
+                  </article>
                 );
               })}
             </div>
@@ -313,8 +377,15 @@ export default function EvidencePage({
                       ? '放下原来的答案，重新构建一次。'
                       : '换一个情境，检验是否可以迁移。'}
                   </p>
+                  {r.schedule?.needsRelearning && (
+                    <p className="review-relearning">先复习这次暴露的缺口，再独立做一道新题。</p>
+                  )}
                   <div>
-                    <Button variant="primary" disabled={busy} onClick={() => void onReview(r.id)}>
+                    <Button
+                      variant="primary"
+                      disabled={busy || Date.parse(r.dueAt) > Date.now()}
+                      onClick={() => void onReview(r.id)}
+                    >
                       开始回访
                       <ArrowRight size={14} />
                     </Button>

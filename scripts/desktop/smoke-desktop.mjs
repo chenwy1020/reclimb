@@ -106,7 +106,7 @@ try{
  await api('lesson.start',{projectId:custom.id,capabilityId:cap.id});
  s=await snap();const fresh=s.sessions.filter(x=>x.projectId===custom.id).at(-1);assert.ok(fresh);assert.equal(fresh.activity.referenceAnswer,undefined);
  await api('session.submit',{sessionId:fresh.id,text:'我会区分相关与因果，并检查第三个影响条件。',requestId:'desktop-first-'+stamp});
- s=await snap();const evidence=s.evidence.find(e=>e.sessionId===fresh.id);assert.equal(evidence.status,'independent');assert.equal(s.reviews.filter(r=>r.capabilityId===cap.id).length,2);
+ s=await snap();const evidence=s.evidence.find(e=>e.sessionId===fresh.id);assert.equal(evidence.status,'independent');assert.equal(s.reviews.filter(r=>r.capabilityId===cap.id).length,1);
  const callsBeforeDuplicate=requests;
  await api('session.submit',{sessionId:fresh.id,text:'我会区分相关与因果，并检查第三个影响条件。',requestId:'desktop-first-'+stamp});
  assert.equal(requests,callsBeforeDuplicate);assert.equal((await snap()).evidence.length,s.evidence.length);record('完整IPC学习流程与重复提交防重，成功后产生两次回访');

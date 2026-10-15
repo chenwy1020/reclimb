@@ -89,6 +89,18 @@ export function evidenceStanding(snapshot: Records, evidence: Evidence): Standin
   return versionId ? versionStanding(snapshot, versionId) : { effective: true };
 }
 export function reviewStanding(snapshot: Records, review: Review): Standing {
+  if (review.schedule?.lastEvidenceId) {
+    const basis = snapshot.evidence.find((e) => e.id === review.schedule!.lastEvidenceId);
+    if (
+      !basis ||
+      basis.projectId !== review.projectId ||
+      basis.capabilityId !== review.capabilityId
+    )
+      return { effective: false, reason: '这次排程所依据的表现记录不存在或不属于当前能力' };
+    const state = evidenceStanding(snapshot, basis);
+    if (!state.effective)
+      return { effective: false, reason: '这次排程依赖的原表现已暂停或失效：' + state.reason };
+  }
   const versionId = versionForTask(
     snapshot,
     review.projectId,
@@ -102,6 +114,7 @@ export function reviewStanding(snapshot: Records, review: Review): Standing {
   const origin = snapshot.evidence.filter(
     (e) =>
       e.sessionId === review.fromSessionId &&
+      e.projectId === review.projectId &&
       e.capabilityId === review.capabilityId &&
       (!review.fromTaskId || e.taskId === review.fromTaskId) &&
       e.status !== 'needs_review',

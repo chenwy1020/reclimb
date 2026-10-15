@@ -1632,6 +1632,8 @@ export class LearningService {
       }));
     const independent =
       intent === 'independent' || mode === 'diagnosis' || mode === 'delayed' || mode === 'transfer';
+    const isReturn = mode === 'delayed' || mode === 'transfer';
+    const shortCheck = mode === 'diagnosis' || isReturn;
     const confusionCount = intent === 'smaller' ? (session?.teaching?.confusionCount ?? 0) + 1 : 0;
     const smallerLimits =
       intent === 'smaller'
@@ -1646,7 +1648,7 @@ export class LearningService {
           }
         : undefined;
     const responseSchema = teachingPlanSchemaFor(
-      smallerLimits,
+      shortCheck ? { ...smallerLimits, maxCriteria: 2, workSize: 'short' } : smallerLimits,
       sources.map((s) => s.id),
       independent,
     );
@@ -1664,6 +1666,15 @@ export class LearningService {
                 workSize: 'short',
               }
             : undefined,
+        returnTask: isReturn
+          ? {
+              minutes: 4,
+              maxCriteria: 2,
+              workSize: 'short',
+              instruction:
+                '安排 3–5 分钟能完成的一项短检索：先回忆关键条件、选择方法或完成一个关键步骤，再简述理由。只给一个 check，最多两项评价标准，workSize 为 short；不先讲解、不附答案、不展开整节课。迁移仍需实质改变情境并要求调整方法，不能仅换数字。保留完整题设与必要条件。',
+            }
+          : undefined,
         sourceStart: localStart
           ? { intent: localStart.intent, question: localStart.question }
           : undefined,
@@ -1718,7 +1729,7 @@ export class LearningService {
           invalidTasks.has(session.teaching.current.taskId)
             ? undefined
             : session?.teaching?.current,
-        minutes: this.store.getSettings().studyMinutes,
+        minutes: shortCheck ? 4 : this.store.getSettings().studyMinutes,
         instruction:
           '生成一个连续教学片段，steps共1至4步，最后恰好一个attempt或check带activity。explain解释必要对象与直观，demonstrate用不同例子示范，均不包含当前任务答案；attempt/check为小到能着手的行动。activity必须给出demand={kind,complexity,novelty,scaffolding,concepts}和workSize；它们描述真实认知要求。activity.instruction必须完整给出当前题所需的原句、数据、选项或代码；不能只说“下表”或“如下代码”却缺少对应输入。表格、数值列表或代码片段直接放在instruction，不能让学习者猜测任务采用哪一段材料或另一道已解示例。若题目要求自构，明确写由学习者自行构造。对主题陌生不等于先修陌生。先读取具体background：已陈述相关基础时允许一个短判断直接接入新概念，依据实际表现再补讲；明确说不会的先修先解释，未提及的基础保持未知。无背景信息时给简短对象导向，不假定全部基础缺失。smaller必须以explain或demonstrate开始，再给更小尝试；此规则明确不适用于independent、delayed、transfer，它们只生成一个check；smaller是用户主动选择的小任务：优先只安排一项主要操作，减少同时要做的动作和标准，不重复原任务。题设长度不代表难度；必须保留完整数据、条件、数学公式和必要上下文，不能为缩短字符数截断题目，也不大量复制无关材料。挑战必须实质提高要求：从辨认或计算转向解释、推导、比较适用条件、连接多个概念、迁移或综合，不得只换数字、名字或增加题量。challenge时只给一个有区分度的挑战，可用milestones支持跨会话完成。fill_gap只处理最近挑战实际暴露出的具体缺口，保留挑战所处的概念与目的，不退回已经反复完成的基础题，也不扩大成重新学习整项基础。advance围绕后续学习单元的新核心问题，不回到原单元。synthesize邀请学习者组织核心问题、关键条件、推理骨架、方法关系与适用边界。consolidate只有学习者主动选择时才保持同层巩固。independent/delayed/transfer只给一个check，不提前讲解当前解法。continue综合教学观察、讨论、质疑、帮助历史、理解稿和证据选择深入、连接、补具体缺口、提炼或回访；不能只在原能力上换条件。错误题目或来源不确定不能作为学习者不会的依据。第一次attempt也不能复制近期步骤或示范中已经给出答案的题目，必须形成新例子。transfer须要求在实质不同情境中调整方法。不生成referenceAnswer或隐藏完整解答；完整示范只在用户索取时生成。rubric公开显示给学习者，只描述比较对象或可观察的操作，不写具体结果、数值答案或正确选项。assessmentBasis仅source或ai。返回 {steps:[{action:"explain|demonstrate|attempt|check|reflect",title,content,sourceIds,activity?:{title,instruction,kind,rubric,sourceIds,assessmentBasis,demand,workSize,milestones}}]}',
       },
@@ -1759,7 +1770,7 @@ export class LearningService {
             throw new Error('尚未说明相关基础时需要简短导向；缩步时需要先解释或示范，请重新生成。');
           const activity = value.steps.find((s) => s.activity)?.activity;
           if (
-            mode === 'diagnosis' &&
+            shortCheck &&
             activity &&
             (activity.workSize !== 'short' || activity.rubric.length > 2)
           )
@@ -4425,7 +4436,7 @@ export class LearningService {
           privateSolution: taskReview.privateSolution,
         },
         instruction:
-          '先识别这段输入是在作答还是在指出题目、前提或评价有误。若有具体质疑或发现原任务/标准有问题，返回 {dispute:{issue,reason}}，不要硬套原rubric评分。对正常作答，认可数学等价表达，不要求照抄方向变量或固定句式；根据独立核验的条件分支，前提不适用的标准可返回not_applicable，但不能逃避实际失败。对rubric每一条返回对应rubricIds中的稳定criterionId及result/reason，不可遗漏或重复；criterion文字可以等价表述，系统会按ID恢复原标准与顺序。返回 {outcome:"met|partial|not_yet|uncertain",feedback:"具体差异与下一步，不代写完整修正答案",criteria:[{criterion,result,reason}],limitations:["评价限制"],sourceIds:[]}。只有全部标准满足才met。',
+          '先识别这段输入是在作答还是在指出题目、前提或评价有误。若有具体质疑或发现原任务/标准有问题，返回 {dispute:{issue,reason}}，不要硬套原rubric评分。对正常作答，认可数学等价表达，不要求照抄方向变量或固定句式；只按公开题干和rubric要求评价，私有核验的示例和expectedBehavior不是额外标准。公式、数值关系或等价表述已经清楚表达的推理或条件使用应予认可，不因未重复题设措辞单独扣分；公开要求解释条件作用时仍须有真实逻辑依据，只有正确结果、缺少所要求推理、遗漏会影响结论的条件或逻辑不成立不得met。扣分理由须指出具体缺少或错误的依据及对应公开标准，而不是要求补写固定句。根据独立核验的条件分支，前提不适用的标准可返回not_applicable，但不能逃避实际失败。对rubric每一条返回对应rubricIds中的稳定criterionId及result/reason，不可遗漏或重复；criterion文字可以等价表述，系统会按ID恢复原标准与顺序。返回 {outcome:"met|partial|not_yet|uncertain",feedback:"具体差异与下一步，不代写完整修正答案",criteria:[{criterion,result,reason}],limitations:["评价限制"],sourceIds:[]}。只有全部标准满足才met。',
       },
       {
         system: evaluator,

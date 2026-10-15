@@ -17,7 +17,9 @@ import {
 } from 'lucide-react';
 import type { WorkspaceSnapshot } from '../shared/types';
 import { visibleProjects } from '../shared/projects';
+import { dueReviewSummary, reviewQueue, REVIEW_MINUTES } from '../shared/review-schedule';
 import { RichText } from './RichText';
+import './review-schedule.css';
 import { Badge, Button, MountainArt, dateLabel, tomorrow, type Page, type Run } from './ui';
 export default function HomePage({
   snapshot: s,
@@ -40,12 +42,17 @@ export default function HomePage({
   const hasTrashedProjects = s.projects.some((project) => Boolean(project.trashedAt));
   const projectIds = new Set(projects.map((project) => project.id));
   const active = projects.filter((p) => p.status === 'active');
-  const reviews = s.reviews
-    .filter(
-      (r) => projectIds.has(r.projectId) && r.status !== 'done' && reviewStanding(s, r).effective,
-    )
-    .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
-  const due = reviews.filter((r) => new Date(r.dueAt).getTime() <= Date.now());
+  const summary = dueReviewSummary(s);
+  const reviews = reviewQueue(s);
+  const due = summary.reviews;
+  const sessionCount = Math.min(
+    due.length,
+    Math.max(1, Math.floor(s.settings.studyMinutes / REVIEW_MINUTES)),
+  );
+  const shownReviews = [
+    ...due,
+    ...reviews.filter((r) => Date.parse(r.dueAt) > Date.now()).slice(0, 3),
+  ];
   const independent = s.evidence.filter(
     (e) =>
       projectIds.has(e.projectId) &&
@@ -85,6 +92,29 @@ export default function HomePage({
           开启一段学习
         </Button>
       </div>
+      {projects.length > 0 && (
+        <section className="due-review-summary" aria-label="今天的回访">
+          <div>
+            <h2>
+              今天该回访 {summary.count} 项，约 {summary.estimatedMinutes} 分钟
+            </h2>
+            <p>
+              {due.length
+                ? `按每次 ${s.settings.studyMinutes} 分钟，这次先做 ${sessionCount} 项；全部到期任务都在下方。`
+                : '今天没有到期任务，可以接着学习。'}
+            </p>
+            <small title="按本机时间统计本周一以来，在到期当天无帮助通过的回访。">
+              本周按期独立通过：{summary.weeklyOnTimeIndependent} 次
+            </small>
+          </div>
+          {due[0] && (
+            <Button variant="primary" disabled={busy} onClick={() => void onReview(due[0].id)}>
+              开始一项回访
+              <ArrowRight size={16} />
+            </Button>
+          )}
+        </section>
+      )}
       {resume && (
         <section className="resume-card">
           <div>
@@ -137,30 +167,41 @@ export default function HomePage({
             在尝试中理解，在重新走过时，真正拥有。
           </p>
           <div className="hero-actions">
-            <Button
-              variant="primary"
-              onClick={() =>
-                latestProject
-                  ? void navigate(
-                      latestSession ? 'desk' : 'route',
-                      latestProject.id,
-                      latestSession?.id,
-                    )
-                  : legacyLatest
-                    ? void navigate('desk', legacyLatest.projectId, legacyLatest.id)
-                    : active[0]
-                      ? void navigate('route', active[0].id)
-                      : onCreate()
-              }
-            >
-              {latestProject || legacyLatest
-                ? '继续上次学习'
-                : active[0]
-                  ? '查看我的路线'
-                  : '建立我的学习项目'}
-              <ArrowRight size={17} />
-            </Button>
-            <span>按自己的节奏，不必赶路</span>
+            {!projects.length && !hasTrashedProjects ? (
+              <>
+                <Button variant="primary" disabled={busy} onClick={() => void onSeed()}>
+                  先试内置示例
+                  <ArrowRight size={17} />
+                </Button>
+                <Button onClick={() => void navigate('settings')}>连接 AI 服务</Button>
+                <small>示例可离线尝试 · AI 直连服务商，无需自建服务器</small>
+              </>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={() =>
+                  latestProject
+                    ? void navigate(
+                        latestSession ? 'desk' : 'route',
+                        latestProject.id,
+                        latestSession?.id,
+                      )
+                    : legacyLatest
+                      ? void navigate('desk', legacyLatest.projectId, legacyLatest.id)
+                      : active[0]
+                        ? void navigate('route', active[0].id)
+                        : onCreate()
+                }
+              >
+                {latestProject || legacyLatest
+                  ? '继续上次学习'
+                  : active[0]
+                    ? '查看我的路线'
+                    : '建立我的学习项目'}
+                <ArrowRight size={17} />
+              </Button>
+            )}
+            {projects.length > 0 && <span>按自己的节奏，不必赶路</span>}
           </div>
         </div>
         <MountainArt />
@@ -328,7 +369,7 @@ export default function HomePage({
                 <h3>{due.length ? '旧知识，新的独立尝试' : '给理解一点沉淀的时间'}</h3>
                 <p>带到新情境里，看看哪些已经属于你。</p>
                 <div className="review-list">
-                  {reviews.slice(0, 3).map((r) => (
+                  {shownReviews.map((r) => (
                     <div className="review-item" key={r.id}>
                       <div>
                         <strong>
@@ -337,6 +378,11 @@ export default function HomePage({
                         <small>
                           {dateLabel(r.dueAt)} · {r.kind === 'delayed' ? '延迟重构' : '迁移应用'}
                         </small>
+                        {r.schedule?.needsRelearning && (
+                          <small className="review-relearning">
+                            先复习这次暴露的缺口，再独立做一道新题。
+                          </small>
+                        )}
                       </div>
                       <div className="review-actions">
                         <button
@@ -351,7 +397,7 @@ export default function HomePage({
                         </button>
                         <button
                           className="icon-button green"
-                          disabled={busy}
+                          disabled={busy || Date.parse(r.dueAt) > Date.now()}
                           title="开始这次回访"
                           onClick={() => void onReview(r.id)}
                         >
@@ -365,9 +411,7 @@ export default function HomePage({
             ) : (
               <>
                 <h3>不急着证明已经掌握</h3>
-                <p>
-                  完成一次练习后，这里会出现回访邀请。隔一天重新构建，隔一周换个情境，让成长有据可查。
-                </p>
+                <p>独立完成后，从次日短回访开始；每次通过后逐步拉长间隔，也会换个情境检验迁移。</p>
                 <div className="review-timeline">
                   <span>
                     <i />
@@ -379,7 +423,7 @@ export default function HomePage({
                   </span>
                   <span>
                     <i />
-                    一周迁移
+                    持续回访
                   </span>
                 </div>
               </>
