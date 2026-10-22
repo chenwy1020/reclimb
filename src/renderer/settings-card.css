@@ -83,8 +83,47 @@
 .settings-section[hidden] {
   display: none !important;
 }
-.settings-section > .settings-card {
-  margin-bottom: 18px;
+.settings-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+.settings-section > .settings-card,
+.settings-section > .principle-card {
+  margin: 0;
+}
+.review-reminder-settings {
+  display: grid;
+  gap: 12px;
+  padding: clamp(18px, 2vw, 25px);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+}
+.review-reminder-settings > p {
+  color: var(--theme-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.review-reminder-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.review-reminder-controls > label {
+  display: grid;
+  gap: 8px;
+  width: 160px;
+  max-width: 100%;
+  color: var(--theme-muted);
+  font-size: 12px;
+}
+.review-reminder-controls input {
+  width: 100%;
+}
+.review-reminder-controls > .button {
+  min-height: 44px;
 }
 .quick-setup-advanced {
   margin: 18px 0 12px;

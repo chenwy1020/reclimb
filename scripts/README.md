@@ -20,6 +20,8 @@
 
 `package` 和 `package:source` 按 `package.json` 中的版本号生成 `release/` 下的文件。同一版本再次打包会覆盖同名产物；已发布版本的原始附件应保留，正式交付使用独立版本号。
 
+当前版本为 0.8.1。`npm run verify:package` 复用 `verify-package-v080.ps1 -Version 0.8.1`，按当前契约核对安装包版本、运行依赖与产品、学习关联、IPC 检查。历史 `verify-package-v080.ps1` 不传版本参数时仍核对 0.8.0；报告分别写入 `output/package-verification-v081.json` 与 `output/package-verification-v080.json`。本次仅修复设置布局，无需真实 AI 调用，实际结果见 [0.8.1 验证记录](../docs/verification/验证记录-0.8.1.md)。
+
 ## 目录用途
 
 | 位置 | 内容 |

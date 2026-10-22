@@ -1,13 +1,16 @@
 [CmdletBinding()]
 param(
  [string]$PdfPath,
- [string]$Installer = 'release\Reclimb-Setup-0.8.0.exe',
- [string]$SevenZip = '.builder-cache\7zip@1.0.0\7zip-win-x64-a34pt\bin\7za.exe'
+ [string]$Installer,
+ [string]$SevenZip = '.builder-cache\7zip@1.0.0\7zip-win-x64-a34pt\bin\7za.exe',
+ [ValidateSet('0.8.0','0.8.1')][string]$Version = '0.8.0'
 )
 $ErrorActionPreference = 'Stop'
-$contract = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'release-contract-v080.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$suiteTag = 'v' + $Version.Replace('.','')
+$contract = Get-Content -LiteralPath (Join-Path $PSScriptRoot ('release-contract-' + $suiteTag + '.json')) -Raw -Encoding UTF8 | ConvertFrom-Json
 $workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$reportPath = Join-Path $workspace 'output\package-verification-v080.json'
+if([string]::IsNullOrWhiteSpace($Installer)) { $Installer = Join-Path $workspace ('release\Reclimb-Setup-' + $Version + '.exe') }
+$reportPath = Join-Path $workspace ('output\package-verification-' + $suiteTag + '.json')
 $baseTag = $contract.suiteTag + '-base'
 $baseReportPath = Join-Path $workspace ('output\package-verification-' + $baseTag + '.json')
 $artifactReportPath = $null
@@ -45,7 +48,7 @@ Write-VerificationReport $reportPath ([ordered]@{at=[DateTime]::UtcNow.ToString(
 $previousExecutable = $env:RECLIMB_TEST_EXECUTABLE
 $previousArtifactDirectory = $env:RECLIMB_TEST_ARTIFACT_DIR
 try {
- if($contract.version -ne '0.8.0' -or $contract.suiteTag -ne 'v080' -or $contract.expectedChecks -ne 10 -or $contract.expectedProductChecks -ne 9 -or $contract.ipcValidationChecks -ne 13) { throw 'The 0.8 release contract is invalid.' }
+ if($contract.version -ne $Version -or $contract.suiteTag -ne $suiteTag -or $contract.expectedChecks -ne 10 -or $contract.expectedProductChecks -ne 9 -or $contract.ipcValidationChecks -ne 13) { throw 'The 0.8 release contract is invalid.' }
  # Extract once; all three suites must use this exact packaged application.
  & (Join-Path $PSScriptRoot 'verify-package-v04.ps1') -PdfPath $PdfPath -Installer $Installer -SevenZip $SevenZip -SuiteTag $baseTag -SmokeScript $contract.smokeScript -DesktopReportName $contract.desktopReportName -ExpectedChecks $contract.expectedChecks | Out-Null
  $report = Get-Content -LiteralPath $baseReportPath -Raw -Encoding UTF8 | ConvertFrom-Json

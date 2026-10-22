@@ -1,6 +1,6 @@
 {
   "name": "reclimb-learning",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "description": "重登 · 可复用的个人 AI 学习空间",
   "main": "dist/main/index.cjs",
@@ -21,7 +21,7 @@
     "test:desktop:v02": "node scripts/desktop/smoke-v02.mjs",
     "test:desktop:legacy": "node scripts/desktop/smoke-desktop.mjs",
     "package:source": "node scripts/release/package-source.mjs",
-    "verify:package": "powershell -ExecutionPolicy Bypass -File scripts/release/verify-package-v080.ps1",
+    "verify:package": "powershell -ExecutionPolicy Bypass -File scripts/release/verify-package-v080.ps1 -Version 0.8.1",
     "test:desktop:full": "node scripts/desktop/smoke-v044.mjs && node scripts/desktop/smoke-v045.mjs && node scripts/desktop/smoke-v046.mjs && node scripts/desktop/smoke-v047.mjs && node scripts/desktop/smoke-v048.mjs && node scripts/desktop/smoke-v049.mjs && node scripts/desktop/smoke-v0410.mjs && node scripts/desktop/smoke-v050.mjs --current-only && node scripts/desktop/smoke-v051.mjs && node scripts/desktop/smoke-v052.mjs && node scripts/desktop/smoke-v053.mjs && node scripts/desktop/smoke-reader-continuity.mjs && node scripts/desktop/smoke-handwriting-recovery.mjs && node scripts/desktop/smoke-v060.mjs && node scripts/desktop/smoke-v070.mjs && node scripts/desktop/smoke-ipc-validation.mjs && node scripts/desktop/smoke-product-review.mjs",
     "test:full": "npm test && npm run build && npm run test:desktop:full",
     "test:patch": "node scripts/validation/test-profile.mjs",
