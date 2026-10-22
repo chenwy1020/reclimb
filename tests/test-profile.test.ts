@@ -3,7 +3,7 @@ import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 import {expect, it} from 'vitest';
 
-const profileModule = await import(pathToFileURL(resolve('scripts/test-profile.mjs')).href);
+const profileModule = await import(pathToFileURL(resolve('scripts/validation/test-profile.mjs')).href);
 it('uses a bounded targeted profile only for the reviewed 0.4.10 patch', () => {
  const profile = profileModule.selectTestProfile('0.4.10');
  expect(profile.scope).toBe('targeted');
@@ -21,7 +21,7 @@ it('lets Windows CI request all accumulated tests without changing npm test', ()
  const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
  expect(workflow).toContain('workflow_dispatch:');
  expect(workflow).toContain('options: [auto, full]');
- expect(workflow).toContain('node scripts/test-profile.mjs');
+ expect(workflow).toContain('node scripts/validation/test-profile.mjs');
  expect(workflow).toContain('npm run test:desktop:full');
  expect(workflow).toContain("steps.tests.outputs.scope == 'full'");
  expect(JSON.parse(readFileSync('package.json', 'utf8')).scripts.test).toBe('vitest run');

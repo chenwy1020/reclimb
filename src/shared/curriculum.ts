@@ -1,143 +1,162 @@
-export type LearningPhase='survey'|'expand'|'synthesize'|'revisit';
-export type ProgressionIntent='continue'|'challenge'|'advance'|'synthesize'|'consolidate'|'fill_gap';
-export interface TaskDemand{
- kind:'recognize'|'explain'|'calculate'|'derive'|'compare'|'integrate'|'transfer'|'synthesize';
- complexity:1|2|3|4|5;
- novelty:1|2|3;
- scaffolding:'guided'|'supported'|'independent';
- concepts:string[];
+import type { UnitGoal } from './remediation';
+export type LearningPhase = 'survey' | 'expand' | 'synthesize' | 'revisit';
+export type ProgressionIntent =
+  'continue' | 'challenge' | 'advance' | 'synthesize' | 'consolidate' | 'fill_gap';
+export interface TaskDemand {
+  kind:
+    | 'recognize'
+    | 'explain'
+    | 'calculate'
+    | 'derive'
+    | 'compare'
+    | 'integrate'
+    | 'transfer'
+    | 'synthesize';
+  complexity: 1 | 2 | 3 | 4 | 5;
+  novelty: 1 | 2 | 3;
+  scaffolding: 'guided' | 'supported' | 'independent';
+  concepts: string[];
 }
-export interface CurriculumCoverage{
- totalSections:number;
- analyzedSectionIds:string[];
- pendingSectionIds:string[];
- method:string;
+export interface CurriculumCoverage {
+  totalSections: number;
+  analyzedSectionIds: string[];
+  pendingSectionIds: string[];
+  method: string;
 }
-export interface RouteMapNode{
- id:string;
- title:string;
- question:string;
- role:string;
- sourceIds:string[];
- connectsTo:string[];
- status:'outlined'|'analyzed';
+export interface RouteMapNode {
+  id: string;
+  title: string;
+  question: string;
+  role: string;
+  sourceIds: string[];
+  connectsTo: string[];
+  status: 'outlined' | 'analyzed';
 }
-export interface RouteUnitSnapshot{
- id:string;
- capabilityId:string;
- title:string;
- coreQuestion:string;
- purpose:string;
- expectedOutcome:string;
- unresolvedGaps?:string[];
- sourceIds:string[];
- locators:string[];
- prerequisiteUnitIds:string[];
- order:number;
- phase:LearningPhase;
- reusedFromUnitId?:string;
+export interface RouteUnitSnapshot {
+  id: string;
+  capabilityId: string;
+  title: string;
+  coreQuestion: string;
+  purpose: string;
+  expectedOutcome: string;
+  unresolvedGaps?: string[];
+  sourceIds: string[];
+  locators: string[];
+  prerequisiteUnitIds: string[];
+  order: number;
+  phase: LearningPhase;
+  reusedFromUnitId?: string;
 }
-export interface RouteCapabilitySnapshot{
- id:string;
- title:string;
- description:string;
- prerequisites:string[];
- sourceIds:string[];
- order:number;
- goalContext:string;
+export interface RouteCapabilitySnapshot {
+  id: string;
+  title: string;
+  description: string;
+  prerequisites: string[];
+  sourceIds: string[];
+  order: number;
+  goalContext: string;
 }
-export interface RouteVersion{
- id:string;
- projectId:string;
- version:number;
- origin:'generated'|'legacy';
- status:'proposed'|'adopted'|'superseded'|'dismissed';
- summary:string;
- coreQuestion:string;
- mapNodes:RouteMapNode[];
- capabilitySnapshots:RouteCapabilitySnapshot[];
- unitIds:string[];
- unitSnapshots:RouteUnitSnapshot[];
- coverage:CurriculumCoverage;
- baseVersionId?:string;
- changeSummary?:string;
- scopeProposal?:{suggestedFocus:string;reason:string};
- createdAt:string;
- adoptedAt?:string;
+export interface RouteVersion {
+  scope?: 'local' | 'book';
+  id: string;
+  projectId: string;
+  version: number;
+  origin: 'generated' | 'legacy';
+  status: 'proposed' | 'adopted' | 'superseded' | 'dismissed';
+  summary: string;
+  coreQuestion: string;
+  mapNodes: RouteMapNode[];
+  capabilitySnapshots: RouteCapabilitySnapshot[];
+  unitIds: string[];
+  unitSnapshots: RouteUnitSnapshot[];
+  coverage: CurriculumCoverage;
+  baseVersionId?: string;
+  changeSummary?: string;
+  scopeProposal?: { suggestedFocus: string; reason: string };
+  createdAt: string;
+  adoptedAt?: string;
 }
-export interface LearningUnit{
- id:string;
- projectId:string;
- routeVersionId:string;
- capabilityId:string;
- title:string;
- coreQuestion:string;
- purpose:string;
- expectedOutcome:string;
- unresolvedGaps?:string[];
- sourceIds:string[];
- locators:string[];
- prerequisiteUnitIds:string[];
- order:number;
- phase:LearningPhase;
- status:'proposed'|'available'|'active'|'completed'|'retired';
- reusedFromUnitId?:string;
- createdAt:string;
- updatedAt:string;
+export interface LearningUnit {
+  goal?: UnitGoal;
+  id: string;
+  projectId: string;
+  routeVersionId: string;
+  capabilityId: string;
+  title: string;
+  coreQuestion: string;
+  purpose: string;
+  expectedOutcome: string;
+  unresolvedGaps?: string[];
+  sourceIds: string[];
+  locators: string[];
+  prerequisiteUnitIds: string[];
+  order: number;
+  phase: LearningPhase;
+  status: 'proposed' | 'available' | 'active' | 'completed' | 'retired';
+  reusedFromUnitId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
-export interface LearningPosition{
- id:string;
- projectId:string;
- routeVersionId:string;
- unitId:string;
- sessionId?:string;
- intent:ProgressionIntent;
- reason:string;
- nextRequirement:string;
- returnUnitId?:string;
- returnSessionId?:string;
- confidence:'confirmed'|'inferred';
- updatedAt:string;
+export interface LearningPosition {
+  knowledgeBasis?: { capabilityId: string; digest: string };
+  basedOnEvidenceIds?: string[];
+  basedOnTeachingVersionIds?: string[];
+  derivedStatus?: 'active' | 'suspended';
+  id: string;
+  projectId: string;
+  routeVersionId: string;
+  unitId: string;
+  sessionId?: string;
+  intent: ProgressionIntent;
+  reason: string;
+  nextRequirement: string;
+  returnUnitId?: string;
+  returnSessionId?: string;
+  confidence: 'confirmed' | 'inferred';
+  updatedAt: string;
 }
-export interface TeachingObservation{
- id:string;
- projectId:string;
- unitId?:string;
- sessionId:string;
- inputId?:string;
- attemptId?:string;
- evidenceId?:string;
- taskId?:string;
- teachingVersionId?:string;
- kind:'learner_work'|'learner_report'|'verified_performance'|'content_problem';
- scope:string;
- summary:string;
- taskFamily?:string;
- demand?:TaskDemand;
- helpLevel:number;
- certainty:'verified'|'unverified'|'disputed';
- outcome?:'met'|'partial'|'not_yet'|'uncertain';
- progressionEligible?:boolean;
- status:'active'|'suspended';
- createdAt:string;
+export interface TeachingObservation {
+  id: string;
+  projectId: string;
+  unitId?: string;
+  sessionId: string;
+  inputId?: string;
+  attemptId?: string;
+  evidenceId?: string;
+  taskId?: string;
+  teachingVersionId?: string;
+  kind: 'learner_work' | 'learner_report' | 'verified_performance' | 'content_problem';
+  scope: string;
+  summary: string;
+  taskFamily?: string;
+  demand?: TaskDemand;
+  helpLevel: number;
+  certainty: 'verified' | 'unverified' | 'disputed';
+  outcome?: 'met' | 'partial' | 'not_yet' | 'uncertain';
+  progressionEligible?: boolean;
+  status: 'active' | 'suspended';
+  createdAt: string;
 }
-export interface UnderstandingBlock{
- id:string;
- author:'learner'|'ai'|'learner_edited_ai';
- text:string;
- sourceIds:string[];
- sourceInputIds:string[];
+export interface UnderstandingBlock {
+  id: string;
+  author: 'learner' | 'ai' | 'learner_edited_ai';
+  text: string;
+  sourceIds: string[];
+  sourceInputIds: string[];
 }
-export interface UnderstandingDraft{
- id:string;
- projectId:string;
- routeVersionId:string;
- unitId?:string;
- version:number;
- phase:'expand'|'synthesize';
- title:string;
- blocks:UnderstandingBlock[];
- status:'working'|'superseded';
- basedOnDraftId?:string;
- createdAt:string;
+export interface UnderstandingDraft {
+  basedOnEvidenceIds?: string[];
+  basedOnTeachingVersionIds?: string[];
+  derivedStatus?: 'active' | 'suspended';
+  id: string;
+  projectId: string;
+  routeVersionId: string;
+  unitId?: string;
+  version: number;
+  phase: 'expand' | 'synthesize';
+  title: string;
+  blocks: UnderstandingBlock[];
+  status: 'working' | 'superseded';
+  basedOnDraftId?: string;
+  createdAt: string;
 }

@@ -1,4 +1,5 @@
 import {afterEach,expect,it} from 'vitest';
+import {createHash} from 'node:crypto';
 import {mkdtempSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {LearningStore} from '../src/main/store';import {CallRunner} from '../src/main/call-runner';
 import {VerificationService} from '../src/main/verification-service';
@@ -30,6 +31,17 @@ it('reuses matching reviews and read-only views but invalidates the cache on mod
  const t=await fixture();const first=await t.service.review(t.version);await t.service.review(t.version);for(let i=0;i<3;i++)t.service.getView(t.version.id);expect(t.requests).toHaveLength(1);
  t.store.updateSettings({model:'different-model'});const changed:any=await t.service.review(t.version);expect(t.requests).toHaveLength(2);expect(changed.id).not.toBe(first.id);expect(changed.reviewPolicyVersion).toBeTruthy();expect(changed.reviewKey).toBeTruthy();
  t.store.updateSettings({baseUrl:'https://another.example/v1'});await t.service.review(t.version);expect(t.requests).toHaveLength(3);await t.service.review(t.version,{force:true});expect(t.requests).toHaveLength(4);
+});
+it('replaces the old source-contract cache only when review is explicitly requested and preserves the old record',async()=>{
+ const t=await fixture(),settings=t.store.getSettings();
+ const oldPolicy='0.3.1-source-contract-1';
+ const oldKey=createHash('sha256').update(JSON.stringify({contentHash:t.version.contentHash,endpoint:settings.baseUrl.trim().replace(/\/+$/,''),model:settings.model,policy:oldPolicy})).digest('hex');
+ const old={id:'old-contract-review',projectId:'project',teachingVersionId:t.version.id,contentHash:t.version.contentHash,status:'uncertain' as const,summary:'旧核验策略',issues:[],privateSolution:'旧核验推导',branches:[],exposureRelations:[],localChecks:[],createdAt:'2026-09-08T00:00:00Z',reviewerModel:settings.model,reviewKey:oldKey,reviewPolicyVersion:oldPolicy};t.store.put('taskReviews',old);
+ t.service.getView(t.version.id);expect(t.requests).toHaveLength(0);
+ const current=await t.service.review(t.version);
+ expect(t.requests).toHaveLength(1);expect(current.id).not.toBe(old.id);expect(current.reviewPolicyVersion).not.toBe(oldPolicy);
+ expect(t.store.get('taskReviews',old.id)).toEqual(old);
+ await t.service.review(t.version);expect(t.requests).toHaveLength(1);
 });
 it('does not invent a historical reported status or hide its source blocker',async()=>{
  const t=await fixture();t.store.put('taskReviews',{id:'old-review',projectId:'project',teachingVersionId:t.version.id,contentHash:t.version.contentHash,status:'uncertain',summary:'旧汇总',issues:[],privateSolution:'旧秘密答案',branches:[],exposureRelations:[],sourceChecks:[],localChecks:[],createdAt:'2026-09-08T00:00:00Z',reviewerModel:'older-model'});

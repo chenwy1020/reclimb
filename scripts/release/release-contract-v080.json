@@ -1,0 +1,14 @@
+{
+  "version": "0.8.0",
+  "suiteTag": "v080",
+  "expectedChecks": 10,
+  "smokeScript": "smoke-v070.mjs",
+  "desktopReportName": "desktop-verification-v070.json",
+  "expectedProductChecks": 9,
+  "productSmokeScript": "smoke-product-review.mjs",
+  "productReportName": "verification.json",
+  "ipcValidationChecks": 13,
+  "ipcReportName": "ipc-validation.json",
+  "testScope": "full",
+  "targetTests": []
+}

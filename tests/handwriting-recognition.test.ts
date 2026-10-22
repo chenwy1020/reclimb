@@ -14,8 +14,9 @@ import {publicSnapshot} from '../src/main/public-snapshot';
 import {readableExport} from '../src/main/readable-export';
 import {ProviderError} from '../src/main/provider';
 import {finishAssessment} from '../src/main/evidence';
+import {OperationManager} from '../src/main/operations';
 const cleanup:(()=>void)[]=[];afterEach(()=>cleanup.splice(0).reverse().forEach(fn=>fn()));
-async function fixture(options:{ready?:boolean;note?:string;vision?:(request:any)=>any;feedback?:(input:any)=>any}={}){
+async function fixture(options:{ready?:boolean;note?:string;vision?:(request:any)=>any;feedback?:(input:any)=>any;pages?:any[]}={}){
  const directory=mkdtempSync(join(tmpdir(),'reclimb-ink-recognition-'));cleanup.push(()=>rmSync(directory,{recursive:true,force:true}));const store=await LearningStore.open(join(directory,'source'));cleanup.push(()=>store.close());
  store.updateSettings({monthlyBudgetCny:100,vision:{enabled:true,providerName:'自编测试视觉',baseUrl:'https://vision.example/v1',model:'chosen-vision',inputPriceCnyPerMillion:1,outputPriceCnyPerMillion:1,priceUpdatedAt:'2026-09-15'}});
  const now=new Date().toISOString();store.put('projects',{id:'p',title:'自编手写任务',goal:'说明比较',status:'active',createdAt:now,updatedAt:now});store.put('capabilities',{id:'c',projectId:'p',title:'比较',description:'说明比较依据',prerequisites:[],sourceIds:[],order:0});
@@ -23,9 +24,9 @@ async function fixture(options:{ready?:boolean;note?:string;vision?:(request:any
  const version=verifier.createVersion({projectId:'p',capabilityId:'c',activity,steps:[{id:'step',taskId:'task',action:'attempt',title:'比较',content:activity.instruction,sourceIds:[],activity,createdAt:now}],sources:[]});
  store.put('taskReviews',{id:'review',projectId:'p',teachingVersionId:version.id,contentHash:version.contentHash,status:options.ready===false?'uncertain':'ready',summary:'原创测试核验',privateSolution:'PRIVATE_REVIEW_SOLUTION',issues:[],branches:[],exposureRelations:[],localChecks:[],createdAt:now,reviewerModel:'test'});
  store.put('sessions',{id:'s',projectId:'p',capabilityId:'c',activity:version.activity,teachingVersionId:version.id,mode:'practice',status:'active',createdAt:now,updatedAt:now,draft:'我的电脑主草稿',helpLevel:0,helpEvents:[],messages:[],checkpoint:'正在学习',nextStep:'继续',teaching:{version:1,current:version.steps[0],upcoming:[],history:[],guidance:'independent',confusionCount:0}});
- const handwriting=new HandwritingService(store),target=handwriting.target('s'),receipt=handwriting.save({requestId:'ink-submit',targetId:target.id,note:options.note??'',pages:[{id:'page',width:768,height:1024,strokes:[{id:'stroke',color:'#253e31',width:2,points:[{x:.2,y:.3,pressure:.5},{x:.4,y:.5,pressure:.6}]}]}]}),original=store.get('handwritings',receipt.id)!;
+ const handwriting=new HandwritingService(store),target=handwriting.target('s'),receipt=handwriting.save({requestId:'ink-submit',targetId:target.id,note:options.note??'',pages:options.pages??[{id:'page',width:768,height:1024,strokes:[{id:'stroke',color:'#253e31',width:2,points:[{x:.2,y:.3,pressure:.5},{x:.4,y:.5,pressure:.6}]}]}]}),original=store.get('handwritings',receipt.id)!;
  const visualCalls:any[]=[],textCalls:any[]=[];
- const visionRunner=new CallRunner(store,()=> 'test-vision-key',(settings)=>({complete:async request=>{visualCalls.push({request,model:settings.model});const result=options.vision?await options.vision(request):{text:'3 小于 5，因为在数轴上位于左侧。',uncertainties:[],unresolved:false};return{text:typeof result==='string'?result:JSON.stringify(result),inputTokens:12,outputTokens:15,usageKnown:true};}}));
+ const visionRunner=new CallRunner(store,()=> 'test-vision-key',(settings)=>({complete:async request=>{visualCalls.push({request,model:settings.model});const result=options.vision?await options.vision(request):{pages:[{pageId:(options.pages?.[0]?.id??'page'),blocks:[{id:'default-block',text:'3 小于 5，因为在数轴上位于左侧。',uncertainties:[]}]}]};return{text:typeof result==='string'?result:JSON.stringify(result),inputTokens:12,outputTokens:15,usageKnown:true};}}));
  const learning=new LearningService(store,()=> 'test-text-key',()=>({complete:async request=>{const input=JSON.parse(request.user);textCalls.push(input);const value=options.feedback?await options.feedback(input):input.operation?.startsWith('discuss_')?{text:'先保留你写下的依据，我们继续讨论。',sourceIds:[],scope:'concept'}:{outcome:'met',feedback:'已经写出比较依据。',criteria:input.activity.rubric.map((criterion:string,index:number)=>({criterion,criterionId:input.activity.rubricIds[index],result:'met',reason:'写出了左右顺序'})),limitations:[],sourceIds:[]};return{text:JSON.stringify(value),inputTokens:10,outputTokens:10,usageKnown:true};}}));
  const feedback=new HandwritingFeedbackService(store,learning,visionRunner,()=> 'test-vision-key',async record=>record.pages.map(()=>({dataUrl:'data:image/png;base64,iVBORw0KGgo='})));
  return {directory,store,verifier,version,handwriting,target,original,learning,feedback,visionRunner,visualCalls,textCalls};
@@ -36,7 +37,32 @@ it('transcribes stored pages using the chosen vision profile once and rejects un
  const t=await fixture(),machine=await t.feedback.recognize(t.original.id,'recognize-1');expect(machine).toMatchObject({status:'machine',handwritingId:t.original.id,contentHash:t.original.contentHash});expect(t.visualCalls[0].model).toBe('chosen-vision');expect(t.visualCalls[0].request.images).toHaveLength(1);expect(t.visualCalls[0].request.system).toContain('不完成学习者尚未写出的思考');expect(JSON.stringify(t.visualCalls)).not.toContain('PRIVATE_REFERENCE_ANSWER');
  expect(await t.feedback.recognize(t.original.id,'recognize-1')).toEqual(machine);expect(t.visualCalls).toHaveLength(1);expect(()=>t.learning.recordHandwritingInput(machine.id)).toThrow('确认');expect(t.store.list('attempts')).toEqual([]);expect(t.store.list('evidence')).toEqual([]);expect(t.textCalls).toEqual([]);
 });
-it('supports manual confirmation without a vision key and keeps the source draft and current step intact after feedback',async()=>{
+it('resumes a saved recognition result locally after transcript publication fails',async()=>{
+ const t=await fixture(),put=t.store.put.bind(t.store);let fail=true;(t.store as any).put=(collection:string,value:any)=>{if(fail&&collection==='handwritingTranscriptions'){fail=false;throw new Error('simulated local commit interruption');}return put(collection as any,value)};
+ await expect(t.feedback.recognize(t.original.id,'saved-result-resume')).rejects.toThrow('local commit');const operation=t.store.list('operations').find(item=>item.kind==='handwriting_recognition'&&item.requestId==='saved-result-resume')!;
+ expect(operation.phase).toBe('result_saved');expect(t.visualCalls).toHaveLength(1);(t.store as any).put=put;
+ const machine=await t.feedback.resumeRecognition(operation.id);expect(machine).toMatchObject({status:'machine',handwritingId:t.original.id,requestId:'saved-result-resume'});expect(t.visualCalls).toHaveLength(1);expect(t.store.get('operations',operation.id)?.phase).toBe('awaiting_confirmation');
+});
+it('marks a running recognition interrupted on restart without automatically calling vision',async()=>{
+ const t=await fixture(),manager=new OperationManager(t.store),operation=manager.save({projectId:'p',requestId:'restart-no-auto',kind:'handwriting_recognition',refs:{handwritingId:t.original.id},binding:{contentHash:t.original.contentHash,pageIds:t.original.pages.map(page=>page.id)},savedSummary:'待恢复的原稿识别'});manager.start(operation.id,operation.binding);
+ t.store.close();const reopened=await LearningStore.open(join(t.directory,'source'));cleanup.push(()=>reopened.close());new HandwritingFeedbackService(reopened,{isBusy:false} as any,{isBusy:false} as any,()=>'',async()=>[]);
+ expect(reopened.get('operations',operation.id)).toMatchObject({phase:'interrupted',failureStage:'model_call'});expect(t.visualCalls).toHaveLength(0);
+});
+it('explicitly retries the same saved recognition after vision setup was missing without creating another operation',async()=>{
+ const t=await fixture(),vision=t.store.getSettings().vision!;t.store.updateSettings({vision:{...vision,enabled:false}});
+ await expect(t.feedback.recognize(t.original.id,'saved-before-config')).rejects.toThrow('配置视觉服务');const operation=t.store.list('operations').find(item=>item.requestId==='saved-before-config')!;
+ expect(operation.phase).toBe('saved');expect(t.visualCalls).toHaveLength(0);expect(t.store.list('usage')).toHaveLength(0);
+ t.store.updateSettings({vision});const result=await t.feedback.retryRecognition(operation.id);
+ expect(result).toMatchObject({status:'machine',requestId:'saved-before-config',handwritingId:t.original.id});expect(t.store.list('operations')).toHaveLength(1);expect(t.store.get('operations',operation.id)?.phase).toBe('awaiting_confirmation');expect(t.visualCalls).toHaveLength(1);expect(t.store.list('handwritingTranscriptions')).toHaveLength(1);
+});
+it('only retries an interrupted recognition after an explicit request and records a new call',async()=>{
+ let attempts=0;const t=await fixture({vision:()=>{
+  attempts++;if(attempts===1)throw new ProviderError('transport interrupted',true);
+  return {pages:[{pageId:'page',blocks:[{id:'retried-block',text:'重试后文字',uncertainties:[]}]}]};
+ }});
+ await expect(t.feedback.recognize(t.original.id,'explicit-retry')).rejects.toThrow('transport interrupted');const operation=t.store.list('operations').find(item=>item.kind==='handwriting_recognition'&&item.requestId==='explicit-retry')!;expect(operation.phase).toBe('interrupted');expect(t.visualCalls).toHaveLength(1);
+ const machine=await t.feedback.retryRecognition(operation.id);expect(machine.text).toBe('重试后文字');expect(t.visualCalls).toHaveLength(2);expect(t.store.get('operations',operation.id)?.callIds).toHaveLength(2);
+});it('supports manual confirmation without a vision key and keeps the source draft and current step intact after feedback',async()=>{
  const t=await fixture();t.store.updateSettings({vision:{...t.store.getSettings().vision!,enabled:false}});const before=t.store.get('sessions','s')!,saved=confirm(t);expect(saved.receipt.responseMode).toBe('assessment');expect(t.textCalls).toEqual([]);expect(t.visualCalls).toEqual([]);await t.feedback.respond(t.original.id,saved.receipt.inputId);await t.feedback.respond(t.original.id,saved.receipt.inputId);
  const after=t.store.get('sessions','s')!;expect(after.draft).toBe(before.draft);expect(after.teaching?.current).toEqual(before.teaching?.current);expect(after.checkpoint).toBe(before.checkpoint);expect(t.textCalls).toHaveLength(1);expect(t.store.list('evidence')).toHaveLength(1);expect(JSON.stringify(t.feedback.responses(t.original.id))).not.toContain('PRIVATE_');expect(t.feedback.responses(t.original.id)).toHaveLength(2);
 });
@@ -62,26 +88,76 @@ it('keeps the confirmation on zero budget and does not send either model request
  const t=await fixture();t.store.updateSettings({monthlyBudgetCny:0});const saved=confirm(t);await expect(t.feedback.respond(t.original.id,saved.receipt.inputId)).rejects.toThrow('预算');await expect(t.feedback.recognize(t.original.id,'no-budget')).rejects.toThrow('预算');expect(t.visualCalls).toEqual([]);expect(t.textCalls).toEqual([]);expect(t.feedback.responses(t.original.id)[0]).toMatchObject({responseState:'failed',text:saved.transcription.text});expect(t.store.list('handwritings')).toHaveLength(1);
 });
 it('saves while recognition is busy and never queues a feedback call automatically',async()=>{
- let release!:(value:any)=>void,started!:()=>void;const began=new Promise<void>(resolve=>started=resolve),t=await fixture({vision:()=>{started();return new Promise(resolve=>release=resolve);}});const running=t.feedback.recognize(t.original.id,'busy-recognize');await began;const saved=confirm(t);expect(saved.responseAvailability).toBe('busy');expect(await t.feedback.respond(t.original.id,saved.receipt.inputId)).toEqual({responseAvailability:'busy'});release({text:'3 小于 5',uncertainties:[],unresolved:false});await running;expect(t.textCalls).toEqual([]);expect(t.feedback.responses(t.original.id)[0].responseState).toBe('pending');
+ let release!:(value:any)=>void,started!:()=>void;const began=new Promise<void>(resolve=>started=resolve),t=await fixture({vision:()=>{started();return new Promise(resolve=>release=resolve);}});const running=t.feedback.recognize(t.original.id,'busy-recognize');await began;const saved=confirm(t);expect(saved.responseAvailability).toBe('busy');expect(await t.feedback.respond(t.original.id,saved.receipt.inputId)).toEqual({responseAvailability:'busy'});release({pages:[{pageId:'page',blocks:[{id:'busy-block',text:'3 小于 5',uncertainties:[]}]}]});await running;expect(t.textCalls).toEqual([]);expect(t.feedback.responses(t.original.id)[0].responseState).toBe('pending');
 });
 it('stops evidence if a dispute is raised while the handwriting assessment returns',async()=>{
  let t:Awaited<ReturnType<typeof fixture>>;t=await fixture({feedback:async input=>{await t.learning.dispute('s','原题比较条件有遗漏');return{outcome:'met',feedback:'原评价',criteria:input.activity.rubric.map((criterion:string,i:number)=>({criterion,criterionId:input.activity.rubricIds[i],result:'met',reason:'满足'})),limitations:[],sourceIds:[]};}});const saved=confirm(t);await expect(t.feedback.respond(t.original.id,saved.receipt.inputId)).rejects.toThrow('质疑');expect(t.store.list('evidence')).toEqual([]);expect(t.feedback.responses(t.original.id)[0].responseState).toBe('failed');expect(t.store.get('handwritings',t.original.id)?.pages).toEqual(t.original.pages);
 });
 it('retains an unreadable machine result without silently repairing the learner reasoning',async()=>{
- const t=await fixture({vision:()=>({text:'[无法辨认]\n[图形需对照原稿]',uncertainties:['不等号无法确认'],unresolved:true})}),candidate=await t.feedback.recognize(t.original.id,'unclear');expect(candidate.text).toContain('[无法辨认]');expect(candidate.unresolved).toBe(true);expect(t.store.list('attempts')).toEqual([]);expect(t.store.list('evidence')).toEqual([]);
+ const t=await fixture({vision:()=>({pages:[{pageId:'page',blocks:[{id:'unclear-block',text:'[无法辨认]\n[图形需对照原稿]',uncertainties:[{id:'unclear-1',text:'不等号无法确认',critical:true,resolved:false}]}]}]})}),candidate=await t.feedback.recognize(t.original.id,'unclear');expect(candidate.text).toContain('[无法辨认]');expect(candidate.unresolved).toBe(true);expect(t.store.list('attempts')).toEqual([]);expect(t.store.list('evidence')).toEqual([]);
 });
-it('charges and bounds one explicit format repair, while an unsupported vision model is not replaced',async()=>{
- let calls=0;const t=await fixture({vision:()=>++calls===1?'invalid json':{text:'原稿转录',uncertainties:[],unresolved:false}});await t.feedback.recognize(t.original.id,'repair-recognize');expect(t.visualCalls).toHaveLength(2);expect(t.store.list('usage').filter(item=>item.entryType==='call')).toHaveLength(2);expect(t.store.list('handwritingTranscriptions')).toHaveLength(1);
+it('binds recognized blocks to real page IDs and serializes them in saved original order',async()=>{
+ const pages=[{id:'page-a',width:768 as const,height:1024 as const,strokes:[]},{id:'page-b',width:768 as const,height:1024 as const,strokes:[]}];
+ const t=await fixture({pages,note:'两页原稿',vision:()=>({pages:[{pageId:'page-b',blocks:[{id:'b1',text:'第二页',uncertainties:[]}]},{pageId:'page-a',blocks:[{id:'a1',text:'第一页',uncertainties:[]}]}]})});
+ const machine:any=await t.feedback.recognize(t.original.id,'page-blocks');
+ expect(machine.pages.map((page:any)=>page.pageId)).toEqual(['page-a','page-b']);
+ expect(machine.text).toBe('第一页\n\n--- 第 2 页 ---\n\n第二页');
+ expect(machine.contentHash).toBe(t.original.contentHash);
+ expect(t.visualCalls[0].request.user).toContain('page-a');expect(t.visualCalls[0].request.user).toContain('page-b');
+});
+it('rejects invented page mappings and duplicate block IDs without publishing a transcript',async()=>{
+ const pages=[{id:'page-a',width:768 as const,height:1024 as const,strokes:[]},{id:'page-b',width:768 as const,height:1024 as const,strokes:[]}];
+ const invented=await fixture({pages,note:'两页原稿',vision:()=>({pages:[{pageId:'made-up',blocks:[{id:'b1',text:'内容',uncertainties:[]}]}]})});
+ await expect(invented.feedback.recognize(invented.original.id,'invented-page')).rejects.toThrow('页面');expect(invented.store.list('handwritingTranscriptions')).toEqual([]);
+ const duplicate=await fixture({pages,note:'两页原稿',vision:()=>({pages:[{pageId:'page-a',blocks:[{id:'same',text:'一',uncertainties:[]}]},{pageId:'page-b',blocks:[{id:'same',text:'二',uncertainties:[]}]}]})});
+ await expect(duplicate.feedback.recognize(duplicate.original.id,'duplicate-block')).rejects.toThrow('段落');expect(duplicate.store.list('handwritingTranscriptions')).toEqual([]);
+});
+it('rejects machine output that claims an uncertainty is already resolved',async()=>{
+ const t=await fixture({vision:()=>({pages:[{pageId:'page',blocks:[{id:'machine-block',text:'3 ? 5',uncertainties:[{id:'machine-u',text:'符号不清',critical:true,resolved:true}]}]}]})});
+ await expect(t.feedback.recognize(t.original.id,'machine-resolved')).rejects.toThrow('机器识别');expect(t.store.list('handwritingTranscriptions')).toEqual([]);
+});
+it('keeps parent block identities on their original pages',async()=>{
+ const pages=[{id:'page-a',width:768 as const,height:1024 as const,strokes:[{id:'sa',color:'#253e31',width:2,points:[{x:.1,y:.1,pressure:.5}]}]},{id:'page-b',width:768 as const,height:1024 as const,strokes:[{id:'sb',color:'#253e31',width:2,points:[{x:.1,y:.1,pressure:.5}]}]}],t=await fixture({pages,vision:()=>({pages:[{pageId:'page-a',blocks:[{id:'a',text:'甲',uncertainties:[]}]},{pageId:'page-b',blocks:[{id:'b',text:'乙',uncertainties:[]}]}]})}),machine=await t.feedback.recognize(t.original.id,'grouped-parent');
+ expect(()=>t.feedback.confirm({handwritingId:t.original.id,requestId:'swap-pages',text:'交换页段',pages:[{pageId:'page-a',blocks:[{id:'b',text:'乙',uncertainties:[]}]},{pageId:'page-b',blocks:[{id:'a',text:'甲',uncertainties:[]}]}],transcriptionId:machine.id,unresolved:false})).toThrow('段落');
+});
+it('does not let a mapped parent become an unmapped child or draft',async()=>{
+ const t=await fixture(),machine=await t.feedback.recognize(t.original.id,'mapped-parent');
+ expect(()=>t.feedback.saveDraft({handwritingId:t.original.id,text:'降级草稿',parentId:machine.id,unresolved:false})).toThrow('页段');
+ expect(()=>t.feedback.confirm({handwritingId:t.original.id,requestId:'unmapped-child',text:'降级确认',transcriptionId:machine.id,unresolved:false})).toThrow('页段');
+});it('persists page-block edits as a confirmed child and binds the response to that exact version',async()=>{
+ const t=await fixture({vision:()=>({pages:[{pageId:'page',blocks:[{id:'block-1',text:'3 小于 5',uncertainties:[]}]}]})}),machine:any=await t.feedback.recognize(t.original.id,'versioned-blocks');
+ const edited=[{pageId:'page',blocks:[{id:'block-1',text:'3 小于 5，因为 3 在左侧。',uncertainties:[]}]}];
+ const draft:any=t.feedback.saveDraft({handwritingId:t.original.id,text:'3 小于 5，因为 3 在左侧。',pages:edited,parentId:machine.id,unresolved:false});expect(draft.pages).toEqual(edited);
+ const saved:any=t.feedback.confirm({handwritingId:t.original.id,requestId:'confirmed-blocks',text:'3 小于 5，因为 3 在左侧。',pages:edited,transcriptionId:machine.id,unresolved:false});
+ expect(saved.transcription.parentId).toBe(machine.id);expect(saved.transcription.pages).toEqual(edited);expect(saved.transcription.contentHash).toBe(t.original.contentHash);
+ expect(t.feedback.responses(t.original.id)[0].handwritingTranscriptionId).toBe(saved.transcription.id);
+ const operation=t.store.list('operations').find(item=>item.kind==='handwriting_recognition'&&item.requestId==='versioned-blocks')!;expect(operation.phase).toBe('completed');
+});
+it('rejects page-block revisions that replace their parent block identity',async()=>{
+ const t=await fixture({vision:()=>({pages:[{pageId:'page',blocks:[{id:'stable-block',text:'原文字',uncertainties:[]}]}]})}),machine:any=await t.feedback.recognize(t.original.id,'parent-blocks');
+ expect(()=>t.feedback.confirm({handwritingId:t.original.id,requestId:'changed-block-id',text:'修改文字',pages:[{pageId:'page',blocks:[{id:'invented-block',text:'修改文字',uncertainties:[]}]}],transcriptionId:machine.id,unresolved:false})).toThrow('段落');
+ expect(t.store.list('handwritingTranscriptions')).toHaveLength(1);
+});it('forces unresolved critical block ambiguity into discussion even when the top-level flag is false',async()=>{
+ const t=await fixture(),pages=[{pageId:'page',blocks:[{id:'critical',text:'3 ? 5',uncertainties:[{id:'u1',text:'不等号无法辨认',critical:true,resolved:false}]}]}];
+ const saved:any=t.feedback.confirm({handwritingId:t.original.id,requestId:'critical-confirm',text:'3 ? 5',pages,unresolved:false});
+ expect(saved.transcription.unresolved).toBe(true);expect(saved.receipt.responseMode).toBe('discussion');await t.feedback.respond(t.original.id,saved.receipt.inputId);expect(t.store.list('evidence')).toEqual([]);
+});
+it('keeps legacy full text unmapped and confirms it without a paid recognition call',async()=>{
+ const t=await fixture();t.store.updateSettings({vision:{...t.store.getSettings().vision!,enabled:false}});
+ const saved:any=t.feedback.confirm({handwritingId:t.original.id,requestId:'legacy-unmapped',text:'旧版完整转写，没有页段对应。',unresolved:false});
+ expect(saved.transcription.pages).toBeUndefined();expect(saved.transcription.text).toBe('旧版完整转写，没有页段对应。');expect(t.visualCalls).toEqual([]);expect(t.store.list('usage')).toEqual([]);
+});it('charges and bounds one explicit format repair, while an unsupported vision model is not replaced',async()=>{
+ let calls=0;const t=await fixture({vision:()=>++calls===1?'invalid json':{pages:[{pageId:'page',blocks:[{id:'repair-block',text:'原稿转录',uncertainties:[]}]}]}});await t.feedback.recognize(t.original.id,'repair-recognize');expect(t.visualCalls).toHaveLength(2);expect(t.store.list('usage').filter(item=>item.entryType==='call')).toHaveLength(2);expect(t.store.list('handwritingTranscriptions')).toHaveLength(1);
  const unsupported=await fixture({vision:()=>{throw new ProviderError('当前模型不支持图像',true);}});await expect(unsupported.feedback.recognize(unsupported.original.id,'unsupported')).rejects.toThrow('不支持图像');expect(unsupported.visualCalls).toHaveLength(1);expect(unsupported.visualCalls[0].model).toBe('chosen-vision');expect(unsupported.store.list('handwritingTranscriptions')).toEqual([]);
 });
 it('stores an unconfirmed text draft independently from the main draft, and validates its parent',async()=>{
- const t=await fixture(),before=t.store.get('sessions','s')!,machine=await t.feedback.recognize(t.original.id,'draft-recognition');const draft=t.feedback.saveDraft({handwritingId:t.original.id,text:'还在核对的文字',parentId:machine.id,unresolved:true});expect(t.feedback.draft(t.original.id)).toEqual(draft);expect(t.store.get('sessions','s')?.draft).toBe(before.draft);expect(t.store.get('sessions','s')?.updatedAt).toBe(before.updatedAt);expect(t.store.list('attempts')).toEqual([]);expect(()=>t.feedback.saveDraft({handwritingId:t.original.id,text:'文字',parentId:'absent',unresolved:false})).toThrow('关联');
+ const t=await fixture(),before=t.store.get('sessions','s')!,machine=await t.feedback.recognize(t.original.id,'draft-recognition');const draft=t.feedback.saveDraft({handwritingId:t.original.id,text:'还在核对的文字',pages:machine.pages!.map(page=>({...page,blocks:page.blocks.map(block=>({...block,text:'还在核对的文字'}))})),parentId:machine.id,unresolved:true});expect(t.feedback.draft(t.original.id)).toEqual(draft);expect(t.store.get('sessions','s')?.draft).toBe(before.draft);expect(t.store.get('sessions','s')?.updatedAt).toBe(before.updatedAt);expect(t.store.list('attempts')).toEqual([]);expect(()=>t.feedback.saveDraft({handwritingId:t.original.id,text:'文字',parentId:'absent',unresolved:false})).toThrow('关联');
 });
 it('restores raw pages, machine and confirmed versions, pending response and text draft without exposing candidates in snapshots',async()=>{
- const t=await fixture({ready:false}),machine=await t.feedback.recognize(t.original.id,'backup-recognition');t.feedback.saveDraft({handwritingId:t.original.id,text:'保留的编辑文字',parentId:machine.id,unresolved:true});const saved=confirm(t,{transcriptionId:machine.id});
+ const t=await fixture({ready:false}),machine=await t.feedback.recognize(t.original.id,'backup-recognition');t.feedback.saveDraft({handwritingId:t.original.id,text:'保留的编辑文字',pages:machine.pages!.map(page=>({...page,blocks:page.blocks.map(block=>({...block,text:'保留的编辑文字'}))})),parentId:machine.id,unresolved:true});const saved=confirm(t,{transcriptionId:machine.id,pages:machine.pages});
  const archive=join(t.directory,'archive.reclimb');writeBackup(t.store,archive);const restored=readBackup(archive);expect(restored.records.handwritingTranscriptions).toHaveLength(2);expect(restored.records.sessions[0].handwritingDrafts?.[t.original.id].text).toBe('保留的编辑文字');expect(restored.records.sessions[0].messages[0]).toMatchObject({handwritingId:t.original.id,handwritingTranscriptionId:saved.transcription.id,responseState:'pending'});expect(publicSnapshot(t.store.snapshot()).handwritingTranscriptions).toEqual([]);expect(readableExport(t.store.snapshot())).toContain('机器识别候选，尚未核对');
  await prepareRestore(archive,join(t.directory,'restored'));const reopened=await LearningStore.open(join(t.directory,'restored'));cleanup.push(()=>reopened.close());expect(reopened.get('handwritings',t.original.id)?.pages).toEqual(t.original.pages);expect(reopened.get('handwritingTranscriptions',saved.transcription.id)?.text).toBe(saved.transcription.text);
- const zip=new AdmZip(archive),manifest=JSON.parse(zip.readAsText('manifest.json'));manifest.records.handwritingTranscriptions.find((item:any)=>item.id===saved.transcription.id).text='被改写的转录';zip.updateFile('manifest.json',Buffer.from(JSON.stringify(manifest)));const altered=archive+'.bad';writeFileSync(altered,zip.toBuffer());expect(()=>readBackup(altered)).toThrow('确认转录');
+ const zip=new AdmZip(archive),manifest=JSON.parse(zip.readAsText('manifest.json'));manifest.records.handwritingTranscriptions.find((item:any)=>item.id===saved.transcription.id).text='被改写的转录';zip.updateFile('manifest.json',Buffer.from(JSON.stringify(manifest)));const altered=archive+'.bad';writeFileSync(altered,zip.toBuffer());expect(()=>readBackup(altered)).toThrow(/手写转录|确认转录/);
 });
 it('renders original strokes into bounded PNG pages locally without a model',async()=>{
  const t=await fixture(),images=await renderHandwritingImages(t.original);expect(images).toHaveLength(1);expect(images[0].dataUrl.startsWith('data:image/png;base64,iVBORw0KGgo')).toBe(true);expect(t.visualCalls).toEqual([]);

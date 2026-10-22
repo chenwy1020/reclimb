@@ -4,6 +4,10 @@ import {mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {WebDavSyncService} from '../src/main/webdav-sync';
+import {LearningStore} from '../src/main/store';
+import {readBackup,writeBackup} from '../src/main/backup';
+import {portableWorkspaceHash} from '../src/main/sync-workspace';
+import AdmZip from 'adm-zip';
 
 const roots:string[]=[];afterEach(()=>roots.splice(0).forEach(path=>rmSync(path,{recursive:true,force:true})));
 const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
@@ -84,6 +88,22 @@ function device(remote:ReturnType<typeof server>,content='first'){
 }
 const configure=(d:ReturnType<typeof device>,vaultId?:string)=>d.service.configure({endpoint:'https://dav.example/user/',username:'student',password:'TOP_SECRET_DAV_PASSWORD',vaultId});
 const configureNut=(d:ReturnType<typeof device>,vaultId='fixture')=>d.service.configure({endpoint:'https://dav.jianguoyun.com/dav/',username:'student',password:'TOP_SECRET_DAV_PASSWORD',vaultId});
+
+it('accepts a format-10 remote hash before migration and rejects self-consistent archive tampering',async()=>{
+ const archiveRoot=mkdtempSync(join(tmpdir(),'reclimb-dav-v10-'));roots.push(archiveRoot);const store=await LearningStore.open(archiveRoot),v11=join(archiveRoot,'v11.reclimb'),v10=join(archiveRoot,'v10.reclimb');writeBackup(store,v11);store.close();
+ const zip=new AdmZip(v11),manifestEntry=zip.getEntry('manifest.json')!,manifest=JSON.parse(zip.readAsText(manifestEntry));manifest.version=10;for(const name of ['operations','learningProposals','routeAssociations','readerStates','validationSets','validationTasks','validationRuns','validationExposures','trialRecords'])delete manifest.records[name];zip.updateFile('manifest.json',Buffer.from(JSON.stringify(manifest)));zip.writeZip(v10);
+ const backup=readBackup(v10),contentHash=portableWorkspaceHash(backup.records,id=>backup.files.get(id)!.bytes),archiveBytes=readFileSync(v10);
+ const remote=server(),directory=mkdtempSync(join(tmpdir(),'reclimb-dav-v10-sender-'));roots.push(directory);
+ const inspect=(file:string)=>{const candidate=readBackup(file);return{contentHash:portableWorkspaceHash(candidate.records,id=>candidate.files.get(id)!.bytes),projects:candidate.records.projects.length,sessions:candidate.records.sessions.length,materials:candidate.records.materials.length,handwritings:candidate.records.handwritings?.length??0};};
+ const sender=new WebDavSyncService({directory,cipher,fetcher:remote.fetcher,callbacks:{currentHash:()=>contentHash,captureBackup:file=>{writeFileSync(file,archiveBytes);return{contentHash};},inspectBackup:inspect,adoptBackup:()=>{}}}),config=sender.configure({endpoint:'https://dav.example/user/',username:'student',password:'TOP_SECRET'});
+ await sender.upload({requestId:'legacy-upload'});
+ const receiverDirectory=mkdtempSync(join(tmpdir(),'reclimb-dav-v10-receiver-'));roots.push(receiverDirectory);const receiver=new WebDavSyncService({directory:receiverDirectory,cipher,fetcher:remote.fetcher,callbacks:{currentHash:()=>hash('local'),captureBackup:()=>{throw new Error('unused');},inspectBackup:inspect,adoptBackup:()=>{}}});receiver.configure({endpoint:'https://dav.example/user/',username:'student',password:'TOP_SECRET',vaultId:config.vaultId});
+ await expect(receiver.preview({})).resolves.toMatchObject({snapshot:{contentHash}});
+ const archive=[...remote.files].find(([url])=>url.endsWith('.reclimb'))!,tampered=new AdmZip(archive[1].body),entry=tampered.getEntry('manifest.json')!,changed=JSON.parse(tampered.readAsText(entry));changed.records.settings.personalGoal='tampered';tampered.updateFile('manifest.json',Buffer.from(JSON.stringify(changed)));const bytes=tampered.toBuffer();remote.files.set(archive[0],{body:bytes,etag:'"tampered-archive"'});
+ for(const [url,item] of [...remote.files])if(url.endsWith('/head.json')||url.endsWith('.json')){const metadata=JSON.parse(item.body.toString());if(metadata.format==='reclimb.webdav.snapshot'){metadata.sha256=hash(bytes);metadata.bytes=bytes.length;remote.files.set(url,{body:Buffer.from(JSON.stringify(metadata)),etag:item.etag});}}
+ const freshDirectory=mkdtempSync(join(tmpdir(),'reclimb-dav-v10-fresh-'));roots.push(freshDirectory);const fresh=new WebDavSyncService({directory:freshDirectory,cipher,fetcher:remote.fetcher,callbacks:{currentHash:()=>hash('fresh'),captureBackup:()=>{throw new Error('unused');},inspectBackup:inspect,adoptBackup:()=>{}}});fresh.configure({endpoint:'https://dav.example/user/',username:'student',password:'TOP_SECRET',vaultId:config.vaultId});
+ await expect(fresh.preview({})).rejects.toThrow('内容版本');
+});
 
 it('supports Nutstore bare validators using verified no-overwrite MOVE and raw version updates',async()=>{
  const remote=server({nut:true}),a=device(remote);configureNut(a);

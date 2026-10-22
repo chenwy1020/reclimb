@@ -1,9 +1,122 @@
-import {z} from 'zod';
-import {activitySchema,teachingStepSchema} from './schemas';
-import {verificationIssueSchema,conditionBranchSchema,exposureRelationSchema,verificationBlockerSchema} from './verification-schemas';
-const id=z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/),text=z.string().max(200000),date=z.string().refine(v=>Number.isFinite(Date.parse(v))),hash=z.string().regex(/^[a-f0-9]{64}$/);
-export const teachingVersionSchema=z.object({id,projectId:id,capabilityId:id,taskId:id,version:z.number().int().positive(),contentHash:hash,activity:activitySchema,steps:z.array(teachingStepSchema).max(10000),sources:z.array(z.object({id,locator:text,text,warnings:z.array(text).max(100),transcriptionIds:z.array(id).max(100)})).max(100),createdAt:date,origin:z.enum(['generated','legacy','correction']),replacesVersionId:id.optional()});
-export const taskReviewSchema=z.object({id,projectId:id,teachingVersionId:id,contentHash:hash,status:z.enum(['ready','needs_correction','uncertain']),summary:text,issues:z.array(verificationIssueSchema).max(100),privateSolution:text,branches:z.array(conditionBranchSchema).max(100),exposureRelations:z.array(exposureRelationSchema).max(100),exposureCoverageComplete:z.boolean().optional(),sourceChecks:z.array(z.object({sourceId:id,usesCriticalSymbols:z.boolean(),independentlyEstablished:z.boolean(),reason:text,consistency:z.enum(['consistent','conflicting','uncertain','not_used']).optional()})).max(100).optional(),assessmentFindings:z.array(z.object({evidenceId:id,verdict:z.enum(['uphold','invalidate','uncertain']),reason:text})).max(100).optional(),localChecks:z.array(z.object({status:z.enum(['pass','fail','unknown']),details:text})).max(100),createdAt:date,reviewerModel:text,reportedStatus:z.enum(['ready','needs_correction','uncertain']).optional(),effectiveStatus:z.enum(['ready','needs_correction','uncertain']).optional(),blockingReasons:z.array(verificationBlockerSchema).max(100).optional(),reviewKey:text.optional(),reviewPolicyVersion:text.optional(),reviewerEndpoint:text.optional()});
-export const disputeSchema=z.object({id,projectId:id,sessionId:id,taskId:id,teachingVersionId:id,contentHash:hash,issue:text,status:z.enum(['open','reviewing','resolved','unresolved']),messages:z.array(z.object({id,role:z.enum(['user','assistant']),text,createdAt:date})).max(10000),createdAt:date,updatedAt:date,reviewId:id.optional(),replacementVersionId:id.optional()});
-export const correctionSchema=z.object({id,projectId:id,teachingVersionId:id,action:z.enum(['suspend','invalidate','restore','replace']),reason:text,createdAt:date,disputeId:id.optional(),reviewId:id.optional(),evidenceId:id.optional(),replacementVersionId:id.optional()});
-export const answerExposureSchema=z.object({id,projectId:id,capabilityId:id,sessionId:id,taskId:id,teachingVersionId:id.optional(),kind:z.enum(['demonstration','feedback','answer','review_solution']),text,createdAt:date});
+import { z } from 'zod';
+import { activitySchema, teachingStepSchema } from './schemas';
+import {
+  verificationIssueSchema,
+  conditionBranchSchema,
+  exposureRelationSchema,
+  verificationBlockerSchema,
+} from './verification-schemas';
+const id = z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/),
+  text = z.string().max(200000),
+  date = z.string().refine((v) => Number.isFinite(Date.parse(v))),
+  hash = z.string().regex(/^[a-f0-9]{64}$/);
+export const teachingVersionSchema = z.object({
+  id,
+  projectId: id,
+  capabilityId: id,
+  taskId: id,
+  version: z.number().int().positive(),
+  contentHash: hash,
+  activity: activitySchema,
+  steps: z.array(teachingStepSchema).max(10000),
+  sources: z
+    .array(
+      z.object({
+        id,
+        locator: text,
+        text,
+        warnings: z.array(text).max(100),
+        transcriptionIds: z.array(id).max(100),
+      }),
+    )
+    .max(100),
+  createdAt: date,
+  origin: z.enum(['generated', 'legacy', 'correction']),
+  replacesVersionId: id.optional(),
+});
+export const taskReviewSchema = z.object({
+  id,
+  projectId: id,
+  teachingVersionId: id,
+  contentHash: hash,
+  status: z.enum(['ready', 'needs_correction', 'uncertain']),
+  summary: text,
+  issues: z.array(verificationIssueSchema).max(100),
+  privateSolution: text,
+  branches: z.array(conditionBranchSchema).max(100),
+  exposureRelations: z.array(exposureRelationSchema).max(100),
+  exposureCoverageComplete: z.boolean().optional(),
+  sourceChecks: z
+    .array(
+      z.object({
+        sourceId: id,
+        usesCriticalSymbols: z.boolean(),
+        independentlyEstablished: z.boolean(),
+        reason: text,
+        consistency: z.enum(['consistent', 'conflicting', 'uncertain', 'not_used']).optional(),
+      }),
+    )
+    .max(100)
+    .optional(),
+  assessmentFindings: z
+    .array(
+      z.object({
+        evidenceId: id,
+        verdict: z.enum(['uphold', 'invalidate', 'uncertain']),
+        reason: text,
+      }),
+    )
+    .max(100)
+    .optional(),
+  localChecks: z
+    .array(z.object({ status: z.enum(['pass', 'fail', 'unknown']), details: text }))
+    .max(100),
+  createdAt: date,
+  reviewerModel: text,
+  reportedStatus: z.enum(['ready', 'needs_correction', 'uncertain']).optional(),
+  effectiveStatus: z.enum(['ready', 'needs_correction', 'uncertain']).optional(),
+  blockingReasons: z.array(verificationBlockerSchema).max(100).optional(),
+  reviewKey: text.optional(),
+  reviewPolicyVersion: text.optional(),
+  reviewerEndpoint: text.optional(),
+});
+export const disputeSchema = z.object({
+  id,
+  projectId: id,
+  sessionId: id,
+  taskId: id,
+  teachingVersionId: id,
+  contentHash: hash,
+  issue: text,
+  status: z.enum(['open', 'reviewing', 'resolved', 'unresolved']),
+  messages: z
+    .array(z.object({ id, role: z.enum(['user', 'assistant']), text, createdAt: date }))
+    .max(10000),
+  createdAt: date,
+  updatedAt: date,
+  reviewId: id.optional(),
+  replacementVersionId: id.optional(),
+});
+export const correctionSchema = z.object({
+  id,
+  projectId: id,
+  teachingVersionId: id,
+  action: z.enum(['suspend', 'invalidate', 'restore', 'replace']),
+  reason: text,
+  createdAt: date,
+  disputeId: id.optional(),
+  reviewId: id.optional(),
+  evidenceId: id.optional(),
+  replacementVersionId: id.optional(),
+});
+export const answerExposureSchema = z.object({
+  id,
+  projectId: id,
+  capabilityId: id,
+  sessionId: id,
+  taskId: id,
+  teachingVersionId: id.optional(),
+  kind: z.enum(['demonstration', 'feedback', 'answer', 'review_solution']),
+  text,
+  createdAt: date,
+});

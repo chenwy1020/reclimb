@@ -1,15 +1,155 @@
 import SettingsCard from './SettingsCard';
-import {useState} from 'react';
-import {ArrowDownToLine,ChevronDown,ClipboardList,LoaderCircle,Search} from 'lucide-react';
-import {Badge,Button,timeLabel,type Run} from './ui';
-import {RichText} from './RichText';
-interface DiagnosticEntry {id:string;createdAt:string;operationId:string;kind:string;model:string;modelProfileId?:string;profileName?:string;providerName?:string;requestedModel?:string;reportedModel?:string;status:'valid'|'invalid'|'transport_error'|'published';finishReason?:string;providerRequestId?:string;error?:string;response?:string}
-interface DiagnosticPreview {entries:DiagnosticEntry[];description:string;bytes:number}
-export default function DiagnosticsPanel({run,busy}:{run:Run;busy:boolean}){
- const[preview,setPreview]=useState<DiagnosticPreview|null>(null);const[loading,setLoading]=useState(false);const[error,setError]=useState('');
- async function read(){setLoading(true);setError('');try{setPreview(await window.learning.request<DiagnosticPreview>('diagnostics.preview'))}catch(e){setError(String((e as Error).message||e))}finally{setLoading(false)}}
- const labels={valid:'内容已校验',invalid:'内容校验未通过',transport_error:'服务连接未完成',published:'已保存结果'};
- return <SettingsCard className="diagnostics-card" title="出问题时，留下可以检查的线索" description="先在本机预览，再决定是否导出给帮助你排查的人。" icon={<ClipboardList size={22}/>}><p className="diagnostics-intro">可以检查调用停在连接、内容格式还是结果保存这一步。导出文件不会自动发送到任何地方。</p><div className="settings-actions"><Button disabled={busy||loading} onClick={()=>void read()}>{loading?<LoaderCircle className="spin" size={14}/>:<Search size={14}/>}预览本机诊断</Button><Button disabled={busy||loading||!preview} onClick={()=>void run('diagnostics.export',{})}><ArrowDownToLine size={14}/>导出诊断文件</Button></div>
- {error&&<p className="inline-error" role="alert">{error}</p>}{preview&&<div className="diagnostics-preview"><RichText text={preview.description}/><div className="diagnostics-meta">{preview.entries.length} 条记录 · 约 {(preview.bytes/1024).toFixed(1)} KB</div>{!preview.entries.length?<p className="muted">当前没有可预览的诊断记录。</p>:preview.entries.map(entry=><details key={entry.id}><summary><Badge tone={entry.status==='invalid'||entry.status==='transport_error'?'amber':'green'}>{entry.kind==='webdav'?(entry.status==='transport_error'?'同步未完成':'收到同步响应'):labels[entry.status]}</Badge><span>{entry.kind==='webdav'?'WebDAV 同步':entry.kind}</span><small>{timeLabel(entry.createdAt)}</small><ChevronDown size={13}/></summary><dl>{entry.profileName&&<><dt>模型配置</dt><dd>{entry.profileName}</dd></>}<dt>请求模型</dt><dd>{entry.requestedModel??entry.model}</dd><dt>服务商报告</dt><dd>{entry.reportedModel??'未报告实际模型'}</dd>{entry.providerName&&<><dt>服务名称</dt><dd>{entry.providerName}</dd></>}<dt>操作编号</dt><dd>{entry.operationId}</dd>{entry.finishReason&&<><dt>服务结束原因</dt><dd>{entry.finishReason}</dd></>}{entry.providerRequestId&&<><dt>服务请求编号</dt><dd>{entry.providerRequestId}</dd></>}</dl>{entry.error&&<p className="inline-error">{entry.error}</p>}{entry.response&&<><p className="diagnostics-excerpt-label">{entry.kind==='webdav'?'同步状态与核对结果 · 不含文件正文':'失败回复片段 · 保持原样供核对'}</p><pre>{entry.response}</pre></>}</details>)}</div>}
- </SettingsCard>
+import { useState } from 'react';
+import { ArrowDownToLine, ChevronDown, ClipboardList, LoaderCircle, Search } from 'lucide-react';
+import { Badge, Button, timeLabel, type Run } from './ui';
+import { RichText } from './RichText';
+interface DiagnosticEntry {
+  id: string;
+  createdAt: string;
+  operationId: string;
+  kind: string;
+  model: string;
+  modelProfileId?: string;
+  profileName?: string;
+  providerName?: string;
+  requestedModel?: string;
+  reportedModel?: string;
+  status: 'valid' | 'invalid' | 'transport_error' | 'published';
+  finishReason?: string;
+  providerRequestId?: string;
+  error?: string;
+  response?: string;
+}
+interface DiagnosticPreview {
+  entries: DiagnosticEntry[];
+  description: string;
+  bytes: number;
+}
+export default function DiagnosticsPanel({ run, busy }: { run: Run; busy: boolean }) {
+  const [preview, setPreview] = useState<DiagnosticPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  async function read() {
+    setLoading(true);
+    setError('');
+    try {
+      setPreview(await window.learning.request<DiagnosticPreview>('diagnostics.preview'));
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+  const labels = {
+    valid: '内容已校验',
+    invalid: '内容校验未通过',
+    transport_error: '服务连接未完成',
+    published: '已保存结果',
+  };
+  return (
+    <SettingsCard
+      className="diagnostics-card"
+      title="出问题时，留下可以检查的线索"
+      description="先在本机预览，再决定是否导出给帮助你排查的人。"
+      icon={<ClipboardList size={22} />}
+    >
+      <p className="diagnostics-intro">
+        可以检查调用停在连接、内容格式还是结果保存这一步。导出文件不会自动发送到任何地方。
+      </p>
+      <div className="settings-actions">
+        <Button disabled={busy || loading} onClick={() => void read()}>
+          {loading ? <LoaderCircle className="spin" size={14} /> : <Search size={14} />}预览本机诊断
+        </Button>
+        <Button
+          disabled={busy || loading || !preview}
+          onClick={() => void run('diagnostics.export', {})}
+        >
+          <ArrowDownToLine size={14} />
+          导出诊断文件
+        </Button>
+      </div>
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+      {preview && (
+        <div className="diagnostics-preview">
+          <RichText text={preview.description} />
+          <div className="diagnostics-meta">
+            {preview.entries.length} 条记录 · 约 {(preview.bytes / 1024).toFixed(1)} KB
+          </div>
+          {!preview.entries.length ? (
+            <p className="muted">当前没有可预览的诊断记录。</p>
+          ) : (
+            preview.entries.map((entry) => (
+              <details key={entry.id}>
+                <summary>
+                  <Badge
+                    tone={
+                      entry.status === 'invalid' || entry.status === 'transport_error'
+                        ? 'amber'
+                        : 'green'
+                    }
+                  >
+                    {entry.kind === 'webdav'
+                      ? entry.status === 'transport_error'
+                        ? '同步未完成'
+                        : '收到同步响应'
+                      : labels[entry.status]}
+                  </Badge>
+                  <span>{entry.kind === 'webdav' ? 'WebDAV 同步' : entry.kind}</span>
+                  <small>{timeLabel(entry.createdAt)}</small>
+                  <ChevronDown size={13} />
+                </summary>
+                <dl>
+                  {entry.profileName && (
+                    <>
+                      <dt>模型配置</dt>
+                      <dd>{entry.profileName}</dd>
+                    </>
+                  )}
+                  <dt>请求模型</dt>
+                  <dd>{entry.requestedModel ?? entry.model}</dd>
+                  <dt>服务商报告</dt>
+                  <dd>{entry.reportedModel ?? '未报告实际模型'}</dd>
+                  {entry.providerName && (
+                    <>
+                      <dt>服务名称</dt>
+                      <dd>{entry.providerName}</dd>
+                    </>
+                  )}
+                  <dt>操作编号</dt>
+                  <dd>{entry.operationId}</dd>
+                  {entry.finishReason && (
+                    <>
+                      <dt>服务结束原因</dt>
+                      <dd>{entry.finishReason}</dd>
+                    </>
+                  )}
+                  {entry.providerRequestId && (
+                    <>
+                      <dt>服务请求编号</dt>
+                      <dd>{entry.providerRequestId}</dd>
+                    </>
+                  )}
+                </dl>
+                {entry.error && <p className="inline-error">{entry.error}</p>}
+                {entry.response && (
+                  <>
+                    <p className="diagnostics-excerpt-label">
+                      {entry.kind === 'webdav'
+                        ? '同步状态与核对结果 · 不含文件正文'
+                        : '失败回复片段 · 保持原样供核对'}
+                    </p>
+                    <pre>{entry.response}</pre>
+                  </>
+                )}
+              </details>
+            ))
+          )}
+        </div>
+      )}
+    </SettingsCard>
+  );
 }

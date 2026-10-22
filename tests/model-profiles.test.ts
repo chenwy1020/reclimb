@@ -53,6 +53,6 @@ describe('model profile settings',()=>{
   const SQL=await initSqlJs(),db=new SQL.Database(readFileSync(join(root,'learning.sqlite')));db.run('PRAGMA user_version=6');const settings=JSON.parse(String(db.exec('SELECT entity FROM settings WHERE id=1')[0].values[0][0]));delete settings.modelProfiles;delete settings.activeModelProfileId;db.run('UPDATE settings SET entity=? WHERE id=1',[JSON.stringify(settings)]);const original=Buffer.from(db.export());db.close();writeFileSync(join(root,'learning.sqlite'),original);
   store=await LearningStore.open(root);expect(store.get('projects','p')?.goal).toBe('保留记录');expect(activeModelProfile(store.getSettings())).toMatchObject({id:DEFAULT_MODEL_PROFILE_ID,providerName:'旧服务',model:'legacy-model'});store.close();
   const backups=readdirSync(join(root,'upgrade-backups'));expect(backups).toHaveLength(1);expect(backups[0]).toMatch(/^pre-0\.4\.2-/);expect(readFileSync(join(root,'upgrade-backups',backups[0]))).toEqual(original);
-  const upgraded=new SQL.Database(readFileSync(join(root,'learning.sqlite')));expect(upgraded.exec('PRAGMA user_version')[0].values[0][0]).toBe(10);upgraded.close();
+  const upgraded=new SQL.Database(readFileSync(join(root,'learning.sqlite')));expect(upgraded.exec('PRAGMA user_version')[0].values[0][0]).toBe(12);upgraded.close();
  });
 });

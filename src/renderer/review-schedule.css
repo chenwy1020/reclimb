@@ -1,0 +1,87 @@
+.due-review-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin: 0 0 22px;
+  padding: 20px 24px;
+  border: 1px solid var(--theme-border);
+  border-radius: 16px;
+  background: var(--theme-raised);
+}
+.due-review-summary h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.due-review-summary p {
+  margin: 0 0 6px;
+}
+.due-review-summary small {
+  color: var(--theme-muted);
+}
+.hero-actions {
+  flex-wrap: wrap;
+}
+.hero-actions > small {
+  flex-basis: 100%;
+}
+.capability-record-group {
+  padding: 18px;
+  border: 1px solid var(--theme-border);
+  border-radius: 16px;
+  margin-bottom: 18px;
+}
+.capability-record-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.capability-record-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.capability-record-header > small {
+  color: var(--theme-muted);
+}
+.capability-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+.capability-progress li {
+  padding: 4px 9px;
+  font-size: 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 16px;
+}
+.capability-progress .stage-reached {
+  color: var(--theme-accent);
+  background: var(--theme-tint);
+  border-color: var(--theme-border);
+}
+.capability-progress .stage-pending {
+  color: var(--theme-muted);
+  border-style: dashed;
+}
+.capability-record-group .evidence-card {
+  margin-top: 10px;
+}
+.review-relearning {
+  color: var(--theme-warning);
+  font-size: 13px;
+  line-height: 1.6;
+}
+@media (max-width: 760px) {
+  .due-review-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+  .capability-record-group {
+    padding: 12px;
+  }
+}

@@ -10,7 +10,7 @@ import { LearningService } from '../src/main/learning-service';
 import type { Activity } from '../src/shared/types';
 const stores: LearningStore[] = [];
 afterEach(() => { for (const store of stores.splice(0)) store.close(); });
-const task = (instruction = '两条连接相同端点的路径最高能量分别为3和5。哪条提供更小的上界？说明比较的是路径上的哪个量。'): Activity => ({ title: '比较路径的最高能量', instruction, kind: 'selection', rubric: ['识别每条路径的最高能量', '比较这两个最高值'], sourceIds: ['f'], referenceAnswer: '比较的是各路径最高能量，选择最高能量为3的路径。', assessmentBasis: 'source' });
+const task = (instruction = '两条连接相同端点的路径最高能量分别为3和5。哪条提供更小的上界？说明比较的是路径上的哪个量。'): Activity => ({ title: '比较路径的最高能量', instruction, kind: 'selection', rubric: ['识别每条路径的最高能量', '比较这两个最高值'], sourceIds: ['f'], referenceAnswer: '比较的是各路径最高能量，选择最高能量为3的路径。', assessmentBasis: 'source', workSize: 'short' });
 const plan = (instruction?: string) => ({ steps: [
   { action: 'explain', title: '从泛函到一个实数', content: '泛函把一个函数或状态对应到一个实数。沿一条路径会经过不同状态，因此也会得到一串能量值。', sourceIds: ['f'] },
   { action: 'demonstrate', title: '先看不同例子', content: '若两条路径的最高能量分别为2和4，选择最高值较小的路径，其上界是2。这里先在路径上取最高，再比较路径。', sourceIds: ['f'] },
@@ -29,6 +29,16 @@ async function setup(respond: (input: any) => unknown | Promise<unknown>,reviewe
   const service = new LearningService(store, () => 'local-test-key', () => provider); return { store, service, inputs, requests };
 }
 const assessment = (input: any) => ({ outcome: 'met', feedback: '你正确比较了两个最高值。', criteria: input.activity.rubric.map((criterion: string) => ({ criterion, result: 'met', reason: '有明确比较' })), limitations: [], sourceIds: ['f'] });
+
+it('keeps a return to one brief retrieval task even when the normal study session is long',async()=>{
+ const t=await setup(input=>({steps:[{action:'check',title:'短回访',content:'先选方法并说明依据。',sourceIds:['f'],activity:task()}]}));
+ t.store.updateSettings({studyMinutes:60});
+ await t.service.start('p','c','delayed');
+ const input=t.inputs.find(item=>item.mode==='delayed');
+ expect(input.minutes).toBe(4);
+ expect(input.returnTask).toMatchObject({minutes:4,maxCriteria:2,workSize:'short'});
+ expect(input.returnTask.instruction).toContain('3–5 分钟');
+});
 
 describe('continuous teaching', () => {
   it('saves an explicit starting point without changing the long-term goal or inventing evidence', async () => {
@@ -108,7 +118,7 @@ it('keeps an unsuccessfully evaluated return attributed to its original review a
 });
 
 it('checks semantic transfer rather than publishing a merely reworded task',async()=>{
- const t=await setup(input=>'answer' in input?assessment(input):input.newActivity?{changedSituation:'只替换数字',sharedPrinciple:'比较最大值',requiredAdaptation:'无新增适配',verdict:'same_task',reason:'仍是完全相同的已给出最高值比较'}:input.mode==='transfer'?{steps:[{action:'check',title:'候选迁移',content:'另一个题目',sourceIds:['f'],activity:task('把最高能量改成7与9后比较。')}]}:plan());const origin=await t.service.start('p','c');await t.service.nextStep(origin.id,'continue');await t.service.nextStep(origin.id,'continue');await t.service.submit(origin.id,'选择较小最高值','transfer-origin');const due=t.store.list('reviews').find(r=>r.kind==='transfer')!;t.store.put('reviews',{...due,dueAt:'2026-01-01T00:00:00Z'});const count=t.store.list('sessions').length;
+ const t=await setup(input=>'answer' in input?assessment(input):input.newActivity?{changedSituation:'只替换数字',sharedPrinciple:'比较最大值',requiredAdaptation:'无新增适配',verdict:'same_task',reason:'仍是完全相同的已给出最高值比较'}:input.mode==='transfer'?{steps:[{action:'check',title:'候选迁移',content:'另一个题目',sourceIds:['f'],activity:task('把最高能量改成7与9后比较。')}]}:plan());const origin=await t.service.start('p','c');await t.service.nextStep(origin.id,'continue');await t.service.nextStep(origin.id,'continue');await t.service.submit(origin.id,'选择较小最高值','transfer-origin');const initial=t.store.list('reviews').find(r=>r.kind==='delayed')!;const due={...initial,kind:'transfer' as const,dueAt:'2026-01-01T00:00:00Z'};t.store.put('reviews',due);const count=t.store.list('sessions').length;
  await expect(t.service.start('p','c','transfer',due.id)).rejects.toThrow('表面变化');expect(t.store.list('sessions')).toHaveLength(count);expect(t.store.get('reviews',due.id)?.status).toBe('pending');expect(t.inputs.some(input=>input.oldActivity&&input.newActivity)).toBe(true);
 });
 
@@ -219,6 +229,13 @@ it('restores upheld observations and retires the content problem after a dispute
  const t=await setup(input=>'answer' in input?assessment(input):plan(),input=>({...reviewedTeaching(input),assessmentFindings:(input.disputedAssessments??[]).map((e:any)=>({evidenceId:e.evidenceId,verdict:'uphold',reason:'复核确认原评价仍适用'}))}));const s=await t.service.start('p','c');await t.service.nextStep(s.id,'continue');await t.service.nextStep(s.id,'continue');await t.service.submit(s.id,'比较最高值','upheld-review');const evidence=t.store.list('evidence')[0],verified=t.store.list('teachingObservations').find(item=>item.evidenceId===evidence.id)!;
  const d=await t.service.dispute(s.id,'我怀疑这个评价遗漏了条件');expect(t.store.get('teachingObservations',verified.id)?.status).toBe('suspended');expect(t.store.list('teachingObservations').find(item=>item.kind==='content_problem')?.status).toBe('active');
  await t.service.reviewDispute(d.id,{allowSendingPrivateContext:true});expect(t.store.get('disputes',d.id)?.status).toBe('resolved');expect(t.store.get('teachingObservations',verified.id)).toMatchObject({status:'active',certainty:'verified',progressionEligible:true});expect(t.store.list('teachingObservations').find(item=>item.kind==='content_problem')).toMatchObject({status:'suspended'});
+});
+it.each(['evidence','version'] as const)('does not reactivate previously invalidated %s evidence when a later dispute upholds the old assessment',async(target)=>{
+ const t=await setup(input=>'answer' in input?assessment(input):plan(),input=>({...reviewedTeaching(input),assessmentFindings:(input.disputedAssessments??[]).map((e:any)=>({evidenceId:e.evidenceId,verdict:'uphold',reason:'复核认为原评价适用，但不能撤销既有失效历史'}))}));const s=await t.service.start('p','c');await t.service.nextStep(s.id,'continue');await t.service.nextStep(s.id,'continue');await t.service.submit(s.id,'比较最高值','invalidated-before-uphold');
+ const evidence=t.store.list('evidence')[0],observation=t.store.list('teachingObservations').find(item=>item.evidenceId===evidence.id)!;
+ t.store.put('corrections',{id:'prior-invalidation',projectId:'p',teachingVersionId:s.teachingVersionId!,action:'invalidate',reason:'原判断已经失效',createdAt:new Date().toISOString(),...(target==='evidence'?{evidenceId:evidence.id}:{})});
+ const dispute=await t.service.dispute(s.id,'重新核对题目');await t.service.reviewDispute(dispute.id,{allowSendingPrivateContext:true});
+ expect(t.store.get('disputes',dispute.id)?.status).toBe('resolved');expect(t.store.get('teachingObservations',observation.id)).toMatchObject({status:'suspended',progressionEligible:false});expect(t.store.get('evidence',evidence.id)).toEqual(evidence);
 });
 it('keeps confirmed corrections in adaptive context beyond the short teaching history and rejects dependent returns',async()=>{
  const t=await setup(input=>'answer' in input?assessment(input):input.intent==='continue'?plan('新任务：沿一路径的能量依次为1、6、2，指出最高值。'):plan());const s=await t.service.start('p','c');await t.service.nextStep(s.id,'continue');await t.service.nextStep(s.id,'continue');await t.service.submit(s.id,'比较最高值','invalid-origin');const evidence=t.store.list('evidence')[0];t.store.put('corrections',{id:'persistent-correction',projectId:'p',teachingVersionId:s.teachingVersionId!,action:'invalidate',evidenceId:evidence.id,reason:'原题条件不足，不是学习者不会',createdAt:new Date().toISOString()});const due=t.store.list('reviews')[0];t.store.put('reviews',{...due,dueAt:'2026-01-01T00:00:00Z'});await expect(t.service.start('p','c',due.kind,due.id)).rejects.toThrow('原表现');await t.service.nextStep(s.id,'continue');const input=t.inputs.filter(input=>input.intent==='continue').at(-1);expect(input.evidence).toEqual([]);expect(input.corrections.some((c:any)=>c.evidenceId===evidence.id)).toBe(true);expect(input.history.some((step:any)=>step.action==='feedback')).toBe(false);

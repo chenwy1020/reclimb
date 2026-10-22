@@ -1,0 +1,767 @@
+import OperationStatus from './OperationStatus';
+import { useEffect, useRef, useState } from 'react';
+import type { Project, WorkspaceSnapshot, DesktopAction } from '../shared/types';
+import type { ValidationTask } from '../shared/remediation';
+import type { ValidationService } from '../main/validation-service';
+import { Button, Badge, type Run, outcomeLabels } from './ui';
+import { RichText } from './RichText';
+import './validation.css';
+
+type Result = ReturnType<ValidationService['results']>[number];
+const helpNames = [
+  '未记录到帮助',
+  '获得提示或其他帮助',
+  '分步支持',
+  '示范支持',
+  '已接触答案或存在暴露',
+];
+const phaseNames = { before: '学习前', after: '学习后', delayed: '延迟验证' };
+const emptyTask = {
+  title: '',
+  prompt: '',
+  referenceAnswer: '',
+  rubric: '',
+  sourceKind: 'external',
+  citation: '',
+  reviewed: false,
+  reviewer: '',
+  basis: '',
+  comparableGroup: '',
+  conditions: '无提示独立作答',
+  capabilityId: '',
+  transferFromTaskId: '',
+  changedSituation: '',
+  sharedPrinciple: '',
+  requiredAdaptation: '',
+  transferVerdict: 'uncertain',
+  transferReason: '',
+};
+export default function ValidationPage({
+  snapshot: s,
+  project,
+  busy,
+  run,
+  onSession,
+}: {
+  snapshot: WorkspaceSnapshot;
+  project: Project;
+  busy: boolean;
+  run: Run;
+  onSession: (id: string) => void;
+}) {
+  const sets = (s.validationSets ?? []).filter((set) => set.projectId === project.id),
+    [selected, setSelected] = useState(''),
+    setId = sets.some((set) => set.id === selected) ? selected : sets[0]?.id;
+  const [title, setTitle] = useState(''),
+    [form, setForm] = useState(emptyTask),
+    [editId, setEditId] = useState(''),
+    [known, setKnown] = useState(true),
+    [topic, setTopic] = useState(''),
+    [phase, setPhase] = useState<'before' | 'after' | 'delayed'>('before'),
+    [baseline, setBaseline] = useState(''),
+    [external, setExternal] = useState('');
+  const actionLock = useRef(false);
+  const [results, setResults] = useState<Result[]>([]),
+    [error, setError] = useState(''),
+    [working, setWorking] = useState(false),
+    [report, setReport] = useState({
+      kind: 'device',
+      status: 'unverified',
+      participant: '',
+      environment: '',
+      protocol:
+        'Goodnotes 两页截图：上传、核对公式、保留歧义、修订确认、查看反馈；跨日试用至少间隔24小时并记录系统外帮助。',
+      observations: '',
+    });
+  const tasks = (s.validationTasks ?? []).filter(
+    (t) => t.setId === setId && !s.validationTasks?.some((next) => next.supersedesId === t.id),
+  );
+  useEffect(() => {
+    let active = true;
+    if (!setId) {
+      setResults([]);
+      return;
+    }
+    void window.learning
+      .request<Result[]>('validation.results', { setId })
+      .then((value) => {
+        if (active) setResults(value);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [setId, s]);
+  useEffect(() => {
+    setEditId('');
+    setForm(emptyTask);
+    setBaseline('');
+  }, [project.id, setId]);
+  async function act(action: DesktopAction, payload: unknown, after?: (value: any) => void) {
+    if (actionLock.current || busy) return;
+    actionLock.current = true;
+    setWorking(true);
+    setError('');
+    try {
+      const value = await window.learning.request(action, payload);
+      await run('workspace.snapshot');
+      after?.(value);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      actionLock.current = false;
+      setWorking(false);
+    }
+  }
+  const disabled = busy || working;
+  const field = (key: keyof typeof emptyTask, value: string | boolean) =>
+    setForm((f) => ({ ...f, [key]: value }));
+  async function saveTask() {
+    const task = {
+      title: form.title,
+      prompt: form.prompt,
+      referenceAnswer: form.referenceAnswer,
+      rubric: form.rubric
+        .split('\n')
+        .map((v) => v.trim())
+        .filter(Boolean),
+      source: { kind: form.sourceKind, citation: form.citation },
+      review: {
+        status: form.reviewed ? 'reviewed' : 'unreviewed',
+        reviewer: form.reviewer,
+        basis: form.basis,
+      },
+      comparableGroup: form.comparableGroup,
+      conditions: form.conditions,
+      transferRationale: form.transferReason,
+      ...(form.transferFromTaskId
+        ? {
+            transferFromTaskId: form.transferFromTaskId,
+            transferCheck: {
+              changedSituation: form.changedSituation,
+              sharedPrinciple: form.sharedPrinciple,
+              requiredAdaptation: form.requiredAdaptation,
+              verdict: form.transferVerdict,
+              reason: form.transferReason,
+            },
+          }
+        : {}),
+      ...(form.capabilityId ? { capabilityId: form.capabilityId } : {}),
+    };
+    await act(
+      editId ? 'validation.edit' : 'validation.import',
+      editId ? { taskId: editId, task } : { setId, tasks: [task], knownExposure: known },
+      () => {
+        setForm(emptyTask);
+        setEditId('');
+      },
+    );
+  }
+  return (
+    <section className="validation-page" aria-label="独立验证任务集">
+      <div className="validation-heading">
+        <div>
+          <h2>用具体任务，看表现变化</h2>
+          <p>优先使用有出处的固定题。参考解保留在核对入口；开始后直接作答。</p>
+        </div>
+        <Button
+          disabled={disabled}
+          onClick={() => void run('validation.export', { projectId: project.id })}
+        >
+          导出验证与试用记录
+        </Button>
+      </div>
+      <p className="verification-read-note">
+        独立性判断只依据本系统记录及你的自述，不能排除系统外的帮助。人工核对不等同于专家认证。
+      </p>
+      <OperationStatus snapshot={s} projectId={project.id} busy={disabled} run={run} />
+      {error && (
+        <p role="alert" className="inline-error">
+          {error}
+        </p>
+      )}
+      <div className="validation-toolbar">
+        <label>
+          任务集
+          <select
+            aria-label="验证任务集"
+            value={setId ?? ''}
+            onChange={(e) => setSelected(e.target.value)}
+          >
+            {sets.map((set) => (
+              <option key={set.id} value={set.id}>
+                {set.title}
+              </option>
+            ))}
+            {!sets.length && <option value="">请先新建任务集</option>}
+          </select>
+        </label>
+        <input
+          aria-label="新任务集名称"
+          placeholder="新任务集名称"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <Button
+          disabled={disabled || !title.trim()}
+          onClick={() =>
+            void act(
+              'validation.createSet',
+              { projectId: project.id, title, description: '' },
+              () => setTitle(''),
+            )
+          }
+        >
+          新建任务集
+        </Button>
+      </div>
+      {setId && (
+        <>
+          <details className="validation-card">
+            <summary>{editId ? '正在修订任务（生成新版本）' : '录入、导入或生成候选任务'}</summary>
+            <div className="validation-form">
+              <label>
+                任务名称
+                <input value={form.title} onChange={(e) => field('title', e.target.value)} />
+              </label>
+              <label>
+                固定题设
+                <textarea
+                  rows={4}
+                  value={form.prompt}
+                  onChange={(e) => field('prompt', e.target.value)}
+                />
+              </label>
+              <label>
+                参考解（作答时不显示）
+                <textarea
+                  rows={4}
+                  value={form.referenceAnswer}
+                  onChange={(e) => field('referenceAnswer', e.target.value)}
+                />
+              </label>
+              <label>
+                评分条件（每行一条）
+                <textarea value={form.rubric} onChange={(e) => field('rubric', e.target.value)} />
+              </label>
+              <div className="validation-grid">
+                <label>
+                  来源类别
+                  <select
+                    value={form.sourceKind}
+                    onChange={(e) => field('sourceKind', e.target.value)}
+                  >
+                    <option value="external">外部固定任务</option>
+                    <option value="authored">自编任务</option>
+                    <option value="ai">AI 候选</option>
+                  </select>
+                </label>
+                <label>
+                  来源出处
+                  <input
+                    placeholder="书名页码、网址或自编说明"
+                    value={form.citation}
+                    onChange={(e) => field('citation', e.target.value)}
+                  />
+                </label>
+                <label>
+                  对应能力
+                  <select
+                    value={form.capabilityId}
+                    onChange={(e) => field('capabilityId', e.target.value)}
+                  >
+                    <option value="">独立记录此任务目标</option>
+                    {s.capabilities
+                      .filter((c) => c.projectId === project.id && !c.archived)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.title}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  作答条件
+                  <input
+                    value={form.conditions}
+                    onChange={(e) => field('conditions', e.target.value)}
+                  />
+                </label>
+                <label>
+                  预先声明的可比组
+                  <input
+                    placeholder="留空表示不比较；同组仍须条件相同"
+                    value={form.comparableGroup}
+                    onChange={(e) => field('comparableGroup', e.target.value)}
+                  />
+                </label>
+              </div>
+              <details>
+                <summary>这是迁移验证任务</summary>
+                <label>
+                  来源任务
+                  <select
+                    value={form.transferFromTaskId}
+                    onChange={(e) => field('transferFromTaskId', e.target.value)}
+                  >
+                    <option value="">普通验证</option>
+                    {tasks
+                      .filter((t) => t.id !== editId)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                {form.transferFromTaskId && (
+                  <>
+                    <label>
+                      情境发生了什么变化
+                      <input
+                        value={form.changedSituation}
+                        onChange={(e) => field('changedSituation', e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      共同原理
+                      <input
+                        value={form.sharedPrinciple}
+                        onChange={(e) => field('sharedPrinciple', e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      需要作出的新适应
+                      <input
+                        value={form.requiredAdaptation}
+                        onChange={(e) => field('requiredAdaptation', e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      核对结论
+                      <select
+                        value={form.transferVerdict}
+                        onChange={(e) => field('transferVerdict', e.target.value)}
+                      >
+                        <option value="uncertain">尚不能确定</option>
+                        <option value="same_task">原题或换皮</option>
+                        <option value="valid">有实质情境变化</option>
+                      </select>
+                    </label>
+                    <label>
+                      判断依据
+                      <input
+                        value={form.transferReason}
+                        onChange={(e) => field('transferReason', e.target.value)}
+                      />
+                    </label>
+                    <small>仍须满足原表现有效、独立作答及回访准入条件，才会形成迁移记录。</small>
+                  </>
+                )}
+              </details>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={form.reviewed}
+                  onChange={(e) => field('reviewed', e.target.checked)}
+                />
+                已人工核对题设、参考解与评分条件
+              </label>
+              {form.reviewed && (
+                <div className="validation-grid">
+                  <label>
+                    核对者
+                    <input
+                      value={form.reviewer}
+                      onChange={(e) => field('reviewer', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    核对依据
+                    <textarea value={form.basis} onChange={(e) => field('basis', e.target.value)} />
+                  </label>
+                </div>
+              )}
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={known}
+                  onChange={(e) => setKnown(e.target.checked)}
+                />
+                我已接触题设或参考解（保留暴露记录）
+              </label>
+              <small>只有确实由他人准备、自己未看过时才取消。编辑已保存任务会记录答案暴露。</small>
+              <div>
+                <Button
+                  disabled={
+                    disabled ||
+                    !form.title ||
+                    !form.prompt ||
+                    !form.referenceAnswer ||
+                    !form.rubric ||
+                    !form.citation
+                  }
+                  onClick={() => void saveTask()}
+                >
+                  {editId ? '保存新版本' : '保存固定任务'}
+                </Button>
+                {editId && (
+                  <Button
+                    onClick={() => {
+                      setEditId('');
+                      setForm(emptyTask);
+                    }}
+                  >
+                    结束编辑
+                  </Button>
+                )}
+              </div>
+              <hr />
+              <label>
+                导入结构化 JSON 文件
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  disabled={disabled}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      if (file.size > 1024 * 1024) throw new Error('任务文件不能超过 1 MB。');
+                      const value = JSON.parse(await file.text());
+                      await act('validation.import', {
+                        setId,
+                        tasks: Array.isArray(value) ? value : value.tasks,
+                        knownExposure: known,
+                      });
+                      e.target.value = '';
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                />
+              </label>
+              <details>
+                <summary>JSON 文件格式</summary>
+                <pre>
+                  {JSON.stringify(
+                    {
+                      tasks: [
+                        {
+                          title: '任务名',
+                          prompt: '固定题设',
+                          referenceAnswer: '参考解',
+                          rubric: ['评分条件'],
+                          source: { kind: 'external', citation: '出处' },
+                          review: { status: 'unreviewed', reviewer: '', basis: '' },
+                          comparableGroup: '',
+                          conditions: '无提示独立作答',
+                          transferRationale: '',
+                        },
+                      ],
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </details>
+              <label>
+                AI 补充候选的主题
+                <input
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  placeholder="模型候选必须复核，不显示为外部验证"
+                />
+              </label>
+              <Button
+                disabled={disabled || !topic.trim()}
+                onClick={() =>
+                  void act('validation.generate', {
+                    setId,
+                    requestId: crypto.randomUUID(),
+                    topic,
+                    count: 2,
+                  })
+                }
+              >
+                生成 2 个候选（调用模型）
+              </Button>
+            </div>
+          </details>
+          <div className="validation-toolbar">
+            <label>
+              本次阶段
+              <select
+                value={phase}
+                onChange={(e) => {
+                  setPhase(e.target.value as typeof phase);
+                  setBaseline('');
+                }}
+              >
+                <option value="before">学习前</option>
+                <option value="after">学习后</option>
+                <option value="delayed">延迟验证</option>
+              </select>
+            </label>
+            <label>
+              关联基准记录
+              <select value={baseline} onChange={(e) => setBaseline(e.target.value)}>
+                <option value="">暂不关联</option>
+                {results
+                  .filter(
+                    (r) =>
+                      r.attemptId &&
+                      ((phase === 'after' && r.phase === 'before') ||
+                        (phase === 'delayed' && r.phase !== 'delayed')),
+                  )
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.taskTitle} · {phaseNames[r.phase]}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              系统外接触或帮助（可选）
+              <input
+                value={external}
+                onChange={(e) => setExternal(e.target.value)}
+                placeholder="例如已在书中看过这题"
+              />
+            </label>
+          </div>
+          <div className="validation-task-list">
+            {tasks.map((task) => (
+              <article className="validation-card" key={task.id}>
+                <h3>
+                  {task.title} <small>第 {task.version} 版</small>
+                </h3>
+                <Badge tone={task.source.kind === 'ai' ? 'amber' : 'neutral'}>
+                  {task.source.kind === 'ai'
+                    ? 'AI 候选／模型判断'
+                    : task.source.kind === 'external'
+                      ? '外部任务／来源由录入者提供'
+                      : '自编任务'}
+                </Badge>
+                <p>{task.source.citation}</p>
+                <p>
+                  {task.review.status === 'reviewed'
+                    ? '人工核对者：' + task.review.reviewer + '（非专家认证）'
+                    : '尚未人工核对；可先作答，核验后才能评价。'}
+                </p>
+                <p>{task.conditions}</p>
+                <div className="validation-toolbar">
+                  <Button
+                    variant="primary"
+                    disabled={
+                      disabled || ((phase === 'delayed' || !!task.transferFromTaskId) && !baseline)
+                    }
+                    onClick={() =>
+                      void act(
+                        'validation.start',
+                        {
+                          taskId: task.id,
+                          requestId: crypto.randomUUID(),
+                          phase,
+                          baselineRunId: baseline || undefined,
+                          selfReportedExposure: external,
+                        },
+                        (value) => onSession(value.run.sessionId),
+                      )
+                    }
+                  >
+                    开始固定任务
+                  </Button>
+                  <Button
+                    disabled={disabled}
+                    onClick={() =>
+                      void act(
+                        'validation.readTask',
+                        { taskId: task.id },
+                        (value: ValidationTask) => {
+                          setEditId(value.id);
+                          setForm({
+                            title: value.title,
+                            prompt: value.prompt,
+                            referenceAnswer: value.referenceAnswer,
+                            rubric: value.rubric.join('\n'),
+                            sourceKind: value.source.kind,
+                            citation: value.source.citation,
+                            reviewed: value.review.status === 'reviewed',
+                            reviewer: value.review.reviewer,
+                            basis: value.review.basis,
+                            conditions: value.conditions,
+                            comparableGroup: value.comparableGroup,
+                            capabilityId: value.capabilityId ?? '',
+                            transferFromTaskId: value.transferFromTaskId ?? '',
+                            changedSituation: value.transferCheck?.changedSituation ?? '',
+                            sharedPrinciple: value.transferCheck?.sharedPrinciple ?? '',
+                            requiredAdaptation: value.transferCheck?.requiredAdaptation ?? '',
+                            transferVerdict: value.transferCheck?.verdict ?? 'uncertain',
+                            transferReason: value.transferCheck?.reason ?? value.transferRationale,
+                          });
+                          document
+                            .querySelector<HTMLDetailsElement>('.validation-page details')
+                            ?.setAttribute('open', '');
+                        },
+                      )
+                    }
+                  >
+                    编辑／核对（会看到答案）
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </div>
+          <h3>每次验证的具体表现</h3>
+          {!results.length && <p>还没有验证记录。开始前不会生成解释或示范。</p>}
+          {results.map((result) => (
+            <article className="validation-card" key={result.id}>
+              <h4>
+                {result.taskTitle} · {phaseNames[result.phase]}
+              </h4>
+              <p>
+                {result.basis} ·{' '}
+                {result.independence === 'exposed'
+                  ? '已有帮助或暴露记录'
+                  : '暂无已记录帮助（不等同独立性认证）'}
+              </p>
+              <p>
+                {result.conditions} · 经过时间（含离开）{' '}
+                {result.elapsedSeconds === undefined
+                  ? '尚未提交'
+                  : Math.round(result.elapsedSeconds) + ' 秒'}{' '}
+                · {helpNames[Math.min(4, result.helpLevel)]}
+              </p>
+              <RichText text={result.assessment?.feedback ?? '尚无评价；原作答仍可保存。'} />
+              {result.assessment && (
+                <p>
+                  {outcomeLabels[result.assessment.outcome]} ·{' '}
+                  {result.effective ? '记录当前有效' : '仅作历史记录，不支持当前能力判断'}
+                </p>
+              )}
+              <Button disabled={disabled} onClick={() => onSession(result.sessionId)}>
+                回到这次作答
+              </Button>
+              {result.baselineRunId &&
+                (result.comparable ? (
+                  <div>
+                    <p>与关联基准在开始前声明为可比（不作因果结论）</p>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>记录</th>
+                          <th>帮助</th>
+                          <th>耗时</th>
+                          <th>未满足的条件</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[result.comparisonBaseline, result]
+                          .filter((r) => !!r)
+                          .map((r) => (
+                            <tr key={r!.attemptId}>
+                              <td>
+                                {r!.taskTitle}／{phaseNames[r!.phase]}
+                              </td>
+                              <td>{helpNames[Math.min(4, r!.helpLevel)]}</td>
+                              <td>
+                                {r!.elapsedSeconds === undefined
+                                  ? '未提交'
+                                  : Math.round(r!.elapsedSeconds) + '秒'}
+                              </td>
+                              <td>
+                                {r!.assessment
+                                  ? r!.errors
+                                      .map((e) => e.criterion + '：' + e.reason)
+                                      .join('；') || '本次评价无未满足条件'
+                                  : '尚未评价'}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p>{result.comparisonReason}暂不并列比较。</p>
+                ))}
+            </article>
+          ))}
+        </>
+      )}
+      <details className="validation-card">
+        <summary>记录实际设备或跨日试用</summary>
+        <p>桌面模拟不能替代 iPad 实测；代码验收不证明学习效果。请只登记实际观察。</p>
+        <div className="validation-form">
+          <div className="validation-grid">
+            <label>
+              试用类型
+              <select
+                value={report.kind}
+                onChange={(e) => setReport({ ...report, kind: e.target.value })}
+              >
+                <option value="device">实际设备</option>
+                <option value="cross_day">真人跨日</option>
+              </select>
+            </label>
+            <label>
+              结论
+              <select
+                value={report.status}
+                onChange={(e) => setReport({ ...report, status: e.target.value })}
+              >
+                <option value="unverified">未验证</option>
+                <option value="passed">通过</option>
+                <option value="failed">失败</option>
+              </select>
+            </label>
+            <label>
+              参与者自选标识
+              <input
+                value={report.participant}
+                onChange={(e) => setReport({ ...report, participant: e.target.value })}
+              />
+            </label>
+            <label>
+              设备、系统、日期与版本
+              <input
+                value={report.environment}
+                onChange={(e) => setReport({ ...report, environment: e.target.value })}
+              />
+            </label>
+          </div>
+          <label>
+            操作协议
+            <textarea
+              rows={3}
+              value={report.protocol}
+              onChange={(e) => setReport({ ...report, protocol: e.target.value })}
+            />
+          </label>
+          <label>
+            实际观察、失败与恢复
+            <textarea
+              rows={4}
+              value={report.observations}
+              onChange={(e) => setReport({ ...report, observations: e.target.value })}
+            />
+          </label>
+          <Button
+            disabled={disabled}
+            onClick={() =>
+              void act('validation.trial', {
+                projectId: project.id,
+                ...report,
+                runIds: baseline ? [baseline] : [],
+              })
+            }
+          >
+            保存这次试用记录
+          </Button>
+        </div>
+      </details>
+    </section>
+  );
+}

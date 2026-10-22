@@ -1,0 +1,9 @@
+{
+  "providerName": "填写服务商名称",
+  "baseUrl": "https://example.invalid/v1",
+  "model": "填写服务商模型名称",
+  "apiKeyEnv": "RECLIMB_EVAL_API_KEY",
+  "inputPriceCnyPerMillion": 10,
+  "outputPriceCnyPerMillion": 30,
+  "priceUpdatedAt": "仅占位估算；执行前按指定服务商核对"
+}

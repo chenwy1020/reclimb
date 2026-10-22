@@ -1,29 +1,491 @@
-import {evidenceStanding,reviewStanding} from '../shared/reliability-state';
-import { ArrowRight, BookOpen, Check, Clock3, Compass, FileText, Leaf, Lightbulb, Pause, Play, Plus, Sparkles, Sprout, Target } from 'lucide-react';
+import { evidenceStanding, reviewStanding } from '../shared/reliability-state';
+import {
+  ArrowRight,
+  BookOpen,
+  Check,
+  Clock3,
+  Compass,
+  FileText,
+  Leaf,
+  Lightbulb,
+  Pause,
+  Play,
+  Plus,
+  Sparkles,
+  Sprout,
+  Target,
+} from 'lucide-react';
 import type { WorkspaceSnapshot } from '../shared/types';
-import {visibleProjects} from '../shared/projects';
-import {RichText} from './RichText';
+import { visibleProjects } from '../shared/projects';
+import { dueReviewSummary, reviewQueue, REVIEW_MINUTES } from '../shared/review-schedule';
+import { RichText } from './RichText';
+import './review-schedule.css';
 import { Badge, Button, MountainArt, dateLabel, tomorrow, type Page, type Run } from './ui';
-export default function HomePage({snapshot:s,busy,onCreate,navigate,onSeed,onReview,run}:{snapshot:WorkspaceSnapshot;busy:boolean;onCreate:()=>void;navigate:(page:Page,project?:string,session?:string)=>Promise<void>;onSeed:()=>Promise<void>;onReview:(id:string)=>Promise<void>;run:Run}){
-const projects=visibleProjects(s.projects);const hasTrashedProjects=s.projects.some(project=>Boolean(project.trashedAt));const projectIds=new Set(projects.map(project=>project.id));
-const active=projects.filter(p=>p.status==='active');
-const reviews=s.reviews.filter(r=>projectIds.has(r.projectId)&&r.status!=='done'&&reviewStanding(s,r).effective).sort((a,b)=>a.dueAt.localeCompare(b.dueAt));
-const due=reviews.filter(r=>new Date(r.dueAt).getTime()<=Date.now());
-const independent=s.evidence.filter(e=>projectIds.has(e.projectId)&&e.status!=='assisted'&&e.status!=='needs_review'&&evidenceStanding(s,e).effective);
-const latestPosition=[...s.learningPositions].filter(position=>active.some(project=>project.learningPositionId===position.id)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0];
-const latestProject=active.find(project=>project.id===latestPosition?.projectId);const latestSession=s.sessions.find(session=>session.id===latestPosition?.sessionId);const legacyLatest=!latestPosition?[...s.sessions].filter(session=>active.some(project=>project.id===session.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0]:undefined;
-return <>
-<div className="page-heading home-heading"><div><span className="eyebrow">A LITTLE FURTHER, ON YOUR OWN</span><h1>你好，今天想往前走哪一步？</h1><p>学习的意义，是有一天，你能够自己走过去。</p></div><Button variant="primary" onClick={onCreate}><Plus size={17}/>开启一段学习</Button></div>
-<section className="hero"><div className="hero-copy"><span className="hero-kicker"><span/>你的每一步，都算数</span><h2>从「我懂了」<br/>到「我能独立做到」。</h2><p>带着一本书、一门课，或一个尚未清晰的目标出发。<br/>在尝试中理解，在重新走过时，真正拥有。</p><div className="hero-actions"><Button variant="primary" onClick={()=>latestProject?void navigate(latestSession?'desk':'route',latestProject.id,latestSession?.id):legacyLatest?void navigate('desk',legacyLatest.projectId,legacyLatest.id):active[0]?void navigate('route',active[0].id):onCreate()}>{latestProject||legacyLatest?'继续上次学习':active[0]?'查看我的路线':'建立我的学习项目'}<ArrowRight size={17}/></Button><span>按自己的节奏，不必赶路</span></div></div><MountainArt/><span className="hero-caption">每一座山，都从脚下开始。</span></section>
-<div className="stat-grid"><Stat icon={Compass} label="正在探索的目标" value={active.length} suffix="个项目"/><Stat icon={BookOpen} label="留下的亲自尝试" value={s.attempts.filter(attempt=>projectIds.has(attempt.projectId)).length} suffix="次作答"/><Stat icon={Sprout} label="独立表现的证据" value={independent.length} suffix="条记录"/><Stat icon={Clock3} label="到了回访的时间" value={due.length} suffix="项邀请"/></div>
-<div className="home-columns"><section><div className="section-heading"><h2>正在走的路 <span>{projects.length}</span></h2><button className="text-button" onClick={onCreate}><Plus size={15}/>新建项目</button></div>
-{projects.length?<div className="project-cards">{projects.map((p,i)=>{const materials=s.materials.filter(m=>m.projectId===p.id);const caps=s.capabilities.filter(c=>c.projectId===p.id&&!c.archived);const attempts=s.attempts.filter(a=>a.projectId===p.id);const position=s.learningPositions.find(item=>item.id===p.learningPositionId);const unit=s.learningUnits.find(item=>item.id===position?.unitId);const session=s.sessions.find(item=>item.id===position?.sessionId)||(!p.learningPositionId?[...s.sessions].filter(item=>item.projectId===p.id).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0]:undefined);return <article className="project-card" key={p.id}><div className="project-card-top"><span className={'book-tile tile-'+i%3}><BookOpen size={21}/></span><Badge tone={p.status==='paused'?'neutral':'green'}>{p.status==='paused'?'暂时休息':'正在学习'}</Badge><button className="icon-button more-action" title={p.status==='paused'?'恢复项目':'暂停项目'} disabled={busy} onClick={()=>void run('project.update',{id:p.id,status:p.status==='paused'?'active':'paused'})}>{p.status==='paused'?<Play size={15}/>:<Pause size={15}/>}</button></div><h3>{p.title}</h3><RichText className="project-goal" text={p.goal}/><div className="project-meta"><span><FileText size={13}/>{materials.length} 份材料</span><span><Target size={13}/>{caps.length} 个能力目标</span></div><div className="project-next"><small>{position?'当前学习':'建议的下一步'}</small>{unit&&<strong>{unit.title}</strong>}<RichText text={position?.nextRequirement||position?.reason||session?.teaching?.current.title||session?.checkpoint||session?.nextStep||(materials.length?'建立全书粗图，再选择第一个学习单元':'留下已有基础，加入材料后从全书地图开始')}/></div><div className="project-card-bottom"><span>{attempts.length?attempts.length+' 次亲自尝试':'故事刚刚开始'}</span><button className="text-button" onClick={()=>void navigate(session?'desk':'route',p.id,session?.id)}>{session?'继续学习':'走进项目'}<ArrowRight size={15}/></button></div></article>})}</div>:<div className="welcome-project"><span className="soft-icon"><Sprout size={28}/></span><h3>你的学习空间，等你写下第一行</h3><p>不用先弄懂所有设置。<br/>先想一件你希望自己能独立做到的事。</p><Button onClick={onCreate}><Plus size={16}/>新建学习项目</Button>{hasTrashedProjects?<><button className="text-button sample-button" onClick={()=>void navigate('settings')}>查看最近删除<ArrowRight size={14}/></button><small>恢复后可以接着原来的学习过程</small></>:<><button className="text-button sample-button" disabled={busy} onClick={()=>void onSeed()}>先体验内置练习示例<ArrowRight size={14}/></button><small>两类原创练习 · 可以离线阅读与作答</small></>}</div>}
-</section><aside className="home-side"><div className="section-heading"><h2>再走一遍</h2><span className="muted tiny">让能力经得起时间</span></div><section className="review-card"><div className="review-card-icon"><Clock3 size={22}/></div>{reviews.length?<><h3>{due.length?'旧知识，新的独立尝试':'给理解一点沉淀的时间'}</h3><p>带到新情境里，看看哪些已经属于你。</p><div className="review-list">{reviews.slice(0,3).map(r=><div className="review-item" key={r.id}><div><strong>{s.capabilities.find(c=>c.id===r.capabilityId)?.title||'能力回访'}</strong><small>{dateLabel(r.dueAt)} · {r.kind==='delayed'?'延迟重构':'迁移应用'}</small></div><div className="review-actions"><button className="icon-button" disabled={busy} title="改到明天" onClick={()=>void run('review.reschedule',{id:r.id,dueAt:tomorrow()})}><Clock3 size={14}/></button><button className="icon-button green" disabled={busy} title="开始这次回访" onClick={()=>void onReview(r.id)}><ArrowRight size={16}/></button></div></div>)}</div></>:<><h3>不急着证明已经掌握</h3><p>完成一次练习后，这里会出现回访邀请。隔一天重新构建，隔一周换个情境，让成长有据可查。</p><div className="review-timeline"><span><i/>亲自尝试</span><span><i/>次日重构</span><span><i/>一周迁移</span></div></>}</section>
-{s.reviews.some(r=>projectIds.has(r.projectId)&&r.status!=='done'&&!reviewStanding(s,r).effective)&&<p className="correction-overview">有回访因原题或评价待核对而暂停。相关过程仍保存在学习桌与能力记录中。</p>}
-<section className="principle-card"><span className="eyebrow">重登的约定</span><h3>帮助，可以慢慢放下。</h3><p>需要时，尽管求助。系统会记住你走过的过程，也会为下一次独立尝试留出空间。</p><div><Leaf size={16}/><span>不以一个分数，定义你的能力</span></div></section>
-{!s.settings.hasApiKey&&<button className="setup-card" onClick={()=>void navigate('settings')}><span className="soft-icon"><Sparkles size={20}/></span><span><strong>让 AI 加入你的学习</strong><small>设置服务与本机预算</small></span><ArrowRight size={17}/></button>}</aside></div></>;
+export default function HomePage({
+  snapshot: s,
+  busy,
+  onCreate,
+  navigate,
+  onSeed,
+  onReview,
+  run,
+}: {
+  snapshot: WorkspaceSnapshot;
+  busy: boolean;
+  onCreate: () => void;
+  navigate: (page: Page, project?: string, session?: string) => Promise<void>;
+  onSeed: () => Promise<void>;
+  onReview: (id: string) => Promise<void>;
+  run: Run;
+}) {
+  const projects = visibleProjects(s.projects);
+  const hasTrashedProjects = s.projects.some((project) => Boolean(project.trashedAt));
+  const projectIds = new Set(projects.map((project) => project.id));
+  const active = projects.filter((p) => p.status === 'active');
+  const summary = dueReviewSummary(s);
+  const reviews = reviewQueue(s);
+  const due = summary.reviews;
+  const sessionCount = Math.min(
+    due.length,
+    Math.max(1, Math.floor(s.settings.studyMinutes / REVIEW_MINUTES)),
+  );
+  const shownReviews = [
+    ...due,
+    ...reviews.filter((r) => Date.parse(r.dueAt) > Date.now()).slice(0, 3),
+  ];
+  const independent = s.evidence.filter(
+    (e) =>
+      projectIds.has(e.projectId) &&
+      e.status !== 'assisted' &&
+      e.status !== 'needs_review' &&
+      evidenceStanding(s, e).effective,
+  );
+  const latestPosition = [...s.learningPositions]
+    .filter((position) => active.some((project) => project.learningPositionId === position.id))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const latestProject = active.find((project) => project.id === latestPosition?.projectId);
+  const latestSession = s.sessions.find((session) => session.id === latestPosition?.sessionId);
+  const legacyLatest = !latestPosition
+    ? [...s.sessions]
+        .filter((session) => active.some((project) => project.id === session.projectId))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+    : undefined;
+  const unfinished = [...s.sessions]
+    .filter(
+      (session) =>
+        active.some((project) => project.id === session.projectId) &&
+        (session.draft.trim() ||
+          Object.values(session.taskDrafts ?? {}).some((text) => text.trim())),
+    )
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const resume = unfinished ?? latestSession ?? legacyLatest;
+  return (
+    <>
+      <div className="page-heading home-heading">
+        <div>
+          <span className="eyebrow">A LITTLE FURTHER, ON YOUR OWN</span>
+          <h1>你好，今天想往前走哪一步？</h1>
+          <p>学习的意义，是有一天，你能够自己走过去。</p>
+        </div>
+        <Button variant="primary" onClick={onCreate}>
+          <Plus size={17} />
+          开启一段学习
+        </Button>
+      </div>
+      {projects.length > 0 && (
+        <section className="due-review-summary" aria-label="今天的回访">
+          <div>
+            <h2>
+              今天该回访 {summary.count} 项，约 {summary.estimatedMinutes} 分钟
+            </h2>
+            <p>
+              {due.length
+                ? `按每次 ${s.settings.studyMinutes} 分钟，这次先做 ${sessionCount} 项；全部到期任务都在下方。`
+                : '今天没有到期任务，可以接着学习。'}
+            </p>
+            <small title="按本机时间统计本周一以来，在到期当天无帮助通过的回访。">
+              本周按期独立通过：{summary.weeklyOnTimeIndependent} 次
+            </small>
+          </div>
+          {due[0] && (
+            <Button variant="primary" disabled={busy} onClick={() => void onReview(due[0].id)}>
+              开始一项回访
+              <ArrowRight size={16} />
+            </Button>
+          )}
+        </section>
+      )}
+      {resume && (
+        <section className="resume-card">
+          <div>
+            <span className="eyebrow">接着上次的位置</span>
+            <h2>{resume.teaching?.current.title || resume.activity.title}</h2>
+            <p>{s.projects.find((p) => p.id === resume.projectId)?.title}</p>
+            <p>
+              {unfinished
+                ? '你有尚未完成的作答，内容已保存在本机。'
+                : resume.checkpoint || '当前步骤已保留。'}
+            </p>
+            {(s.readerStates ?? [])
+              .filter((r) => r.projectId === resume.projectId)
+              .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] && (
+              <small>
+                材料位置：
+                {s.fragments.find(
+                  (f) =>
+                    f.id ===
+                    (s.readerStates ?? [])
+                      .filter((r) => r.projectId === resume.projectId)
+                      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.fragmentId,
+                )?.locator || '已保存'}
+              </small>
+            )}
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => void navigate('desk', resume.projectId, resume.id)}
+          >
+            继续上次学习
+            <ArrowRight size={17} />
+          </Button>
+        </section>
+      )}
+      <section className="hero">
+        <div className="hero-copy">
+          <span className="hero-kicker">
+            <span />
+            你的每一步，都算数
+          </span>
+          <h2>
+            从「我懂了」
+            <br />
+            到「我能独立做到」。
+          </h2>
+          <p>
+            带着一本书、一门课，或一个尚未清晰的目标出发。
+            <br />
+            在尝试中理解，在重新走过时，真正拥有。
+          </p>
+          <div className="hero-actions">
+            {!projects.length && !hasTrashedProjects ? (
+              <>
+                <Button variant="primary" disabled={busy} onClick={() => void onSeed()}>
+                  先试内置示例
+                  <ArrowRight size={17} />
+                </Button>
+                <Button onClick={() => void navigate('settings')}>连接 AI 服务</Button>
+                <small>示例可离线尝试 · AI 直连服务商，无需自建服务器</small>
+              </>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={() =>
+                  latestProject
+                    ? void navigate(
+                        latestSession ? 'desk' : 'route',
+                        latestProject.id,
+                        latestSession?.id,
+                      )
+                    : legacyLatest
+                      ? void navigate('desk', legacyLatest.projectId, legacyLatest.id)
+                      : active[0]
+                        ? void navigate('route', active[0].id)
+                        : onCreate()
+                }
+              >
+                {latestProject || legacyLatest
+                  ? '继续上次学习'
+                  : active[0]
+                    ? '查看我的路线'
+                    : '建立我的学习项目'}
+                <ArrowRight size={17} />
+              </Button>
+            )}
+            {projects.length > 0 && <span>按自己的节奏，不必赶路</span>}
+          </div>
+        </div>
+        <MountainArt />
+        <span className="hero-caption">每一座山，都从脚下开始。</span>
+      </section>
+      <div className="stat-grid">
+        <Stat icon={Compass} label="正在探索的目标" value={active.length} suffix="个项目" />
+        <Stat
+          icon={BookOpen}
+          label="留下的亲自尝试"
+          value={s.attempts.filter((attempt) => projectIds.has(attempt.projectId)).length}
+          suffix="次作答"
+        />
+        <Stat icon={Sprout} label="独立表现的证据" value={independent.length} suffix="条记录" />
+        <Stat icon={Clock3} label="到了回访的时间" value={due.length} suffix="项邀请" />
+      </div>
+      <div className="home-columns">
+        <section>
+          <div className="section-heading">
+            <h2>
+              正在走的路 <span>{projects.length}</span>
+            </h2>
+            <button className="text-button" onClick={onCreate}>
+              <Plus size={15} />
+              新建项目
+            </button>
+          </div>
+          {projects.length ? (
+            <div className="project-cards">
+              {projects.map((p, i) => {
+                const materials = s.materials.filter((m) => m.projectId === p.id);
+                const caps = s.capabilities.filter((c) => c.projectId === p.id && !c.archived);
+                const attempts = s.attempts.filter((a) => a.projectId === p.id);
+                const position = s.learningPositions.find(
+                  (item) => item.id === p.learningPositionId,
+                );
+                const unit = s.learningUnits.find((item) => item.id === position?.unitId);
+                const session =
+                  s.sessions.find((item) => item.id === position?.sessionId) ||
+                  (!p.learningPositionId
+                    ? [...s.sessions]
+                        .filter((item) => item.projectId === p.id)
+                        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+                    : undefined);
+                return (
+                  <article className="project-card" key={p.id}>
+                    <div className="project-card-top">
+                      <span className={'book-tile tile-' + (i % 3)}>
+                        <BookOpen size={21} />
+                      </span>
+                      <Badge tone={p.status === 'paused' ? 'neutral' : 'green'}>
+                        {p.status === 'paused' ? '暂时休息' : '正在学习'}
+                      </Badge>
+                      <button
+                        className="icon-button more-action"
+                        title={p.status === 'paused' ? '恢复项目' : '暂停项目'}
+                        disabled={busy}
+                        onClick={() =>
+                          void run('project.update', {
+                            id: p.id,
+                            status: p.status === 'paused' ? 'active' : 'paused',
+                          })
+                        }
+                      >
+                        {p.status === 'paused' ? <Play size={15} /> : <Pause size={15} />}
+                      </button>
+                    </div>
+                    <h3>{p.title}</h3>
+                    <RichText className="project-goal" text={p.goal} />
+                    <div className="project-meta">
+                      <span>
+                        <FileText size={13} />
+                        {materials.length} 份材料
+                      </span>
+                      <span>
+                        <Target size={13} />
+                        {caps.length} 个能力目标
+                      </span>
+                    </div>
+                    <div className="project-next">
+                      <small>{position ? '当前学习' : '建议的下一步'}</small>
+                      {unit && <strong>{unit.title}</strong>}
+                      <RichText
+                        text={
+                          position?.nextRequirement ||
+                          position?.reason ||
+                          session?.teaching?.current.title ||
+                          session?.checkpoint ||
+                          session?.nextStep ||
+                          (materials.length
+                            ? '打开当前材料，直接解释或练习一小段'
+                            : '加入材料，即可从当前页段开始')
+                        }
+                      />
+                    </div>
+                    <div className="project-card-bottom">
+                      <span>
+                        {attempts.length ? attempts.length + ' 次亲自尝试' : '故事刚刚开始'}
+                      </span>
+                      <button
+                        className="text-button"
+                        onClick={() => void navigate(session ? 'desk' : 'route', p.id, session?.id)}
+                      >
+                        {session ? '继续学习' : '走进项目'}
+                        <ArrowRight size={15} />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="welcome-project">
+              <span className="soft-icon">
+                <Sprout size={28} />
+              </span>
+              <h3>你的学习空间，等你写下第一行</h3>
+              <p>
+                不用先弄懂所有设置。
+                <br />
+                先想一件你希望自己能独立做到的事。
+              </p>
+              <Button onClick={onCreate}>
+                <Plus size={16} />
+                新建学习项目
+              </Button>
+              {hasTrashedProjects ? (
+                <>
+                  <button
+                    className="text-button sample-button"
+                    onClick={() => void navigate('settings')}
+                  >
+                    查看最近删除
+                    <ArrowRight size={14} />
+                  </button>
+                  <small>恢复后可以接着原来的学习过程</small>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="text-button sample-button"
+                    disabled={busy}
+                    onClick={() => void onSeed()}
+                  >
+                    先体验内置练习示例
+                    <ArrowRight size={14} />
+                  </button>
+                  <small>两类原创练习 · 可以离线阅读与作答</small>
+                </>
+              )}
+            </div>
+          )}
+        </section>
+        <aside className="home-side">
+          <div className="section-heading">
+            <h2>再走一遍</h2>
+            <span className="muted tiny">让能力经得起时间</span>
+          </div>
+          <section className="review-card">
+            <div className="review-card-icon">
+              <Clock3 size={22} />
+            </div>
+            {reviews.length ? (
+              <>
+                <h3>{due.length ? '旧知识，新的独立尝试' : '给理解一点沉淀的时间'}</h3>
+                <p>带到新情境里，看看哪些已经属于你。</p>
+                <div className="review-list">
+                  {shownReviews.map((r) => (
+                    <div className="review-item" key={r.id}>
+                      <div>
+                        <strong>
+                          {s.capabilities.find((c) => c.id === r.capabilityId)?.title || '能力回访'}
+                        </strong>
+                        <small>
+                          {dateLabel(r.dueAt)} · {r.kind === 'delayed' ? '延迟重构' : '迁移应用'}
+                        </small>
+                        {r.schedule?.needsRelearning && (
+                          <small className="review-relearning">
+                            先复习这次暴露的缺口，再独立做一道新题。
+                          </small>
+                        )}
+                      </div>
+                      <div className="review-actions">
+                        <button
+                          className="icon-button"
+                          disabled={busy}
+                          title="改到明天"
+                          onClick={() =>
+                            void run('review.reschedule', { id: r.id, dueAt: tomorrow() })
+                          }
+                        >
+                          <Clock3 size={14} />
+                        </button>
+                        <button
+                          className="icon-button green"
+                          disabled={busy || Date.parse(r.dueAt) > Date.now()}
+                          title="开始这次回访"
+                          onClick={() => void onReview(r.id)}
+                        >
+                          <ArrowRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>不急着证明已经掌握</h3>
+                <p>独立完成后，从次日短回访开始；每次通过后逐步拉长间隔，也会换个情境检验迁移。</p>
+                <div className="review-timeline">
+                  <span>
+                    <i />
+                    亲自尝试
+                  </span>
+                  <span>
+                    <i />
+                    次日重构
+                  </span>
+                  <span>
+                    <i />
+                    持续回访
+                  </span>
+                </div>
+              </>
+            )}
+          </section>
+          {s.reviews.some(
+            (r) =>
+              projectIds.has(r.projectId) && r.status !== 'done' && !reviewStanding(s, r).effective,
+          ) && (
+            <p className="correction-overview">
+              有回访因原题或评价待核对而暂停。相关过程仍保存在学习桌与能力记录中。
+            </p>
+          )}
+          <section className="principle-card">
+            <span className="eyebrow">重登的约定</span>
+            <h3>帮助，可以慢慢放下。</h3>
+            <p>需要时，尽管求助。系统会记住你走过的过程，也会为下一次独立尝试留出空间。</p>
+            <div>
+              <Leaf size={16} />
+              <span>不以一个分数，定义你的能力</span>
+            </div>
+          </section>
+          {!s.settings.hasApiKey && (
+            <button className="setup-card" onClick={() => void navigate('settings')}>
+              <span className="soft-icon">
+                <Sparkles size={20} />
+              </span>
+              <span>
+                <strong>让 AI 加入你的学习</strong>
+                <small>设置服务与本机预算</small>
+              </span>
+              <ArrowRight size={17} />
+            </button>
+          )}
+        </aside>
+      </div>
+    </>
+  );
 }
-function Stat({icon:Icon,label,value,suffix}:{icon:typeof Compass;label:string;value:number;suffix:string}){return <div className="stat"><span className="stat-icon"><Icon size={20} strokeWidth={1.6}/></span><div><p>{label}</p><strong>{value}<span>{suffix}</span></strong></div></div>}
-
-
-
+function Stat({
+  icon: Icon,
+  label,
+  value,
+  suffix,
+}: {
+  icon: typeof Compass;
+  label: string;
+  value: number;
+  suffix: string;
+}) {
+  return (
+    <div className="stat">
+      <span className="stat-icon">
+        <Icon size={20} strokeWidth={1.6} />
+      </span>
+      <div>
+        <p>{label}</p>
+        <strong>
+          {value}
+          <span>{suffix}</span>
+        </strong>
+      </div>
+    </div>
+  );
+}

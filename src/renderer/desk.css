@@ -1,0 +1,300 @@
+/* Learning desk: task first, one feedback, tools on demand. */
+.page-heading.compact-page-heading {
+  margin-bottom: 18px;
+  align-items: center;
+}
+.page-heading.compact-page-heading h1 {
+  font-size: 22px;
+  margin: 0;
+}
+.page-heading.desk-page-heading {
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+.page-heading.desk-page-heading .heading-actions {
+  gap: 8px;
+}
+.desk-workspace {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.desk-workspace .desk-toolbar {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+}
+.desk-project small {
+  font-size: 12px;
+  color: var(--theme-muted);
+  overflow-wrap: anywhere;
+}
+.desk-quick-actions,
+.task-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.desk-workspace > .learning-panel {
+  overflow: visible;
+  background: var(--theme-surface);
+}
+.task-status-row {
+  justify-content: space-between;
+  padding: 14px 22px 0;
+}
+.desk-workspace .guided-activity {
+  padding: 14px 22px 8px;
+}
+.desk-workspace .guided-activity h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  line-height: 1.45;
+}
+.desk-workspace .guided-activity > .rich-text {
+  font-size: 15px;
+  line-height: 1.8;
+}
+.desk-workspace .task-demand {
+  margin: 6px 0;
+}
+.desk-workspace .rubric {
+  margin: 8px 0 0;
+}
+.desk-workspace .rubric summary {
+  padding: 8px 10px;
+}
+.desk-workspace .draft-section {
+  margin: 0;
+  padding: 10px 22px 14px;
+}
+.desk-workspace .draft-input {
+  min-height: 130px;
+  height: 140px;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.7;
+  padding: 12px;
+}
+.desk-workspace .draft-bottom {
+  margin-top: 10px;
+}
+.desk-workspace .draft-preview {
+  margin: 6px 0 0;
+}
+.desk-workspace .draft-preview summary {
+  padding: 6px 0;
+  font-size: 12px;
+}
+.desk-workspace .local-record-notice {
+  font-size: 11px;
+  margin-top: 8px;
+}
+.desk-workspace .local-record-notice p {
+  margin: 4px 0;
+}
+.desk-workspace .next-actions {
+  margin: 0;
+  padding: 0 22px 14px;
+}
+.desk-workspace .no-test-note {
+  margin: 0 22px 16px;
+}
+.desk-workspace .session-footer {
+  padding: 12px 22px;
+  margin: 0;
+}
+.desk-workspace .knowledge-impact-notice,
+.desk-workspace .return-banner {
+  margin: 8px 22px;
+}
+.math-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.math-tools .button {
+  min-height: 30px;
+  font-size: 12px;
+}
+.task-feedback {
+  margin: 0 22px 18px;
+  border: 1px solid var(--theme-border);
+  border-left: 3px solid var(--theme-accent);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--theme-raised);
+}
+.task-feedback h3 {
+  font-size: 16px;
+}
+.task-feedback h4 {
+  font-size: 13px;
+  margin: 12px 0 6px;
+}
+.task-feedback p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.task-feedback .section-heading {
+  margin-bottom: 10px;
+}
+.feedback-details {
+  margin-top: 12px;
+}
+.feedback-details > summary {
+  padding: 9px 10px;
+  background: var(--theme-surface);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.feedback-details > small {
+  display: block;
+  margin: 12px 0;
+  color: var(--theme-muted);
+}
+.feedback-criterion {
+  padding: 12px 0;
+  border-top: 1px solid var(--theme-border);
+  font-size: 12px;
+}
+.feedback-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.feedback-next .button {
+  flex-shrink: 0;
+}
+.desk-tools-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(20 35 28 / 28%);
+}
+.desk-tools-backdrop[hidden] {
+  display: none;
+}
+.desk-tools {
+  width: min(760px, 94vw);
+  height: 100%;
+  overflow-y: auto;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  box-shadow: -12px 0 40px rgb(0 0 0 / 15%);
+  padding: 0 24px 24px;
+}
+.desk-tools-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--theme-surface);
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  padding: 20px 0 14px;
+  border-bottom: 1px solid var(--theme-border);
+}
+.desk-tools-heading h2 {
+  font-size: 19px;
+  margin: 0 0 6px;
+}
+.desk-tools-heading p {
+  font-size: 12px;
+  color: var(--theme-muted);
+}
+.desk-tools-content {
+  padding-top: 16px;
+}
+.desk-tools .reader-panel {
+  position: static;
+  max-height: none;
+  margin-bottom: 14px;
+}
+.desk-tools .reader-body {
+  max-height: 55vh;
+}
+.desk-tools .desk-more,
+.desk-tool-section {
+  margin: 12px 0;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+}
+.desk-tools .desk-more > summary,
+.desk-tool-section > summary {
+  padding: 14px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.desk-tools .desk-controls {
+  padding: 0 16px 16px;
+}
+.desk-tool-section > :not(summary) {
+  margin: 12px 16px;
+}
+.desk-tool-section .help-area,
+.desk-tool-section .exploration {
+  padding: 12px 0;
+}
+.desk-tool-section .teaching-location {
+  padding: 0;
+}
+.desk-tool-section .reliability-panel {
+  padding: 0;
+  border: 0;
+}
+.desk-tools .verification-overview > summary,
+.desk-tools .verification-basis > summary,
+.desk-tools .attempts-history > summary {
+  padding: 12px 14px;
+}
+.desk-tools .verification-basis dl,
+.desk-tools .verification-summary {
+  padding: 12px 14px;
+}
+.desk-tools .understanding-panel,
+.desk-tools .handwriting-panel {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+@media (max-width: 1100px) {
+  .desk-workspace {
+    max-width: none;
+  }
+  .desk-workspace .draft-input {
+    min-height: 120px;
+  }
+}
+@media (max-width: 700px) {
+  .desk-toolbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .desk-project small {
+    display: none;
+  }
+  .task-status-row,
+  .desk-workspace .guided-activity,
+  .desk-workspace .draft-section,
+  .desk-workspace .session-footer {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .task-feedback {
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+  .feedback-next {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .desk-tools {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}

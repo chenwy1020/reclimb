@@ -1,8 +1,132 @@
-.handwriting-feedback{margin-top:24px;padding-top:20px;border-top:1px solid var(--border);min-width:0}
-.handwriting-feedback p{line-height:1.8}.handwriting-feedback h3{margin-top:0}
-.handwriting-transcript-label{display:grid;gap:8px;margin:18px 0 12px}
-.handwriting-transcript-label textarea{box-sizing:border-box;width:100%;min-height:220px;resize:vertical;line-height:1.8;white-space:pre-wrap}
-.handwriting-check{display:flex;align-items:flex-start;gap:10px;line-height:1.7;margin:12px 0}
-.handwriting-check input{flex:0 0 auto;width:17px;height:17px;margin:5px 0 0}
-.handwriting-versions article{padding:12px 0;border-top:1px solid var(--border)}
-.handwriting-replies{margin-top:24px}.handwriting-feedback .input-record{margin:12px 0;min-width:0}
+.handwriting-feedback {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.handwriting-feedback p {
+  line-height: 1.8;
+}
+.handwriting-feedback h3 {
+  margin-top: 0;
+}
+.handwriting-transcript-label {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 12px;
+}
+.handwriting-transcript-label textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+.handwriting-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.handwriting-check input {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 5px 0 0;
+}
+.handwriting-versions article {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.handwriting-replies {
+  margin-top: 24px;
+}
+.handwriting-feedback .input-record {
+  margin: 12px 0;
+  min-width: 0;
+}
+.handwriting-warning {
+  padding: 10px 12px;
+  border-left: 4px solid #b27a2e;
+  background: color-mix(in srgb, var(--panel) 88%, #f4c36b);
+  border-radius: 4px;
+}
+.handwriting-page-review {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0;
+}
+.handwriting-page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.handwriting-page-columns {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.handwriting-page-columns figure,
+.handwriting-complete-original figure {
+  margin: 0;
+}
+.handwriting-page-columns img,
+.handwriting-complete-original img {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.handwriting-page-columns figcaption,
+.handwriting-complete-original figcaption {
+  text-align: center;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.handwriting-blocks {
+  display: grid;
+  gap: 14px;
+}
+.handwriting-block {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.handwriting-block > label {
+  display: grid;
+  gap: 7px;
+}
+.handwriting-block textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  line-height: 1.7;
+}
+.handwriting-uncertainties {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.handwriting-uncertainties label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.handwriting-complete-original {
+  margin-top: 4px;
+}
+.handwriting-complete-original figure {
+  margin-top: 12px;
+}
+@media (max-width: 760px) {
+  .handwriting-page-columns {
+    grid-template-columns: 1fr;
+  }
+}

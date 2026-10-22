@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '23 18 * * *'
   workflow_dispatch:
     inputs:
       test_scope:
@@ -28,13 +30,15 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run typecheck
-      - run: node scripts/test-profile.mjs
+      - run: npm run format:check
+      - run: npm run lint
+      - run: node scripts/validation/test-profile.mjs
         id: tests
         env:
-          RECLIMB_TEST_SCOPE: ${{ inputs.test_scope || 'auto' }}
+          RECLIMB_TEST_SCOPE: ${{ github.event_name == 'schedule' && 'full' || inputs.test_scope || 'auto' }}
       - run: npm run build
       - run: npm run test:desktop:full
         if: steps.tests.outputs.scope == 'full'
       - run: npm run test:desktop
         if: steps.tests.outputs.scope == 'targeted'
-      - run: node scripts/audit-source.mjs --tracked
+      - run: node scripts/validation/audit-source.mjs --tracked

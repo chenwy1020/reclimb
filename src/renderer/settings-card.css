@@ -1,14 +1,156 @@
-.collapsible-settings-card>.settings-card-heading{margin:0;display:block}
-.collapsible-settings-card>.settings-card-heading>h2{margin:0;width:100%}
-.settings-card-toggle{display:flex;align-items:center;gap:12px;width:100%;border:0;border-radius:6px;padding:0;background:transparent;color:var(--theme-text);font:inherit;text-align:left;cursor:pointer;min-width:0}
-.settings-card-toggle:focus-visible{outline:2px solid var(--theme-accent);outline-offset:7px}
-.settings-card-toggle>.soft-icon,.settings-card-chevron{flex-shrink:0}
-.settings-card-label{flex:1;min-width:0;overflow-wrap:anywhere}
-.settings-card-description{display:block;color:var(--theme-muted);font-size:11px;font-weight:400;line-height:1.8;margin-top:6px}
-.settings-card-chevron{color:var(--theme-muted);transition:transform .15s}
-.settings-card-toggle[aria-expanded=true] .settings-card-chevron{transform:rotate(180deg)}
-.settings-card-content{padding-top:22px;min-width:0}
-.settings-card-content[hidden]{display:none!important}
-.settings-card-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-bottom:18px}
-.settings-card-content>.quiet-note{font-size:11px;color:var(--theme-muted);line-height:1.9}
-@media(prefers-reduced-motion:reduce){.settings-card-chevron{transition:none}}
+.collapsible-settings-card > .settings-card-heading {
+  margin: 0;
+  display: block;
+}
+.collapsible-settings-card > .settings-card-heading > h2 {
+  margin: 0;
+  width: 100%;
+}
+.settings-card-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--theme-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.settings-card-toggle:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 7px;
+}
+.settings-card-toggle > .soft-icon,
+.settings-card-chevron {
+  flex-shrink: 0;
+}
+.settings-card-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-card-description {
+  display: block;
+  color: var(--theme-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.8;
+  margin-top: 6px;
+}
+.settings-card-chevron {
+  color: var(--theme-muted);
+  transition: transform 0.15s;
+}
+.settings-card-toggle[aria-expanded='true'] .settings-card-chevron {
+  transform: rotate(180deg);
+}
+.settings-card-content {
+  padding-top: 22px;
+  min-width: 0;
+}
+.settings-card-content[hidden] {
+  display: none !important;
+}
+.settings-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.settings-card-content > .quiet-note {
+  font-size: 11px;
+  color: var(--theme-muted);
+  line-height: 1.9;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-card-chevron {
+    transition: none;
+  }
+}
+.settings-sections {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.settings-section[hidden] {
+  display: none !important;
+}
+.settings-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+.settings-section > .settings-card,
+.settings-section > .principle-card {
+  margin: 0;
+}
+.review-reminder-settings {
+  display: grid;
+  gap: 12px;
+  padding: clamp(18px, 2vw, 25px);
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+}
+.review-reminder-settings > p {
+  color: var(--theme-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.review-reminder-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.review-reminder-controls > label {
+  display: grid;
+  gap: 8px;
+  width: 160px;
+  max-width: 100%;
+  color: var(--theme-muted);
+  font-size: 12px;
+}
+.review-reminder-controls input {
+  width: 100%;
+}
+.review-reminder-controls > .button {
+  min-height: 44px;
+}
+.quick-setup-advanced {
+  margin: 18px 0 12px;
+}
+.quick-setup-advanced > summary {
+  cursor: pointer;
+  padding: 10px 0;
+}
+.quick-setup-budget {
+  display: grid;
+  gap: 8px;
+  max-width: 260px;
+  margin: 18px 0 10px;
+}
+.quick-setup-budget input {
+  width: 100%;
+}
+.quick-setup-result {
+  margin-bottom: 16px;
+}
+.quick-setup-error {
+  color: var(--theme-danger, #a53939);
+}
+.settings-layout.settings-by-category {
+  display: block;
+  max-width: 1000px;
+}
+.settings-tab-content {
+  min-width: 0;
+}

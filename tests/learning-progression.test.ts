@@ -145,3 +145,10 @@ describe('durable learning position and progression',()=>{
   expect(store.list('answerExposures','p').some(item=>item.sessionId===session.id&&item.text.includes('条件不足'))).toBe(true);expect(store.list('evidence')).toHaveLength(0);
  });
 });
+
+it('limits the next-step prompt and provenance to the current unit when adjacent units share one capability',async()=>{
+ const {store,service,provider}=await fixture();const first=await service.start('p',undefined,'practice',undefined,undefined,'u1');await service.submit(first.id,'逐项比较后选取合适的上界。','old-neighbor');const older=store.list('evidence').find(item=>item.attemptId==='old-neighbor')!;
+ store.put('learningUnits',{...store.get('learningUnits','u2')!,capabilityId:'c1'});const second=await service.start('p',undefined,'practice',undefined,undefined,'u2');await service.nextStep(second.id,'challenge');
+ const sent=[...provider.inputs].reverse().find(input=>input.intent==='challenge');expect(sent.evidence).toEqual([]);const position=store.get('learningPositions','pos')!;expect(position.basedOnEvidenceIds??[]).not.toContain(older.id);
+ await service.dispute(first.id,'旧题标准有具体疑点');expect(store.get('learningPositions','pos')).toMatchObject({derivedStatus:'active',nextRequirement:position.nextRequirement,sessionId:second.id});
+});

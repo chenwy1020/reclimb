@@ -1,0 +1,84 @@
+name: Manual original teaching evaluation
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: 'Send paid requests with the explicit repository configuration and key'
+        type: boolean
+        default: false
+      cap_cny:
+        description: 'Total estimated cap in CNY, greater than 0 and at most 3'
+        type: string
+        default: '1'
+      case_id:
+        description: 'Original case ID, or all; execution starts with one case by default'
+        type: string
+        default: 'linear-water'
+      stage:
+        description: 'Production path to evaluate'
+        type: choice
+        options: [feedback, explain, attempt, review, all]
+        default: feedback
+permissions:
+  contents: read
+concurrency:
+  group: manual-product-evaluation
+  cancel-in-progress: false
+jobs:
+  evaluation:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Validate the complete 20 by 4 matrix without credentials
+        if: ${{ !inputs.execute }}
+        shell: pwsh
+        env:
+          EVALUATION_CAP: ${{ inputs.cap_cny }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evaluationWorkspace = Join-Path $env:RUNNER_TEMP 'original-evaluation-ledger'
+          $evaluationReport = Join-Path $env:RUNNER_TEMP 'product-evaluation-report.json'
+          $evaluationConfig = Join-Path $env:GITHUB_WORKSPACE 'docs/fixtures/product-evaluation/config.example.json'
+          $evaluationFixture = Join-Path $env:GITHUB_WORKSPACE 'docs/fixtures/product-evaluation/cases.json'
+          node scripts/validation/run-product-evaluation.mjs --workspace $evaluationWorkspace --config $evaluationConfig --fixture $evaluationFixture --report $evaluationReport --cap $env:EVALUATION_CAP
+      - name: Run explicitly authorized requests against original material
+        if: ${{ inputs.execute }}
+        shell: pwsh
+        env:
+          EVALUATION_CONFIG_JSON: ${{ secrets.RECLIMB_EVAL_CONFIG }}
+          RECLIMB_EVAL_API_KEY: ${{ secrets.RECLIMB_EVAL_API_KEY }}
+          EVALUATION_CAP: ${{ inputs.cap_cny }}
+          EVALUATION_CASE: ${{ inputs.case_id }}
+          EVALUATION_STAGE: ${{ inputs.stage }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:EVALUATION_CONFIG_JSON) -or [string]::IsNullOrWhiteSpace($env:RECLIMB_EVAL_API_KEY)) {
+            throw 'Explicit repository configuration and API key are required. No model request was sent.'
+          }
+          $evaluationSettings = $env:EVALUATION_CONFIG_JSON | ConvertFrom-Json
+          if ($evaluationSettings.apiKeyEnv -ne 'RECLIMB_EVAL_API_KEY') {
+            throw 'The configuration must explicitly select RECLIMB_EVAL_API_KEY.'
+          }
+          $evaluationConfig = Join-Path $env:RUNNER_TEMP 'product-evaluation-config.json'
+          [System.IO.File]::WriteAllText($evaluationConfig, $env:EVALUATION_CONFIG_JSON)
+          $evaluationWorkspace = Join-Path $env:RUNNER_TEMP 'original-evaluation-ledger'
+          $evaluationReport = Join-Path $env:RUNNER_TEMP 'product-evaluation-report.json'
+          $evaluationFixture = Join-Path $env:GITHUB_WORKSPACE 'docs/fixtures/product-evaluation/cases.json'
+          $evaluationArgs = @('--workspace', $evaluationWorkspace, '--config', $evaluationConfig, '--fixture', $evaluationFixture, '--report', $evaluationReport, '--cap', $env:EVALUATION_CAP, '--execute')
+          if ($env:EVALUATION_CASE -and $env:EVALUATION_CASE -ne 'all') { $evaluationArgs += @('--case', $env:EVALUATION_CASE) }
+          if ($env:EVALUATION_STAGE -ne 'all') { $evaluationArgs += @('--stage', $env:EVALUATION_STAGE) }
+          node scripts/validation/run-product-evaluation.mjs @evaluationArgs
+      - name: Preserve the report for human review
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-teaching-evaluation
+          path: ${{ runner.temp }}/product-evaluation-report.json
+          if-no-files-found: ignore
+          retention-days: 14

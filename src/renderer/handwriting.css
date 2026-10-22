@@ -1,29 +1,144 @@
 /* Keep this nested card separate from the learning panel's outer border. */
-.handwriting-panel{min-width:0;margin:24px clamp(17px,2vw,27px);padding:20px;border:1px solid var(--border,#d9dfd1);border-radius:12px;background:var(--surface,#fff);overflow-wrap:anywhere}
-.handwriting-heading,.handwriting-history article{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 16px}
-.handwriting-heading>div{flex:1 1 280px;min-width:0}
-.handwriting-heading>.button,.handwriting-history article>.button{flex:0 0 auto}
-.handwriting-heading h3{display:flex;gap:8px;align-items:center;margin:0}
-.handwriting-heading p,.handwriting-history p{font-size:13px;line-height:1.7;margin:8px 0}
-.handwriting-network-note{padding:12px;border:1px solid var(--border,#ccd4c4);border-radius:8px;font-size:13px;line-height:1.8}
-.handwriting-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0}
-.handwriting-controls label{display:grid;gap:5px;min-width:0;max-width:100%}
-.handwriting-pairing{margin-top:16px;min-width:0}
+.handwriting-panel {
+  min-width: 0;
+  margin: 24px clamp(17px, 2vw, 27px);
+  padding: 20px;
+  border: 1px solid var(--border, #d9dfd1);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  overflow-wrap: anywhere;
+}
+.handwriting-heading,
+.handwriting-history article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+.handwriting-heading > div {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.handwriting-heading > .button,
+.handwriting-history article > .button {
+  flex: 0 0 auto;
+}
+.handwriting-heading h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+.handwriting-heading p,
+.handwriting-history p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 8px 0;
+}
+.handwriting-network-note {
+  padding: 12px;
+  border: 1px solid var(--border, #ccd4c4);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.handwriting-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+.handwriting-controls label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+}
+.handwriting-pairing {
+  margin-top: 16px;
+  min-width: 0;
+}
 /* Wrap according to available card width, including the adjustable reader split. */
-.handwriting-connection{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
-.handwriting-connection>div:first-child{flex:0 0 160px}
-.handwriting-connection>div:last-child{flex:1 1 280px;min-width:0}
-.handwriting-connection input{width:100%;min-width:0}
-.handwriting-qr{display:block;width:160px;height:160px;background:white;image-rendering:pixelated}
-.handwriting-connection p,.handwriting-connection small{font-size:12px;line-height:1.7}
-.handwriting-connection small{display:block}
-.handwriting-confirm{margin:16px 0;padding:14px;border:1px solid var(--theme-accent,#6a825c);border-radius:8px}
-.handwriting-confirm b{font-size:24px;letter-spacing:4px}
-.handwriting-history{margin-top:18px}
-.handwriting-history article{padding:12px 0;border-top:1px solid var(--border,#d9dfd1)}
-.handwriting-history article>div{flex:1 1 260px;min-width:0}
-.handwriting-history article p{display:flex;gap:5px;align-items:center;flex-wrap:wrap;font-size:12px}
-.handwriting-original{width:100%;display:block;background:#fff;border:1px solid #ddd;filter:none!important}
-.handwriting-viewer{max-width:850px}
-.handwriting-error{padding:10px;border:1px solid #b97055;border-radius:8px;color:var(--theme-error,#9e4428)}
-@media(max-width:1040px){.handwriting-panel{padding:16px}}
+.handwriting-connection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: flex-start;
+}
+.handwriting-connection > div:first-child {
+  flex: 0 0 160px;
+}
+.handwriting-connection > div:last-child {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.handwriting-connection input {
+  width: 100%;
+  min-width: 0;
+}
+.handwriting-qr {
+  display: block;
+  width: 160px;
+  height: 160px;
+  background: white;
+  image-rendering: pixelated;
+}
+.handwriting-connection p,
+.handwriting-connection small {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.handwriting-connection small {
+  display: block;
+}
+.handwriting-confirm {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--theme-accent, #6a825c);
+  border-radius: 8px;
+}
+.handwriting-confirm b {
+  font-size: 24px;
+  letter-spacing: 4px;
+}
+.handwriting-history {
+  margin-top: 18px;
+}
+.handwriting-history article {
+  padding: 12px 0;
+  border-top: 1px solid var(--border, #d9dfd1);
+}
+.handwriting-history article > div {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.handwriting-history article p {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.handwriting-original {
+  width: 100%;
+  display: block;
+  background: #fff;
+  border: 1px solid #ddd;
+  filter: none !important;
+}
+.handwriting-viewer {
+  max-width: 850px;
+}
+.handwriting-error {
+  padding: 10px;
+  border: 1px solid #b97055;
+  border-radius: 8px;
+  color: var(--theme-error, #9e4428);
+}
+@media (max-width: 1040px) {
+  .handwriting-panel {
+    padding: 16px;
+  }
+}
