@@ -8,7 +8,7 @@ it('declares the focused 0.4.8 delivery and retains previous desktop regressions
  expect(lockFile.version).toBe(packageFile.version);
  expect(lockFile.packages[''].version).toBe(packageFile.version);
  expect(packageFile.private).toBe(true);
- expect(packageFile.license).toBe('UNLICENSED');
+ expect(packageFile.license).toBe('MIT');
  expect(packageFile.scripts['test:patch']).toBe('node scripts/validation/test-profile.mjs');
  expect(packageFile.scripts['test:desktop:full']).toContain('smoke-v048.mjs');
  for(const name of ['smoke-v044.mjs','smoke-v045.mjs','smoke-v048.mjs'])expect(packageFile.scripts['test:desktop:full']).toContain(name);

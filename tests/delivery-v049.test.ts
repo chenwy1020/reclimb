@@ -3,7 +3,7 @@ import {expect,it} from 'vitest';
 
 it('keeps version, Windows delivery and cumulative desktop checks consistent',()=>{
  const pkg=JSON.parse(readFileSync('package.json','utf8')),lock=JSON.parse(readFileSync('package-lock.json','utf8'));
- expect(lock.version).toBe(pkg.version);expect(lock.packages[''].version).toBe(pkg.version);expect(pkg.private).toBe(true);expect(pkg.license).toBe('UNLICENSED');
+ expect(lock.version).toBe(pkg.version);expect(lock.packages[''].version).toBe(pkg.version);expect(pkg.private).toBe(true);expect(pkg.license).toBe('MIT');
  if(pkg.version==='0.4.9'){
   expect(pkg.scripts['test:desktop']).toBe('node scripts/desktop/smoke-v049.mjs');expect(pkg.scripts['verify:package']).toContain('verify-package-v049.ps1');
  }

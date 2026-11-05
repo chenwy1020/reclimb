@@ -5,7 +5,7 @@
   "description": "重登 · 可复用的个人 AI 学习空间",
   "main": "dist/main/index.cjs",
   "author": "Reclimb",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsc --noEmit && vite build && node scripts/build/build-main.mjs",
@@ -74,6 +74,7 @@
     },
     "files": [
       "dist/**/*",
+      "LICENSE",
       "package.json"
     ],
     "extraResources": [
